@@ -79,9 +79,9 @@ spec:
         resources:
           requests:
             storage: {{ .Values.postgres.storage.size | default "5Gi" }} # Change this to your required disk size
-        {{- if .Values.postgres.storageClass }}
+        {{ if .Values.postgres.storageClass }}
         storageClassName: {{ .Values.postgres.storageClass | quote }}
-        {{- end }}
+        {{ end }}
 ---
 # Service Definition (Remains the same for DNS)
 apiVersion: v1
