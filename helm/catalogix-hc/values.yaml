@@ -43,7 +43,7 @@ userSvc:
   env:
     SPRING_DATASOURCE_URL: "jdbc:postgresql://postgres:5432/catalogix"
     SPRING_DATASOURCE_USERNAME: "postgres"
-    ALLOWED_ORIGINS: ""
+    ALLOWED_ORIGINS: "*"
   replicaCount: 1
 
 productSvc:
@@ -63,7 +63,7 @@ productSvc:
   env:
     SPRING_DATASOURCE_URL: "jdbc:postgresql://postgres:5432/catalogix"
     SPRING_DATASOURCE_USERNAME: "postgres"
-    ALLOWED_ORIGINS: ""
+    ALLOWED_ORIGINS: "*"
   replicaCount: 1
 
 postgres:

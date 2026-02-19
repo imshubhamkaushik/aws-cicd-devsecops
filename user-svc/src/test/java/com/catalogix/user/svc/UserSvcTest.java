@@ -2,6 +2,7 @@ package com.catalogix.user.svc;
 
 import com.catalogix.user.dto.CreateUserRequest;
 import com.catalogix.user.dto.LoginRequest;
+import com.catalogix.user.exception.UnauthorizedException;
 import com.catalogix.user.model.User;
 import com.catalogix.user.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -12,6 +13,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 class UserSvcTest {
@@ -80,5 +82,20 @@ class UserSvcTest {
         when(repo.findByEmail(req.getEmail())).thenReturn(Optional.of(new User()));
 
         assertThrows(IllegalArgumentException.class, () -> svc.register(req));
+    }
+
+    @Test
+    void loginFailsWithBadPasswordThrowsUnauthorized() {
+        User u = new User();
+        u.setEmail("x@x.com");
+        u.setPassword("hashed");
+        when(repo.findByEmail("x@x.com")).thenReturn(Optional.of(u));
+        when(encoder.matches("wrongpass", "hashed")).thenReturn(false);
+
+        LoginRequest req = new LoginRequest();
+        req.setEmail("x@x.com");
+        req.setPassword("wrongpass");
+
+        assertThrows(UnauthorizedException.class, () -> svc.login(req));
     }
 }

@@ -23,7 +23,7 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/catalogix
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/${POSTGRES_DB}
       - SPRING_DATASOURCE_USERNAME=postgres
       - SPRING_DATASOURCE_PASSWORD=postgres
       - ALLOWED_ORIGINS=http://localhost:3000
@@ -42,7 +42,7 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/catalogix
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/${POSTGRES_DB}
       - SPRING_DATASOURCE_USERNAME=postgres
       - SPRING_DATASOURCE_PASSWORD=postgres
       - ALLOWED_ORIGINS=http://localhost:3000
@@ -58,8 +58,11 @@ services:
     build: ./frontend-svc
     container_name: frontend-svc
     depends_on:
-      - user-svc
-      - product-svc
+      user-svc:
+        condition: service_healthy
+      product-svc:
+        condition: service_healthy
+
     ports:
       - "3000:80"
 

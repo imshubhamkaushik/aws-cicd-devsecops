@@ -2,7 +2,9 @@ package com.catalogix.user.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.catalogix.user.dto.CreateUserRequest;
+import com.catalogix.user.dto.LoginRequest;
 import com.catalogix.user.dto.UserResponse;
+import com.catalogix.user.exception.UnauthorizedException;
 import com.catalogix.user.svc.UserSvc;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -45,5 +47,19 @@ class UserControllerTest {
                 .content(mapper.writeValueAsString(req)))
                 .andDo(print())
                 .andExpect(status().isCreated());
+    }
+
+    @Test
+    void loginFailureReturns401() throws Exception {
+        LoginRequest req = new LoginRequest();
+        req.setEmail("x@x.com");
+        req.setPassword("wrongpass");
+
+        when(svc.login(any())).thenThrow(new UnauthorizedException("Invalid email or password"));
+
+        mvc.perform(post("/users/login")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(mapper.writeValueAsString(req)))
+                .andExpect(status().isUnauthorized());
     }
 }
