@@ -1,4 +1,4 @@
-{{- if eq .Values.global.cloudProvider "aws" -}}
+{{ if eq .Values.global.cloudProvider "aws" }}
 apiVersion: storage.k8s.io/v1
 kind: StorageClass
 metadata:
@@ -8,4 +8,4 @@ volumeBindingMode: WaitForFirstConsumer
 parameters:
   type: gp3
   fsType: ext4
-{{- end -}}
+{{ end }}

@@ -78,7 +78,7 @@ monitoring:
   enabled: true
 
 aws:
-  accountID: ""
+  accountId: ""
   region: "ap-south-1"
 
 serviceAccount:

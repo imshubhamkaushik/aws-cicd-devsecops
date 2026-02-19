@@ -1,25 +1,21 @@
 {{ if .Values.ingress.enabled }}
-apiVersion: networking.k8s.io/v1
+apiVersion: networking.k8s.io/v1 
 kind: Ingress
 metadata:
   name: catalogix-ingress
   # namespace: {{ .Release.Namespace }}
   annotations:
     kubernetes.io/ingress.class: alb
-    # HIGHLIGHT:
     # Using AWS ALB Ingress Controller (EKS-native).
     # Avoids managing NGINX, certificates, scaling, and node exposure.
     alb.ingress.kubernetes.io/scheme: internet-facing
-    # HIGHLIGHT:
     # Application is intentionally internet-facing.
     # Backend services remain private behind the ALB.
     alb.ingress.kubernetes.io/target-type: ip
-    # HIGHLIGHT:
     # Targets pods directly instead of nodes.
     # Required best practice for EKS + ALB.
     alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80}]'
     # alb.ingress.kubernetes.io/ssl-redirect: 'false'
-    # HIGHLIGHT:
     # TLS-ready design (ACM can be attached later).
     # Enforces HTTPS without app-level changes.
     alb.ingress.kubernetes.io/healthcheck-path: /actuator/health/readiness

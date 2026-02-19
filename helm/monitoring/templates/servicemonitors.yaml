@@ -14,9 +14,9 @@ spec:
       - key: app
         operator: In
         values:
-          - user-service
-          - product-service
-          - frontend-service 
+          - user-svc
+          - product-svc
+          - frontend-svc 
   endpoints:
     - port: http
       path: /actuator/prometheus

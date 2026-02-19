@@ -70,7 +70,7 @@ spec:
                 secretKeyRef:
                   name: catalogix-secrets
                   key: DB_PASSWORD
-          resources: {{- toYaml .Values.userSvc.resources | nindent 12 }}
+          resources: {{ toYaml .Values.userSvc.resources | nindent 12 }}
           startupProbe:
             httpGet:
               path: /actuator/health

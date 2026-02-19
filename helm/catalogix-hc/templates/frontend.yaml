@@ -24,7 +24,7 @@ spec:
           ports:
             - name: http
               containerPort: {{ .Values.frontendSvc.service.port | default 80 }}
-          resources: {{- toYaml .Values.frontendSvc.resources | nindent 12 }}
+          resources: {{ toYaml .Values.frontendSvc.resources | nindent 12 }}
           volumeMounts:
             - name: nginx-cache
               mountPath: /var/cache/nginx

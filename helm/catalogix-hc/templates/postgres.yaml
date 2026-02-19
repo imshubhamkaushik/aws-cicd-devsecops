@@ -47,7 +47,7 @@ spec:
                   name: catalogix-secrets
                   key: DB_PASSWORD
             - name: POSTGRES_DB
-              value: "{{ .Values.postgres.db | default "catalogix" }}"
+              value: {{ .Values.postgres.db | default "catalogix" }}
             - name: PGDATA
               value: /var/lib/postgresql/data/pgdata
           readinessProbe:
@@ -80,7 +80,7 @@ spec:
           requests:
             storage: {{ .Values.postgres.storage.size | default "5Gi" }} # Change this to your required disk size
         {{- if .Values.postgres.storageClass }}
-        storageClassName: {{ .Values.postgres.storageClass }}
+        storageClassName: {{ .Values.postgres.storageClass | quote }}
         {{- end }}
 ---
 # Service Definition (Remains the same for DNS)
