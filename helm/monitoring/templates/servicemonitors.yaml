@@ -16,7 +16,6 @@ spec:
         values:
           - user-svc
           - product-svc
-          - frontend-svc 
   endpoints:
     - port: http
       path: /actuator/prometheus

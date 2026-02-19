@@ -5,8 +5,10 @@ import com.catalogix.user.dto.LoginRequest;
 import com.catalogix.user.dto.UserResponse;
 import com.catalogix.user.model.User;
 import com.catalogix.user.repository.UserRepository;
+import com.catalogix.user.exception.UnauthorizedException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+
 
 import java.util.List;
 import java.util.Collections;
@@ -52,7 +54,7 @@ public class UserSvc {
         return repo.findByEmail(req.getEmail())
                 .filter(u -> passwordEncoder.matches(req.getPassword(), u.getPassword()))
                 .map(u -> new UserResponse(u.getId(), u.getName(), u.getEmail()))
-                .orElseThrow(() -> new IllegalArgumentException("Invalid email or password")); // 3. Throwing exception is usually safer than returning null
+                .orElseThrow(() -> new UnauthorizedException("Invalid email or password")); // 3. Throwing exception is usually safer than returning null
     }
 
     // List all users as DTOs (no passwords)

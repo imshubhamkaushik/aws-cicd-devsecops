@@ -109,10 +109,6 @@ metadata:
   name: product-svc
   labels:
     app: product-svc
-  annotations:
-    prometheus.io/scrape: "true"
-    prometheus.io/port: "{{ .Values.productSvc.service.port | default 8082 }}"
-    prometheus.io/path: "/actuator/prometheus"
 spec:
   type: {{ .Values.productSvc.service.type | default "ClusterIP" }}
   selector:

@@ -75,7 +75,7 @@ pipeline {
                                     waitForQualityGate abortPipeline: true
                                 }
                             }
-                        }`
+                        }
                     }
                 }
 
@@ -199,7 +199,7 @@ pipeline {
 
         stage('Validate Kubernetes Access') {
             steps {
-                // Fix: Generate the config file for the Jenkins user dynamically
+                // Generate the config file for the Jenkins user dynamically
                 sh 'aws eks update-kubeconfig --region ap-south-1 --name ${CLUSTER_NAME}'
         
                 // Now this will work
@@ -214,7 +214,7 @@ pipeline {
                 ]) {
                     sh """
                     kubectl create secret generic catalogix-secrets \
-                      --from-literal=DB_PASSWORD="${DB_PASSWORD}" \
+                      --from-literal=DB_PASSWORD="\${DB_PASSWORD}" \
                       --from-literal=DB_USER=postgres \
                       --namespace ${K8S_NAMESPACE} \
                       --dry-run=client -o yaml | kubectl apply -f -
