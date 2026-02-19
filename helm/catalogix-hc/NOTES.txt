@@ -1,0 +1,22 @@
+Catalogix microservices successfully deployed!
+
+To access services inside the cluster:
+  kubectl get pods
+  kubectl get svc
+
+Example (port-forward for local testing):
+  kubectl port-forward svc/user-svc 8081:8081
+  kubectl port-forward svc/product-svc 8082:8082
+
+
+server {
+  listen 80;
+  server_name localhost;
+
+  root /usr/share/nginx/html;
+  index index.html;
+
+  location / {
+    try_files $uri /index.html;
+  }
+}

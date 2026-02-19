@@ -1,0 +1,10 @@
+apiVersion: v2
+name: catalogix-monitoring
+description: Monitoring stack for Catalogix
+type: application
+version: 0.1.0
+
+dependencies:
+  - name: kube-prometheus-stack
+    version: "58.2.0"
+    repository: https://prometheus-community.github.io/helm-charts

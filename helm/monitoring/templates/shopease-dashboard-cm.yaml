@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: catalogix-dashboard
+  namespace: {{ .Release.Namespace }}
+  labels:
+    # This label tells the Grafana Sidecar "Hey, I contain a dashboard!"
+    grafana_dashboard: "1" 
+data:
+  service-health-overview.json: |
+{{ .Files.Get "dashboards/service-health-overview.json" | indent 4 }}

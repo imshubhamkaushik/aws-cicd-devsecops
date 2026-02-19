@@ -1,0 +1,99 @@
+# Persistent Volume Claim Template - This replaces the 'volumes' section in your Deployment
+---
+apiVersion: apps/v1
+kind: StatefulSet # Use StatefulSet for stable database deployment
+metadata:
+  name: postgres
+  labels:
+    app: postgres
+spec:
+  serviceName: "postgres" # Must match the Service name below
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        fsGroup: 999
+      containers:
+        - name: postgres
+          # NOTE: Helm templating is preserved
+          image: "{{ .Values.postgres.image }}:{{ .Values.postgres.tag }}"
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 999
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop:
+                - ALL
+          ports:
+            - containerPort: {{ .Values.postgres.port | default 5432 }}
+              name: pg
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: catalogix-secrets
+                  key: DB_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: catalogix-secrets
+                  key: DB_PASSWORD
+            - name: POSTGRES_DB
+              value: "{{ .Values.postgres.db | default "catalogix" }}"
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          readinessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - pg_isready -U $(printenv POSTGRES_USER)
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          volumeMounts:
+            # This name must match the volumeClaimTemplates name
+            - name: pgdata
+              mountPath: /var/lib/postgresql/data
+            - name: tmp-volume
+              mountPath: /tmp
+            - name: tmp-volume
+              mountPath: /run/postgresql
+      volumes:
+        - name: tmp-volume
+          emptyDir: {}
+
+  # --- PVC AUTOPROVISIONING (CRITICAL FOR DATA PERSISTENCE) ---
+  volumeClaimTemplates:
+    - metadata:
+        name: pgdata # Name used in the volumeMounts section
+      spec:
+        accessModes: ["ReadWriteOnce"] # Only one pod can mount it at a time
+        resources:
+          requests:
+            storage: {{ .Values.postgres.storage.size | default "5Gi" }} # Change this to your required disk size
+        {{- if .Values.postgres.storageClass }}
+        storageClassName: {{ .Values.postgres.storageClass }}
+        {{- end }}
+---
+# Service Definition (Remains the same for DNS)
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  labels:
+    app: postgres
+spec:
+  selector:
+    app: postgres
+  ports:
+    - port: {{ .Values.postgres.port }}
+      targetPort: {{ .Values.postgres.port }}
+      protocol: TCP

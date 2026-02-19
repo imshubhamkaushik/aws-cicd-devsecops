@@ -1,0 +1,170 @@
+# kube-prometheus-stack values
+# Aligned with previous manual Prometheus/Grafana setup
+
+global:
+  targetNamespace: catalogix
+
+kube-prometheus-stack:
+
+# Prometheus
+  prometheus:
+    enabled: true
+
+    prometheusSpec:
+      retention: 10d
+
+      # Allow Prometheus to discover ServiceMonitors created by the chart
+      serviceMonitorSelectorNilUsesHelmValues: false
+      serviceMonitorSelector: {}
+      serviceMonitorNamespaceSelector: {}
+
+      # Allow Prometheus to discover PodMonitors created by the chart
+      podMonitorSelectorNilUsesHelmValues: false
+
+      resources:
+        requests:
+          cpu: 200m
+          memory: 128Mi
+        limits:
+          cpu: 500m
+          memory: 1Gi
+
+      storageSpec:
+        volumeClaimTemplate:
+          spec:
+            storageClassName: "gp3-sc"
+            accessModes: ["ReadWriteOnce"]
+            resources:
+              requests:
+                storage: 5Gi
+
+  # Alertmanager
+  alertmanager:
+    enabled: true
+
+    alertmanagerSpec:
+      resources:
+        requests:
+          cpu: 50m
+          memory: 64Mi
+        limits:
+          cpu: 200m
+          memory: 256Mi
+
+    config:
+      global:
+        resolve_timeout: 5m
+
+      route:
+        receiver: "default"
+        group_by: ["alertname", "namespace", "service"]
+        group_wait: 30s
+        group_interval: 5m
+        repeat_interval: 3h
+      receivers:
+        - name: "default"
+
+  # Grafana
+  grafana:
+    enabled: true
+
+    # This is explicitly for demo. Never do this in real prod
+    # adminUser: admin
+    # adminPassword: admin
+
+    admin:
+      existingSecret: ""
+
+    service:
+      type: ClusterIP
+
+    sidecar:
+      dashboards:
+        enabled: true
+        label: grafana_dashboard
+      datasources:
+        enabled: true
+        label: grafana_datasource
+    
+    persistence:
+      enabled: true
+      storageClassName: "gp3-sc"
+      accessModes: ["ReadWriteOnce"]
+      size: 2Gi
+
+    resources:
+      requests:
+        cpu: 250m
+        memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 256Mi
+  
+    dashboardProviders:
+      dashboardproviders.yaml:
+        apiVersion: 1
+        providers:
+        - name: 'default'
+          orgId: 1
+          folder: ''
+          type: file
+          disableDeletion: false
+          editable: true
+          options:
+            path: /var/lib/grafana/dashboards/default
+  
+    dashboards:
+      default:
+        catalogix-health:
+          file: dashboards/service-health-overview.json
+
+  # Custom Alert Rules (Equivalent to prometheus-alerts.yaml)
+  additionalPrometheusRules:
+    - name: catalogix-alerts
+      groups:
+        - name: service-availability
+          rules:
+            - alert: ServiceUnavailable
+              expr: |
+                sum by (service, namespace) (
+                  up{job="kubernetes-service-endpoints"}
+                ) == 0
+              for: 3m
+              labels:
+                severity: critical
+              annotations:
+                summary: "Service {{ $labels.service }} is unavailable"
+                description: "No active endpoints for service {{ $labels.service }}"
+
+        - name: error-rate
+          rules:
+            - alert: HighErrorRate
+              expr: |
+                sum(rate(http_server_requests_seconds_count{status=~"5.."}[5m]))
+                /
+                sum(rate(http_server_requests_seconds_count[5m]))
+                > 0.05
+              for: 5m
+              labels:
+                severity: critical
+              annotations:
+                summary: "High error rate detected"
+                description: "5xx responses exceed 5% of total traffic"
+
+
+        - name: high-latency
+          rules:
+            - alert: HighLatencyP95
+              expr: |
+                histogram_quantile(
+                  0.95,
+                  sum by (le, service) (
+                    rate(http_server_requests_seconds_bucket[5m])
+                  )
+                ) > 1.5
+              for: 5m
+              labels:
+                severity: warning
+              annotations:
+                summary: "High latency detected (p95)"
+                description: "95th percentile latency exceeds 1.5s"

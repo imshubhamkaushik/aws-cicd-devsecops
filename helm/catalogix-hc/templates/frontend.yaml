@@ -1,0 +1,73 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend-svc
+  labels:
+    app: frontend-svc
+spec:
+  replicas: {{ .Values.frontendSvc.replicaCount | default 1 }}
+  selector:
+    matchLabels:
+      app: frontend-svc
+  template:
+    metadata:
+      labels:
+        app: frontend-svc
+    spec:
+      serviceAccountName: catalogix-sa
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+      containers:
+        - name: frontend-svc
+          image: "{{ .Values.global.imageRegistry }}/{{ .Values.frontendSvc.image.repository }}:{{ .Values.global.imageTag }}"
+          ports:
+            - name: http
+              containerPort: {{ .Values.frontendSvc.service.port | default 80 }}
+          resources: {{- toYaml .Values.frontendSvc.resources | nindent 12 }}
+          volumeMounts:
+            - name: nginx-cache
+              mountPath: /var/cache/nginx
+            - name: nginx-run
+              mountPath: /var/run
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 2
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 3
+      volumes:
+        - name: nginx-cache
+          emptyDir: {}
+        - name: nginx-run
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend-svc
+  labels:
+    app: frontend-svc
+spec:
+  selector:
+    app: frontend-svc
+  ports:
+    - protocol: TCP
+      port: {{ .Values.frontendSvc.service.port }}
+      targetPort: {{ .Values.frontendSvc.service.port }}

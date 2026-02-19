@@ -1,0 +1,85 @@
+global:
+  imageRegistry: ""
+  imageTag: "latest"
+  cloudProvider: "local"
+
+ingress:
+  enabled: true
+  host: ""
+  paths:
+    frontend: /
+    users: /users
+    products: /products
+
+frontendSvc:
+  image:
+    repository: "frontend-svc"
+    pullPolicy: "IfNotPresent"
+  replicaCount: 1
+  service:
+    port: 80
+  resources:
+    requests:
+      cpu: "50m"
+      memory: "64Mi"
+    limits:
+      cpu: "200m"
+      memory: "256Mi"
+
+userSvc:
+  image:
+    repository: "user-svc"
+    pullPolicy: "IfNotPresent"
+  service:
+    port: 8081
+    targetPort: 8080
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "128Mi"
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
+  env:
+    SPRING_DATASOURCE_URL: "jdbc:postgresql://postgres:5432/catalogix"
+    SPRING_DATASOURCE_USERNAME: "postgres"
+  replicaCount: 1
+
+productSvc:
+  image:
+    repository: "product-svc"
+    pullPolicy: "IfNotPresent"
+  service:
+    port: 8082
+    targetPort: 8080
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "128Mi"
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
+  env:
+    SPRING_DATASOURCE_URL: "jdbc:postgresql://postgres:5432/catalogix"
+    SPRING_DATASOURCE_USERNAME: "postgres"
+  replicaCount: 1
+
+postgres:
+  image: postgres
+  tag: "16-alpine"
+  username: postgres
+  db: catalogix
+  port: 5432
+  storageClass: ""
+  storage:
+    size: 5Gi
+
+monitoring:
+  enabled: true
+
+aws:
+  accountID: ""
+  region: "ap-south-1"
+
+serviceAccount:
+  irsaRoleName: "dev-app-irsa-role"

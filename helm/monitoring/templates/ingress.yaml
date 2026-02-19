@@ -1,0 +1,53 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: monitoring-ingress
+  annotations:
+    kubernetes.io/ingress.class: alb
+
+    alb.ingress.kubernetes.io/scheme: internal
+    # HIGHLIGHT:
+    # Monitoring is infrastructure, not user-facing.
+    # Internal ALB prevents accidental public exposure.
+
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80}]'
+    # alb.ingress.kubernetes.io/ssl-redirect: '80'
+    # HIGHLIGHT:
+    # Secure-by-default access (VPN / bastion / private DNS).
+
+spec:
+  ingressClassName: alb
+  rules:
+    - host: grafana.internal.catalogix.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: monitoring-grafana
+                port:
+                  number: 80
+
+    - host: prometheus.internal.catalogix.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: monitoring-kube-prometheus-stack-prometheus
+                port:
+                  number: 9090
+
+    - host: alertmanager.internal.catalogix.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: monitoring-kube-prometheus-stack-alertmanager
+                port:
+                  number: 9093

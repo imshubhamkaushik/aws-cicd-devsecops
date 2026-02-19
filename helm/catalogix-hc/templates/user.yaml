@@ -1,0 +1,121 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: user-svc
+  labels:
+    app: user-svc
+spec:
+  replicas: {{ .Values.userSvc.replicaCount | default 1 }}
+  selector:
+    matchLabels:
+      app: user-svc
+  template:
+    metadata:
+      labels:
+        app: user-svc
+    spec:
+      serviceAccountName: catalogix-sa
+      automountServiceAccountToken: true
+      securityContext:
+        runAsNonRoot: true
+      initContainers:
+        - name: wait-for-postgres
+          image: postgres:16-alpine
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 999
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          env:
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: catalogix-secrets
+                  key: DB_PASSWORD
+          command:
+            - sh
+            - -c
+            - |
+              echo "Waiting for postgres at postgres:{{ .Values.postgres.port | default 5432 }}..."
+              until pg_isready -h postgres -p {{ .Values.postgres.port | default 5432 }} -U {{ .Values.postgres.username | default "postgres" }}; do
+                echo "Postgres is unavailable - sleeping"
+                sleep 5
+              done
+              echo "Postgres is up - continuing"
+      containers:
+        - name: user-svc
+          image: "{{ .Values.global.imageRegistry }}/{{ .Values.userSvc.image.repository }}:{{ .Values.global.imageTag }}"
+          imagePullPolicy: {{ .Values.userSvc.image.pullPolicy }}
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          ports:
+            - containerPort: {{ .Values.userSvc.service.port | default 8081 }}
+          env:
+            - name: SPRING_DATASOURCE_URL
+              value: "{{ .Values.userSvc.env.SPRING_DATASOURCE_URL }}"
+            - name: SPRING_DATASOURCE_USERNAME
+              value: "{{ .Values.userSvc.env.SPRING_DATASOURCE_USERNAME }}"
+            - name: SPRING_DATASOURCE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: catalogix-secrets
+                  key: DB_PASSWORD
+          resources: {{- toYaml .Values.userSvc.resources | nindent 12 }}
+          startupProbe:
+            httpGet:
+              path: /actuator/health
+              port: {{ .Values.userSvc.service.targetPort | default 8081 }}
+            periodSeconds: 5
+            failureThreshold: 30
+            timeoutSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: {{ .Values.userSvc.service.targetPort | default 8081 }}
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: {{ .Values.userSvc.service.targetPort | default 8081 }}
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          volumeMounts:
+            - name: tmp-volume
+              mountPath: /tmp
+      volumes:
+        - name: tmp-volume
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: user-svc
+  labels:
+    app: user-svc
+  # annotations:
+  #   prometheus.io/scrape: "true"
+  #   prometheus.io/port: "{{ .Values.userSvc.service.port | default 8081 }}"
+  #   prometheus.io/path: "/actuator/prometheus"
+spec:
+  type: {{ .Values.userSvc.service.type | default "ClusterIP" }}
+  selector:
+    app: user-svc
+  ports:
+    - name: http
+      port: {{ .Values.userSvc.service.port | default 8081 }}
+      targetPort: {{ .Values.userSvc.service.targetPort | default 8081 }}
