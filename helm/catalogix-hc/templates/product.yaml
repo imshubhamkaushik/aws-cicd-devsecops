@@ -70,6 +70,8 @@ spec:
                 secretKeyRef:
                   name: catalogix-secrets
                   key: DB_PASSWORD
+            - name: ALLOWED_ORIGINS
+              value: "{{ .Values.productSvc.env.ALLOWED_ORIGINS }}"
           resources: {{ toYaml .Values.productSvc.resources | nindent 12 }}
           startupProbe:
             httpGet:

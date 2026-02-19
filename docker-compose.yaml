@@ -3,7 +3,7 @@ services:
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: ${POSTGRES_USERNAME}
+      POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
     ports:
@@ -11,7 +11,7 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -26,6 +26,7 @@ services:
       - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/catalogix
       - SPRING_DATASOURCE_USERNAME=postgres
       - SPRING_DATASOURCE_PASSWORD=postgres
+      - ALLOWED_ORIGINS=http://localhost:3000
     ports:
       - "8081:8081"
     healthcheck:
@@ -44,6 +45,7 @@ services:
       - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/catalogix
       - SPRING_DATASOURCE_USERNAME=postgres
       - SPRING_DATASOURCE_PASSWORD=postgres
+      - ALLOWED_ORIGINS=http://localhost:3000
     ports:
       - "8082:8082"
     healthcheck:

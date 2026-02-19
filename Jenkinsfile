@@ -71,11 +71,11 @@ pipeline {
                             sh 'mvn -B clean package'
                             withSonarQubeEnv("${SONARQUBE_SERVER}") {
                                 sh 'mvn sonar:sonar'
+                                timeout(time: 5, unit: 'MINUTES') {
+                                    waitForQualityGate abortPipeline: true
+                                }
                             }
-                        }
-                        timeout(time: 5, unit: 'MINUTES') {
-                            waitForQualityGate abortPipeline: true
-                        }
+                        }`
                     }
                 }
 
@@ -85,11 +85,11 @@ pipeline {
                             sh 'mvn -B clean package'
                             withSonarQubeEnv("${SONARQUBE_SERVER}") {
                                 sh 'mvn sonar:sonar'
+                                timeout(time: 5, unit: 'MINUTES') {
+                                    waitForQualityGate abortPipeline: true
+                                }
                             }
-                        }
-                        timeout(time: 5, unit: 'MINUTES') {
-                            waitForQualityGate abortPipeline: true
-                        }
+                        } 
                     }
                 }
 
@@ -214,8 +214,9 @@ pipeline {
                 ]) {
                     sh """
                     kubectl create secret generic catalogix-secrets \
-                      --from-literal=DB_PASSWORD=${DB_PASSWORD} \
+                      --from-literal=DB_PASSWORD="${DB_PASSWORD}" \
                       --from-literal=DB_USER=postgres \
+                      --namespace ${K8S_NAMESPACE} \
                       --dry-run=client -o yaml | kubectl apply -f -
                     """
                 }
