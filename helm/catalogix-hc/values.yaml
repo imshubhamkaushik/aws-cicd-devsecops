@@ -17,6 +17,7 @@ frontendSvc:
     pullPolicy: "IfNotPresent"
   replicaCount: 1
   service:
+    type: "ClusterIP"
     port: 80
   resources:
     requests:

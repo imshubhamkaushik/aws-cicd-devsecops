@@ -65,6 +65,7 @@ metadata:
   labels:
     app: frontend-svc
 spec:
+  type: {{ .Values.frontendSvc.service.type | default "ClusterIP" }}
   selector:
     app: frontend-svc
   ports:

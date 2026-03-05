@@ -50,6 +50,13 @@ spec:
               value: {{ .Values.postgres.db | default "catalogix" }}
             - name: PGDATA
               value: /var/lib/postgresql/data/pgdata
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
           readinessProbe:
             exec:
               command:
