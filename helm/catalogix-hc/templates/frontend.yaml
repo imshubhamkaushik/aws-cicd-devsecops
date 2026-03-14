@@ -5,7 +5,7 @@ metadata:
   labels:
     app: frontend-svc
 spec:
-  replicas: {{ .Values.frontendSvc.replicaCount | default 1 }}
+  replicas: {{ .Values.frontendSvc.replicaCount | default 2 }}
   selector:
     matchLabels:
       app: frontend-svc
@@ -14,13 +14,12 @@ spec:
       labels:
         app: frontend-svc
     spec:
-      serviceAccountName: catalogix-sa
-      automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
       containers:
         - name: frontend-svc
           image: "{{ .Values.global.imageRegistry }}/{{ .Values.frontendSvc.image.repository }}:{{ .Values.global.imageTag }}"
+          imagePullPolicy: {{ .Values.frontendSvc.image.pullPolicy }}
           ports:
             - name: http
               containerPort: {{ .Values.frontendSvc.service.port | default 80 }}

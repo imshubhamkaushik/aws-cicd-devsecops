@@ -4,22 +4,20 @@ pipeline {
     environment {
         // AWS
         AWS_REGION = "ap-south-1"
+        AWS_ACCOUNT_ID = ""
 
-        AWS_ACCOUNT_ID = sh(
-            script: "aws sts get-caller-identity --query Account --output text",
-            returnStdout: true
-        ).trim()
-
-        ECR_REGISTRY = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+        // Cluster Name
         CLUSTER_NAME = "catalogix-cluster"
 
-        // Image tags
-        MAJOR_VERSION = "1.0"
-        IMAGE_TAG = "${MAJOR_VERSION}-${BUILD_NUMBER}"
+        ECR_REGISTRY = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
 
         USER_SVC_IMAGE = "${ECR_REGISTRY}/user-svc:${IMAGE_TAG}"
         PRODUCT_SVC_IMAGE = "${ECR_REGISTRY}/product-svc:${IMAGE_TAG}"
         FRONTEND_SVC_IMAGE = "${ECR_REGISTRY}/frontend-svc:${IMAGE_TAG}"
+
+        // Image tags
+        MAJOR_VERSION = "1.0"
+        IMAGE_TAG = "${MAJOR_VERSION}-${BUILD_NUMBER}"
 
         // Kubernetes / Helm
         HELM_CHART_DIR = "helm/catalogix-hc"
@@ -28,7 +26,6 @@ pipeline {
         // Jenkins credentials
         SONARQUBE_SERVER = "sonarqube"
         DB_PASSWORD_CREDENTIAL_ID = "catalogix-db-password"
-        
     }
 
     tools {
@@ -42,6 +39,12 @@ pipeline {
     }
 
     stages {
+
+        stage('Clean Workspace') {
+            steps {
+                cleanWs()
+            }
+        }
 
         stage('Unit & Integration Tests (Backend)') {
             parallel {
@@ -197,10 +200,51 @@ pipeline {
             }
         }
 
+        stage('Terraform Infrastructure') {
+            steps {
+                dir('terraform/env/dev') {
+
+                    sh 'terraform fmt -recursive'
+
+                    sh 'terraform init'
+
+                    sh 'terraform validate'
+
+                    sh 'terraform plan -out main.tfplan'
+
+                    sh 'terraform apply -auto-approve main.tfplan'
+                }
+            }
+        }
+
+        stage('Verify Infrastructure Readiness') {
+            steps {
+
+                sh """
+                aws eks describe-cluster \
+                --name ${CLUSTER_NAME} \
+                --region ${AWS_REGION} \
+                --query "cluster.status"
+                """
+
+            }
+        }
+
+        stage('Fetch RDS Endpoint') {
+            steps {
+                script {
+                    env.RDS_ENDPOINT = sh(
+                        script: "terraform -chdir=terraform/env/dev output -raw rds_endpoint",
+                        returnStdout: true
+                    ).trim()
+                }
+            }
+        }
+
         stage('Validate Kubernetes Access') {
             steps {
                 // Generate the config file for the Jenkins user dynamically
-                sh 'aws eks update-kubeconfig --region ap-south-1 --name ${CLUSTER_NAME}'
+                sh 'aws eks update-kubeconfig --region ${AWS_REGION} --name ${CLUSTER_NAME}'
         
                 // Now this will work
                 sh 'kubectl get nodes' 
@@ -239,46 +283,34 @@ pipeline {
 
         stage('Deploy to EKS using Helm') {
             steps {
-                script {
-                    // Define the Helm command as a variable so we can reuse it
-                    def helmCmd = """
-                        helm upgrade --install catalogix ${HELM_CHART_DIR} \
-                          --namespace ${K8S_NAMESPACE} \
-                          --create-namespace \
-                          --set global.imageRegistry=${ECR_REGISTRY} \
-                          --set global.imageTag=${IMAGE_TAG} \
-                          --set global.cloudProvider=aws \
-                          --set postgres.storageClass=gp3-sc
-                    """
+                sh """
+                helm upgrade --install catalogix ${HELM_CHART_DIR} \
+                    --namespace ${K8S_NAMESPACE} \
+                    --create-namespace \
+                    --set global.imageRegistry=${ECR_REGISTRY} \
+                    --set global.imageTag=${IMAGE_TAG} \
+                    --set global.cloudProvider=aws \
+                    --set database.host=${RDS_ENDPOINT}
+                """
+            }
+        }
 
-                    // Attempt deployment (returnStatus: true prevents pipeline from failing immediately)
-                    echo "Attempting Helm deployment..."
-                    def exitCode = sh(script: helmCmd, returnStatus: true)
+        stage('Wait for Deployment Rollout') {
+            steps {
 
-                    if (exitCode != 0) {
-                        echo "Helm Upgrade Failed! It might be a StatefulSet immutability issue."
-                        echo "Auto-fixing: Deleting old StatefulSet (Data/PVCs will be preserved)..."
-                        
-                        // Delete the conflicting StatefulSet so Helm can recreate it with new settings
-                        sh "kubectl delete statefulset postgres -n ${K8S_NAMESPACE} --ignore-not-found"
-                        
-                        // Wait a moment for Kubernetes to register the deletion
-                        sleep 5
-                        
-                        echo "Retrying deployment..."
-                        // Run the deployment again. If it fails this time, the pipeline will fail for real.
-                        sh helmCmd
-                    } else {
-                        echo "Deployment successful on first try."
-                    }
-                }
+                sh "kubectl rollout status deployment/frontend-svc -n ${K8S_NAMESPACE}"
+                sh "kubectl rollout status deployment/user-svc -n ${K8S_NAMESPACE}"
+                sh "kubectl rollout status deployment/product-svc -n ${K8S_NAMESPACE}"
+
             }
         }
 
         stage('Post-Deployment Verification') {
             steps {
                 sh 'kubectl get pods -n ${K8S_NAMESPACE}'
-                sh 'kubectl get svc -n monitoring || true'
+                sh 'kubectl get svc -n ${K8S_NAMESPACE}'
+                sh 'kubectl get all -n ${K8S_NAMESPACE}'
+                sh 'kubectl get ingress -n ${K8S_NAMESPACE}'
             }
         }
     }

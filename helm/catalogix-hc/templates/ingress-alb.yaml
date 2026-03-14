@@ -5,6 +5,10 @@ metadata:
   name: catalogix-ingress
   # namespace: {{ .Release.Namespace }}
   annotations:
+    kubernetes.io/ingress.class: alb
+    alb.ingress.kubernetes.io/load-balancer-name: catalogix-alb
+    alb.ingress.kubernetes.io/group.name: catalogix
+
     alb.ingress.kubernetes.io/scheme: internet-facing
     # Application is intentionally internet-facing(Public ALB). Backend services remain private behind the ALB.
     alb.ingress.kubernetes.io/target-type: ip
@@ -16,7 +20,7 @@ metadata:
     alb.ingress.kubernetes.io/healthcheck-path: /
     alb.ingress.kubernetes.io/healthcheck-port: traffic-port
     alb.ingress.kubernetes.io/success-codes: "200-399"
-    # HIGHLIGHT:
+    
     # Health checks terminate at service layer, not pod IPs.
     alb.ingress.kubernetes.io/healthcheck-interval-seconds: "15"
     alb.ingress.kubernetes.io/healthy-threshold-count: "2"

@@ -1,7 +1,13 @@
 global:
   imageRegistry: ""
   imageTag: "latest"
-  cloudProvider: "local"
+  cloudProvider: "aws"
+
+database:
+  host: ""
+  port: 5432
+  name: "catalogix"
+  username: "catalogix"
 
 ingress:
   enabled: true
@@ -15,7 +21,7 @@ frontendSvc:
   image:
     repository: "frontend-svc"
     pullPolicy: "IfNotPresent"
-  replicaCount: 1
+  replicaCount: 2
   service:
     type: "ClusterIP"
     port: 80
@@ -31,6 +37,7 @@ userSvc:
   image:
     repository: "user-svc"
     pullPolicy: "IfNotPresent"
+  replicaCount: 2
   service:
     port: 8081
     targetPort: 8081
@@ -42,15 +49,13 @@ userSvc:
       cpu: "500m"
       memory: "512Mi"
   env:
-    SPRING_DATASOURCE_URL: "jdbc:postgresql://postgres:5432/catalogix"
-    SPRING_DATASOURCE_USERNAME: "postgres"
     ALLOWED_ORIGINS: "*"
-  replicaCount: 1
 
 productSvc:
   image:
     repository: "product-svc"
     pullPolicy: "IfNotPresent"
+  replicaCount: 2
   service:
     port: 8082
     targetPort: 8082
@@ -62,20 +67,7 @@ productSvc:
       cpu: "500m"
       memory: "512Mi"
   env:
-    SPRING_DATASOURCE_URL: "jdbc:postgresql://postgres:5432/catalogix"
-    SPRING_DATASOURCE_USERNAME: "postgres"
     ALLOWED_ORIGINS: "*"
-  replicaCount: 1
-
-postgres:
-  image: postgres
-  tag: "16-alpine"
-  username: postgres
-  db: catalogix
-  port: 5432
-  storageClass: ""
-  storage:
-    size: 5Gi
 
 monitoring:
   enabled: true
@@ -83,6 +75,3 @@ monitoring:
 aws:
   accountId: ""
   region: "ap-south-1"
-
-serviceAccount:
-  irsaRoleName: "dev-app-irsa-role"
