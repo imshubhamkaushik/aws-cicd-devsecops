@@ -42,7 +42,7 @@ export default function Products({ currentUser }) {
   const [products, setProducts]   = useState([]);
   const [loading, setLoading]     = useState(false);
   const [error, setError]         = useState("");
-  const [toast, setToast]         = useState("");
+  const [toast, setToast]         = useState(null);
   const [submitting, setSubmitting] = useState(false);
 
   // Form state
@@ -86,7 +86,7 @@ export default function Products({ currentUser }) {
       );
       setName(""); setDescription(""); setPrice("");
       await fetchProducts();
-      setToast("Product added successfully.");
+      setToast({message:"Product added successfully.", type: "success"});
     } catch (err) {
       const msg = err.response?.data?.message || "Failed to add product.";
       setError(msg);
@@ -100,7 +100,7 @@ export default function Products({ currentUser }) {
     try {
       await deleteProduct(product.id, currentUser.id);
       await fetchProducts();
-      setToast(`"${product.name}" removed.`);
+      setToast({ message:`"${product.name}" removed.`, type:"success"});
     } catch {
       setError("Failed to delete product.");
     }
@@ -129,7 +129,7 @@ export default function Products({ currentUser }) {
       </div>
 
       <div className="page-content">
-        {toast && <Toast message={toast} onDone={() => setToast("")} />}
+        {toast && <Toast message={toast.message} type={toast.type} onDone={() => setToast(null)} />}
         {error && !noUser && <div className="toast toast-error">{error}</div>}
 
         {/* No active user warning */}
@@ -155,11 +155,13 @@ export default function Products({ currentUser }) {
             className="form-fields form-fields-product"
             onSubmit={handleAdd}
           >
+            {/* Product Name */}
             <div className="field-wrap field-wide">
               <label className="field-label" htmlFor="prod-name">
                 Product name
               </label>
-              <input
+              <input 
+                id="prod-name"
                 className="field-input"
                 placeholder="e.g. Wireless headphones"
                 value={name}
@@ -168,11 +170,13 @@ export default function Products({ currentUser }) {
                 disabled={submitting || noUser}
               />
             </div>
+            {/* Product Description */}
             <div className="field-wrap field-wide">
               <label className="field-label" htmlFor="prod-desc">
                 Description (optional)
               </label>
               <input
+                id="prod-desc"
                 className="field-input"
                 placeholder="Short description"
                 value={description}
@@ -180,6 +184,7 @@ export default function Products({ currentUser }) {
                 disabled={submitting || noUser}
               />
             </div>
+            {/* Product price */}
             <div className="field-wrap">
               <label className="field-label" htmlFor="prod-price">
                 Price (₹)
@@ -187,6 +192,7 @@ export default function Products({ currentUser }) {
               <div className="price-field-wrap">
                 <span className="price-prefix">₹</span>
                 <input
+                  id="prod-price"
                   className="field-input price-input"
                   type="number"
                   placeholder="0.00"
