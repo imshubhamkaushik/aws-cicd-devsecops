@@ -12,7 +12,7 @@ function formatPrice(value) {
   }).format(value);
 }
 
-function Toast({ message, type = "success", onDone }) {
+function Toast({ message, type, onDone }) {
   useEffect(() => {
     const t = setTimeout(onDone, 3000);
     return () => clearTimeout(t);
@@ -25,6 +25,12 @@ function Toast({ message, type = "success", onDone }) {
     </div>
   );
 }
+
+Toast.propTypes = {
+  message: PropTypes.string.isRequired,
+  type: PropTypes.oneOf(["success", "error"]).isRequired,
+  onDone: PropTypes.func.isRequired,
+};
 
 const ProductIcon = () => (
   <svg viewBox="0 0 16 16" width="15" height="15" fill="currentColor">
@@ -66,8 +72,8 @@ export default function Products({ currentUser }) {
   const handleAdd = async (e) => {
     e.preventDefault();
     if (!name.trim() || !price) return;
-    const numericPrice = parseFloat(price);
-    if (isNaN(numericPrice) || numericPrice <= 0) {
+    const numericPrice = Number.parseFloat(price);
+    if (Number.isNaN(numericPrice) || numericPrice <= 0) {
       setError("Price must be a positive number.");
       return;
     }
@@ -90,7 +96,7 @@ export default function Products({ currentUser }) {
   };
 
   const handleDelete = async (product) => {
-    if (!window.confirm(`Remove "${product.name}"? This cannot be undone.`)) return;
+    if (!globalThis.confirm(`Remove "${product.name}"? This cannot be undone.`)) return;
     try {
       await deleteProduct(product.id, currentUser.id);
       await fetchProducts();
@@ -123,7 +129,6 @@ export default function Products({ currentUser }) {
       </div>
 
       <div className="page-content">
-
         {toast && <Toast message={toast} onDone={() => setToast("")} />}
         {error && !noUser && <div className="toast toast-error">{error}</div>}
 
@@ -132,8 +137,8 @@ export default function Products({ currentUser }) {
           <div className="banner-warning">
             <div className="banner-icon">
               <svg viewBox="0 0 16 16" width="14" height="14" fill="#633806">
-                <path d="M8 15A7 7 0 108 1a7 7 0 000 14zm0 1A8 8 0 118 0a8 8 0 010 16z"/>
-                <path d="M7.002 11a1 1 0 112 0 1 1 0 01-2 0zM7.1 4.995a.905.905 0 111.8 0l-.35 3.507a.553.553 0 01-1.1 0L7.1 4.995z"/>
+                <path d="M8 15A7 7 0 108 1a7 7 0 000 14zm0 1A8 8 0 118 0a8 8 0 010 16z" />
+                <path d="M7.002 11a1 1 0 112 0 1 1 0 01-2 0zM7.1 4.995a.905.905 0 111.8 0l-.35 3.507a.553.553 0 01-1.1 0L7.1 4.995z" />
               </svg>
             </div>
             <div>
@@ -146,9 +151,14 @@ export default function Products({ currentUser }) {
         {/* Add product form — disabled when no user */}
         <div className={`form-panel ${noUser ? "form-panel-disabled" : ""}`}>
           <p className="form-panel-label">Add new product</p>
-          <form className="form-fields form-fields-product" onSubmit={handleAdd}>
+          <form
+            className="form-fields form-fields-product"
+            onSubmit={handleAdd}
+          >
             <div className="field-wrap field-wide">
-              <label className="field-label">Product name</label>
+              <label className="field-label" htmlFor="prod-name">
+                Product name
+              </label>
               <input
                 className="field-input"
                 placeholder="e.g. Wireless headphones"
@@ -159,7 +169,9 @@ export default function Products({ currentUser }) {
               />
             </div>
             <div className="field-wrap field-wide">
-              <label className="field-label">Description (optional)</label>
+              <label className="field-label" htmlFor="prod-desc">
+                Description (optional)
+              </label>
               <input
                 className="field-input"
                 placeholder="Short description"
@@ -169,7 +181,9 @@ export default function Products({ currentUser }) {
               />
             </div>
             <div className="field-wrap">
-              <label className="field-label">Price (₹)</label>
+              <label className="field-label" htmlFor="prod-price">
+                Price (₹)
+              </label>
               <div className="price-field-wrap">
                 <span className="price-prefix">₹</span>
                 <input
@@ -204,8 +218,14 @@ export default function Products({ currentUser }) {
             )}
           </div>
           <div className={`search-box ${noUser ? "search-box-disabled" : ""}`}>
-            <svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor" style={{ opacity: 0.4, flexShrink: 0 }}>
-              <path d="M11.742 10.344a6.5 6.5 0 10-1.397 1.398l3.85 3.85a1 1 0 001.415-1.414l-3.868-3.834zm-5.242 1.156a5 5 0 110-10 5 5 0 010 10z"/>
+            <svg
+              viewBox="0 0 16 16"
+              width="13"
+              height="13"
+              fill="currentColor"
+              style={{ opacity: 0.4, flexShrink: 0 }}
+            >
+              <path d="M11.742 10.344a6.5 6.5 0 10-1.397 1.398l3.85 3.85a1 1 0 001.415-1.414l-3.868-3.834zm-5.242 1.156a5 5 0 110-10 5 5 0 010 10z" />
             </svg>
             <input
               placeholder="Search products…"
@@ -219,7 +239,9 @@ export default function Products({ currentUser }) {
         {/* Loading skeletons */}
         {loading && (
           <div className="skeleton-list">
-            {[1, 2, 3].map((i) => <div key={i} className="skeleton-row" />)}
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="skeleton-row" />
+            ))}
           </div>
         )}
 
@@ -263,8 +285,13 @@ export default function Products({ currentUser }) {
                     onClick={() => handleDelete(product)}
                     title="Remove product"
                   >
-                    <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor">
-                      <path d="M11 1.5v1h3.5a.5.5 0 010 1H13v9a1 1 0 01-1 1H4a1 1 0 01-1-1v-9H1.5a.5.5 0 010-1H5v-1A1.5 1.5 0 016.5 0h3A1.5 1.5 0 0111 1.5zm-5 0v1h4v-1a.5.5 0 00-.5-.5h-3a.5.5 0 00-.5.5zM5.5 5.5a.5.5 0 00-1 0v6a.5.5 0 001 0v-6zm2.5 0a.5.5 0 00-1 0v6a.5.5 0 001 0v-6zm2.5 0a.5.5 0 00-1 0v6a.5.5 0 001 0v-6z"/>
+                    <svg
+                      viewBox="0 0 16 16"
+                      width="12"
+                      height="12"
+                      fill="currentColor"
+                    >
+                      <path d="M11 1.5v1h3.5a.5.5 0 010 1H13v9a1 1 0 01-1 1H4a1 1 0 01-1-1v-9H1.5a.5.5 0 010-1H5v-1A1.5 1.5 0 016.5 0h3A1.5 1.5 0 0111 1.5zm-5 0v1h4v-1a.5.5 0 00-.5-.5h-3a.5.5 0 00-.5.5zM5.5 5.5a.5.5 0 00-1 0v6a.5.5 0 001 0v-6zm2.5 0a.5.5 0 00-1 0v6a.5.5 0 001 0v-6zm2.5 0a.5.5 0 00-1 0v6a.5.5 0 001 0v-6z" />
                     </svg>
                   </button>
                 </div>
