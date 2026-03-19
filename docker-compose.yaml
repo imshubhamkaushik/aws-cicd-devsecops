@@ -62,7 +62,6 @@ services:
         condition: service_healthy
       product-svc:
         condition: service_healthy
-
     ports:
       - "3000:80"
 

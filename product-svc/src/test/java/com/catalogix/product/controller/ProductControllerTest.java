@@ -1,9 +1,8 @@
 package com.catalogix.product.controller;
 
-import com.catalogix.product.controller.ProductController;
 import com.catalogix.product.dto.CreateProductRequest;
-import com.catalogix.product.model.Product;
-import com.catalogix.product.repository.ProductRepository;
+import com.catalogix.product.dto.ProductResponse;
+import com.catalogix.product.service.ProductService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import org.junit.jupiter.api.Test;
@@ -13,30 +12,30 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.math.BigDecimal;
 import java.util.Collections;
+import java.util.Optional;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
+// FIX: now mocks ProductService, not ProductRepository.
+// Controller no longer has direct access to the repo.
 @WebMvcTest(ProductController.class)
 class ProductControllerTest {
 
-    @Autowired
-    MockMvc mvc;
-    @Autowired
-    ObjectMapper mapper;
+    @Autowired MockMvc mvc;
+    @Autowired ObjectMapper mapper;
+
     @MockitoBean
-    ProductRepository repo;
+    ProductService svc;
 
     @Test
     void listReturnsOk() throws Exception {
-        when(repo.findAll()).thenReturn(Collections.emptyList());
-        mvc.perform(get("/products")
-                .header("X-USER-ID", 123L))
+        when(svc.listAll()).thenReturn(Collections.emptyList());
+        mvc.perform(get("/products").header("X-USER-ID", 123L))
                 .andExpect(status().isOk());
     }
 
@@ -46,20 +45,11 @@ class ProductControllerTest {
         CreateProductRequest req = new CreateProductRequest();
         req.setName("Phone");
         req.setDescription("Nice phone");
-        req.setPrice(100.0);
+        req.setPrice(new BigDecimal("100.00"));
 
-        Product mockProduct = new Product();
-        mockProduct.setId(1L);
-        mockProduct.setName(req.getName());
-        mockProduct.setDescription(req.getDescription());
-        mockProduct.setPrice(req.getPrice());
+        when(svc.create(any(CreateProductRequest.class)))
+                .thenReturn(new ProductResponse(1L, "Phone", "Nice phone", new BigDecimal("100.00")));
 
-        // The IDE thinks 'any()' returns null, but Mockito handles it.
-        // The suppression above stops the IDE from complaining.
-        when(repo.save(any(Product.class))).thenReturn(mockProduct);
-
-        // you may need to mock repo.save if controller relies on it; but in WebMvcTest,
-        // normally controller is tested in isolation
         mvc.perform(post("/products")
                 .header("X-USER-ID", 123L)
                 .contentType(MediaType.APPLICATION_JSON)
@@ -67,8 +57,27 @@ class ProductControllerTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.id").value(1L))
                 .andExpect(jsonPath("$.name").value("Phone"))
-                .andExpect(jsonPath("$.description").value("Nice phone"))
-                .andExpect(jsonPath("$.price").value(100.0));
+                .andExpect(jsonPath("$.price").value(100.00));
+    }
 
+    @Test
+    void getOneReturnsNotFoundWhenMissing() throws Exception {
+        when(svc.findById(99L)).thenReturn(Optional.empty());
+        mvc.perform(get("/products/99").header("X-USER-ID", 123L))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void deleteReturnsNoContent() throws Exception {
+        when(svc.deleteById(1L)).thenReturn(true);
+        mvc.perform(delete("/products/1").header("X-USER-ID", 123L))
+                .andExpect(status().isNoContent());
+    }
+
+    @Test
+    void deleteReturnsNotFoundWhenMissing() throws Exception {
+        when(svc.deleteById(99L)).thenReturn(false);
+        mvc.perform(delete("/products/99").header("X-USER-ID", 123L))
+                .andExpect(status().isNotFound());
     }
 }

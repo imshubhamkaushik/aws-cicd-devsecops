@@ -5,7 +5,6 @@ metadata:
   name: catalogix-ingress
   # namespace: {{ .Release.Namespace }}
   annotations:
-    kubernetes.io/ingress.class: alb
     alb.ingress.kubernetes.io/load-balancer-name: catalogix-alb
     alb.ingress.kubernetes.io/group.name: catalogix
 
@@ -14,7 +13,10 @@ metadata:
     alb.ingress.kubernetes.io/target-type: ip
     # Targets pods directly instead of nodes. Required best practice for EKS + ALB.
     alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80}]'
-    # alb.ingress.kubernetes.io/ssl-redirect: 'false'
+    # DEV NOTE: Only HTTP for now. For production add:
+    #   alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:...
+    #   alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443}]'
+    #   alb.ingress.kubernetes.io/ssl-redirect: '443'
     # TLS-ready design (ACM can be attached later).
     # Enforces HTTPS without app-level changes.
     alb.ingress.kubernetes.io/healthcheck-path: /
@@ -32,14 +34,6 @@ spec:
     # Remove the host line and unindent the http block below so it applies to ALL hosts
     - http:
         paths:
-          # React Frontend (handles SPA routes)
-          - path: {{ .Values.ingress.paths.frontend | default "/" }}
-            pathType: Prefix
-            backend:
-              service:
-                name: frontend-svc
-                port:
-                  number: {{ .Values.frontendSvc.service.port | int }}
           # User Service
           - path: {{ .Values.ingress.paths.users | default "/users" }}
             pathType: Prefix
@@ -57,4 +51,13 @@ spec:
                 name: product-svc
                 port:
                   number: {{ .Values.productSvc.service.port | int }}
+                    
+          # React Frontend (handles SPA routes)
+          - path: {{ .Values.ingress.paths.frontend | default "/" }}
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend-svc
+                port:
+                  number: {{ .Values.frontendSvc.service.port | int }}
 {{ end }}

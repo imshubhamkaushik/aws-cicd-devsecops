@@ -1,0 +1,92 @@
+// Terraform was inside the main app pipeline, meaning every code push
+// could trigger infra changes. This file is a separate, manually-triggered
+// pipeline with a human approval gate between plan and apply.
+// In Jenkins: configure this pipeline with NO webhook trigger.
+
+pipeline {
+    agent any
+
+    environment {
+        AWS_REGION   = "ap-south-1"
+        CLUSTER_NAME = "catalogix-cluster"
+        TF_DIR       = "terraform/platform-infra/env/dev"
+    }
+
+    options {
+        timestamps()
+        disableConcurrentBuilds()
+    }
+
+    stages {
+        stage("Clean Workspace") { 
+            steps { 
+                cleanWs() 
+            } 
+        }
+
+        stage("Terraform Format Check"){ 
+            steps { dir("${TF_DIR}") { 
+                sh "terraform fmt -check -recursive" 
+                } 
+            } 
+        }
+        stage("Terraform Init") { 
+            steps { 
+                dir("${TF_DIR}") { 
+                    sh "terraform init" 
+                } 
+            }
+        }
+
+        stage("Terraform Validate")    { 
+            steps { 
+                dir("${TF_DIR}") { 
+                    sh "terraform validate" 
+                } 
+            } 
+        }
+
+        stage("Terraform Plan") { 
+            steps { 
+                dir("${TF_DIR}") { 
+                    sh "terraform plan -out main.tfplan" 
+                } 
+            } 
+        }
+
+        // Human must review the plan output before infra is changed
+        stage("Approval") {
+            steps {
+                input message: "Review the plan above. Apply infrastructure changes?", ok: "Apply"
+            }
+        }
+
+        stage("Terraform Apply") { 
+            steps { 
+                dir("${TF_DIR}") { 
+                    sh "terraform apply -auto-approve main.tfplan" 
+                } 
+            } 
+        }
+
+        stage("Verify EKS Cluster") {
+            steps {
+                sh """
+                aws eks describe-cluster \
+                  --name ${CLUSTER_NAME} --region ${AWS_REGION} \
+                  --query "cluster.status"
+                """
+            }
+        }
+    }
+
+    post {
+        success { echo "Infrastructure applied successfully." }
+        failure { echo "Infrastructure pipeline failed." }
+        always  { 
+            dir("${TF_DIR}") { 
+                sh "rm -f main.tfplan" 
+            } 
+        }
+    }
+}

@@ -6,6 +6,7 @@ target/
 .gitignore
 .idea/
 .vscode/
+.github/
 
 # Logs / Temp files
 *.log

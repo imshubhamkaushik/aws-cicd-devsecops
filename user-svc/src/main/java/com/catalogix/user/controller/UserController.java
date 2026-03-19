@@ -46,9 +46,6 @@ public class UserController {
     @PostMapping("/login")
     public ResponseEntity<UserResponse> login(@Valid @RequestBody LoginRequest req) {
         UserResponse user = svc.login(req);
-        if (user == null) {
-            return ResponseEntity.status(401).build();
-        }
         return ResponseEntity.ok(user);
     }
 

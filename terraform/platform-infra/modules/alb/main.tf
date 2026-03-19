@@ -1,0 +1,80 @@
+data "http" "alb_iam_policy" {
+  url = "https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/v2.11.0/docs/install/iam_policy.json"
+}
+
+resource "aws_iam_policy" "alb" {
+  name        = "AWSLoadBalancerControllerIAMPolicy"
+  description = "Scoped IAM policy for the AWS Load Balancer Controller"
+  policy      = data.http.alb_iam_policy.response_body
+}
+
+# ALB IAM Role for AWS Load Balancer Controller
+data "aws_iam_policy_document" "alb_assume_role" {
+  statement {
+    actions = ["sts:AssumeRoleWithWebIdentity"]
+
+    principals {
+      type        = "Federated"
+      identifiers = [var.oidc_provider_arn]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "${var.oidc_provider}:sub"
+      values   = ["system:serviceaccount:kube-system:aws-load-balancer-controller"]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "${var.oidc_provider}:aud"
+      values   = ["sts.amazonaws.com"]
+    }
+  }
+}
+
+resource "aws_iam_role" "alb" {
+  name               = "alb-role"
+  assume_role_policy = data.aws_iam_policy_document.alb_assume_role.json
+}
+
+resource "aws_iam_role_policy_attachment" "alb" {
+  role       = aws_iam_role.alb.name
+  policy_arn = aws_iam_policy.alb.arn
+}
+
+# Service account for IRSA
+resource "kubernetes_service_account" "alb" {
+  metadata {
+    name      = "aws-load-balancer-controller"
+    namespace = "kube-system"
+    annotations = {
+      "eks.amazonaws.com/role-arn" = aws_iam_role.alb.arn
+    }
+  }
+}
+
+# Install ALB controller
+resource "helm_release" "alb_controller" {
+  name       = "aws-load-balancer-controller"
+  namespace  = "kube-system"
+  repository = "https://aws.github.io/eks-charts"
+  chart      = "aws-load-balancer-controller"
+  version    = "1.11.0"
+
+  values = [
+    yamlencode({
+      clusterName = var.cluster_name
+      region      = var.region
+      vpcId       = var.vpc_id
+      serviceAccount = {
+        create = false
+        name   = "aws-load-balancer-controller"
+      }
+    })
+  ]
+
+  depends_on = [
+    kubernetes_service_account.alb, 
+    aws_iam_role_policy_attachment.alb
+  ]
+}

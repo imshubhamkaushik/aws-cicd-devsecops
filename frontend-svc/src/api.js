@@ -9,8 +9,6 @@ const API_BASE = ""; //same origin
 const USER_API_BASE = `${API_BASE}/users`;
 const PRODUCT_API_BASE = `${API_BASE}/products`;
 
-
-
 // --------USER APIs--------
 
 export const getUsers = async () => {
@@ -25,16 +23,13 @@ export const createUser = async (user) => {
 
 export const deleteUser = async (id) => {
   const res = await axios.delete(`${USER_API_BASE}/${id}`);
-  console.log("Deleted user response:", res.status, res.data);
   return res.data;
 };
 
 // --------PRODUCT APIs--------
 
 export const getProducts = async (userId) => {
-  if (!userId) {
-    throw new Error("User ID is required");
-  }
+  if (!userId) throw new Error("User ID is required");
   const res = await axios.get(PRODUCT_API_BASE, {
     headers: {
       'X-USER-ID': userId,
@@ -45,9 +40,7 @@ export const getProducts = async (userId) => {
 
 export const createProduct = async (product, userId) => {
 
-  if (!userId) {
-    throw new Error("User ID is required");
-  }
+  if (!userId) throw new Error("User ID is required");
   const res = await axios.post(PRODUCT_API_BASE, product, {
     headers: {
       'X-USER-ID': userId,
@@ -57,14 +50,11 @@ export const createProduct = async (product, userId) => {
 };
 
 export const deleteProduct = async (id, userId) => {
-  if (!userId) {
-    throw new Error("User ID is required");
-  }
+  if (!userId) throw new Error("User ID is required");
   const res = await axios.delete(`${PRODUCT_API_BASE}/${id}`, {
     headers: {
       'X-USER-ID': userId,
     },
   });
-  console.log("Deleted product response:", res.status, res.data);
   return res.data;
 };

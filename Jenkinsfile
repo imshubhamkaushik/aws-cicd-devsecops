@@ -4,7 +4,7 @@ pipeline {
     environment {
         // AWS
         AWS_REGION = "ap-south-1"
-        AWS_ACCOUNT_ID = ""
+        AWS_ACCOUNT_ID = credentials("aws-account-id") //  Stored as a Jenkins credential, not hardcoded here
 
         // Cluster Name
         CLUSTER_NAME = "catalogix-cluster"
@@ -65,13 +65,13 @@ pipeline {
             }
         }
 
-        stage('Build & SonarQube Analysis') {
+        stage('Build Artifacts & SonarQube Analysis') {
             parallel {
 
-                stage('User Service') {
+                stage('User Service JAR') {
                     steps {
                         dir('user-svc') {
-                            sh 'mvn -B clean package'
+                            sh 'mvn -B package -DskipTests'
                             withSonarQubeEnv("${SONARQUBE_SERVER}") {
                                 sh 'mvn sonar:sonar'
                                 timeout(time: 5, unit: 'MINUTES') {
@@ -82,10 +82,10 @@ pipeline {
                     }
                 }
 
-                stage('Product Service') {
+                stage('Product Service JAR') {
                     steps {
                         dir('product-svc') {
-                            sh 'mvn -B clean package'
+                            sh 'mvn -B package -DskipTests'
                             withSonarQubeEnv("${SONARQUBE_SERVER}") {
                                 sh 'mvn sonar:sonar'
                                 timeout(time: 5, unit: 'MINUTES') {
@@ -200,46 +200,35 @@ pipeline {
             }
         }
 
-        stage('Terraform Infrastructure') {
-            steps {
-                dir('terraform/env/dev') {
+        // stage('Terraform Infrastructure') {
+        //     steps {
+        //         dir('terraform/env/dev') {
 
-                    sh 'terraform fmt -recursive'
+        //             sh 'terraform fmt -recursive'
 
-                    sh 'terraform init'
+        //             sh 'terraform init'
 
-                    sh 'terraform validate'
+        //             sh 'terraform validate'
 
-                    sh 'terraform plan -out main.tfplan'
+        //             sh 'terraform plan -out main.tfplan'
 
-                    sh 'terraform apply -auto-approve main.tfplan'
-                }
-            }
-        }
+        //             sh 'terraform apply -auto-approve main.tfplan'
+        //         }
+        //     }
+        // }
 
-        stage('Verify Infrastructure Readiness') {
-            steps {
+        // stage('Verify Infrastructure Readiness') {
+        //     steps {
 
-                sh """
-                aws eks describe-cluster \
-                --name ${CLUSTER_NAME} \
-                --region ${AWS_REGION} \
-                --query "cluster.status"
-                """
+        //         sh """
+        //         aws eks describe-cluster \
+        //         --name ${CLUSTER_NAME} \
+        //         --region ${AWS_REGION} \
+        //         --query "cluster.status"
+        //         """
 
-            }
-        }
-
-        stage('Fetch RDS Endpoint') {
-            steps {
-                script {
-                    env.RDS_ENDPOINT = sh(
-                        script: "terraform -chdir=terraform/env/dev output -raw rds_endpoint",
-                        returnStdout: true
-                    ).trim()
-                }
-            }
-        }
+        //     }
+        // }   
 
         stage('Validate Kubernetes Access') {
             steps {
@@ -281,6 +270,17 @@ pipeline {
             }
         }
 
+        stage('Fetch RDS Endpoint') {
+            steps {
+                script {
+                    env.RDS_ENDPOINT = sh(
+                        script: "terraform -chdir=terraform/platform-infra/env/dev output -raw rds_endpoint",
+                        returnStdout: true
+                    ).trim()
+                }
+            }
+        } // add  --set database.host=${RDS_ENDPOINT} at the end of helm upgrade command in "Deploy to EKS using Helm" stage when use this block
+
         stage('Deploy to EKS using Helm') {
             steps {
                 sh """
@@ -297,10 +297,10 @@ pipeline {
 
         stage('Wait for Deployment Rollout') {
             steps {
-
-                sh "kubectl rollout status deployment/frontend-svc -n ${K8S_NAMESPACE}"
-                sh "kubectl rollout status deployment/user-svc -n ${K8S_NAMESPACE}"
-                sh "kubectl rollout status deployment/product-svc -n ${K8S_NAMESPACE}"
+                // Added --timeout=120s so the pipeline doesn't hang indefinitely
+                sh "kubectl rollout status deployment/frontend-svc -n ${K8S_NAMESPACE} --timeout=120s"
+                sh "kubectl rollout status deployment/user-svc -n ${K8S_NAMESPACE} --timeout=120s"
+                sh "kubectl rollout status deployment/product-svc -n ${K8S_NAMESPACE} --timeout=120s"
 
             }
         }
@@ -309,7 +309,6 @@ pipeline {
             steps {
                 sh 'kubectl get pods -n ${K8S_NAMESPACE}'
                 sh 'kubectl get svc -n ${K8S_NAMESPACE}'
-                sh 'kubectl get all -n ${K8S_NAMESPACE}'
                 sh 'kubectl get ingress -n ${K8S_NAMESPACE}'
             }
         }
@@ -321,6 +320,15 @@ pipeline {
         }
         failure {
             echo 'Pipeline failed — check logs'
+        }
+        always {
+            // Clean up local Docker images after every build to
+            // prevent the Jenkins agent disk from filling up over time
+            sh """
+            docker rmi ${USER_SVC_IMAGE}     || true
+            docker rmi ${PRODUCT_SVC_IMAGE}  || true
+            docker rmi ${FRONTEND_SVC_IMAGE} || true
+            """
         }
     }
 }

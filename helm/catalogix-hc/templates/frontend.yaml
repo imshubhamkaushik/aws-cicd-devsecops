@@ -5,7 +5,9 @@ metadata:
   labels:
     app: frontend-svc
 spec:
+  {{- if not .Values.hpa.enabled }}
   replicas: {{ .Values.frontendSvc.replicaCount | default 2 }}
+  {{- end }}
   selector:
     matchLabels:
       app: frontend-svc

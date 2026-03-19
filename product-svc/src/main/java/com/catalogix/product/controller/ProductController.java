@@ -2,8 +2,7 @@ package com.catalogix.product.controller;
 
 import com.catalogix.product.dto.CreateProductRequest;
 import com.catalogix.product.dto.ProductResponse;
-import com.catalogix.product.model.Product;
-import com.catalogix.product.repository.ProductRepository;
+import com.catalogix.product.service.ProductService;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -12,14 +11,17 @@ import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 import java.net.URI;
 import java.util.List;
 
+// DEV NOTE: X-USER-ID is a dev-only stand-in for auth. For production,
+// replace with Spring Security + JWT so identity is verified server-side.
+
 @RestController
 @RequestMapping("/products")
 public class ProductController {
 
-    private final ProductRepository repo;
+    private final ProductService svc;
 
-    public ProductController(ProductRepository repo) {
-        this.repo = repo;
+    public ProductController(ProductService svc) {
+        this.svc = svc;
     }
 
     // List products as ProductResponse DTOs
@@ -31,15 +33,7 @@ public class ProductController {
             return ResponseEntity.status(401).build(); // Unauthorized
         }
 
-        List<ProductResponse> products = repo.findAll().stream()
-                .map(p -> new ProductResponse(
-                    p.getId(), 
-                    p.getName(), 
-                    p.getDescription(), 
-                    p.getPrice()))
-                .toList();
-
-        return ResponseEntity.ok(products);
+        return ResponseEntity.ok(svc.listAll());
     }
     
     // Create product with validation
@@ -52,27 +46,15 @@ public class ProductController {
             return ResponseEntity.status(401).build(); // Unauthorized
         }
 
-        Product p = new Product();
-        p.setName(req.getName());
-        p.setDescription(req.getDescription());
-        p.setPrice(req.getPrice());
-        
-        Product saved = repo.save(p);
-        
-        ProductResponse resp = new ProductResponse(
-            saved.getId(), 
-            saved.getName(), 
-            saved.getDescription(), 
-            saved.getPrice()
-        );
+        ProductResponse created = svc.create(req);
 
         URI location = ServletUriComponentsBuilder
             .fromCurrentRequest()
             .path("/{id}")
-            .buildAndExpand(saved.getId())
+            .buildAndExpand(created.getId())
             .toUri();
 
-        return ResponseEntity.created(location).body(resp);
+        return ResponseEntity.created(location).body(created);
     }
 
     // Get single product
@@ -85,14 +67,7 @@ public class ProductController {
             return ResponseEntity.status(401).build(); // Unauthorized
         }
 
-        return repo.findById(id)
-            .map(p -> ResponseEntity.ok(
-                    new ProductResponse(
-                        p.getId(), 
-                        p.getName(), 
-                        p.getDescription(), 
-                        p.getPrice()
-                    )))
+        return svc.findById(id).map(ResponseEntity::ok)
             .orElse(ResponseEntity.notFound().build());
     }
 
@@ -100,15 +75,14 @@ public class ProductController {
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> delete(
         @RequestHeader("X-USER-ID") Long userId,
-        @PathVariable("id") long id
+        @PathVariable long id
     ) {
         if (userId == null) {
             return ResponseEntity.status(401).build(); // Unauthorized
         }
-        if (!repo.existsById(id)) {
+        if (!svc.deleteById(id)) {
             return ResponseEntity.notFound().build();
         }
-        repo.deleteById(id);
         return ResponseEntity.noContent().build();
     }
 }

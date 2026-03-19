@@ -5,7 +5,9 @@ metadata:
   labels:
     app: product-svc
 spec:
+  {{- if not .Values.hpa.enabled }}
   replicas: {{ .Values.productSvc.replicaCount | default 1 }}
+  {{- end }}
   selector:
     matchLabels:
       app: product-svc
@@ -40,6 +42,8 @@ spec:
                 secretKeyRef:
                   name: catalogix-secrets
                   key: DB_PASSWORD
+            - name: ALLOWED_ORIGINS
+              value: "{{ .Values.productSvc.env.ALLOWED_ORIGINS }}"
           resources: {{ toYaml .Values.productSvc.resources | nindent 12 }}
           startupProbe:
             httpGet:
