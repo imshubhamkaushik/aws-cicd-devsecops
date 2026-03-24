@@ -1,6 +1,6 @@
 # End-to-End DevSecOps CI/CD Pipeline for Microservices
 
-**(Jenkins · Docker · Amazon ECR · Amazon EKS · Helm · SonarQube · Trivy · Prometheus · Grafana )**
+**(Jenkins · Docker · AWS · Terraform · Helm · SonarQube · Trivy · Prometheus · Grafana )**
 
 ---
 
@@ -12,9 +12,10 @@ The primary objective is to showcase secure, automated application delivery usin
 
 - CI/CD pipeline automation using Jenkins
 - Containerization of microservices using Docker
+- Deployment and orchestration using Kubernetes and Helm
+- Infrastructure Provisioning using Terraform
 - Static code analysis and quality enforcement using SonarQube
 - Container and configuration security scanning using Trivy
-- Deployment and orchestration using Kubernetes and Helm
 - Monitoring and alerting using Prometheus and Grafana
 - Operational automation using Bash Scripts
 
@@ -45,6 +46,7 @@ Infrastructure provisioning (Terraform / Ansible) is intentionally kept out of s
 - **Cloud Platform**: AWS (EC2, EKS,ECR, IAM)
 - **Orchestration**: Kubernetes (Amazon EKS)
 - **Package Management**: Helm
+- **Infrastructure Provisioning**: Terraform
 - **Security & Quality**: SonarQube(SAST), Trivy(Container & Config Scan)
 - **Backend Services**: Spring Boot (Microservices)
 - **Frontend Services**: React
@@ -154,13 +156,13 @@ The system is intentionally divided into three independent layers, mirroring rea
 
 Applications run on Kubernetes,packaged and deployed using Helm.
 
-Namespace: ```shopease```
+Namespace: ```catalogix```
 
 Deployed workloads:
 
-- ``frontend`` – UI service (Deployment)
-- ``user-service`` – Backend microservice (Deployment)
-- ``product-service`` – Backend microservice (Deployment)
+- ``frontend-svc`` – UI service (Deployment)
+- ``user-svc`` – Backend microservice (Deployment)
+- ``product-svc`` – Backend microservice (Deployment)
 - ``postgres`` – Database (StatefulSet + PVC)
 
 Runtime characteristics
@@ -214,22 +216,22 @@ Cluster-wide infrastructure (e.g., monitoring) is not redeployed on every pipeli
 
 ## Repository Structure
 ```
-microservice-shopease/
-├── frontend/
+aws-cicd-devsecops/
+├── frontend-svc/
 │   └── src/
 |   └── .dockerignore
 |   └── Dockerfile
 |   └── nginx.conf
 |   └── package.json
 │
-├── user-service/
+├── user-svc/
 |   └── src/
 |   └── .dockerignore
 |   └── Dockerfile
 |   └── pom.xml
 |   └── sonar-project.properties
 |
-├── product-service/
+├── product-svc/
 |   └── src/
 |   └── .dockerignore
 |   └── Dockerfile
@@ -237,7 +239,7 @@ microservice-shopease/
 |   └── sonar-project.properties
 │
 ├── helm/
-│   └── shopease-hc/
+│   └── catalogix-hc/
 │       ├── templates/
 │       └── values.yaml
 |       └── Chart.yaml
@@ -251,15 +253,6 @@ microservice-shopease/
 |           └── prometheus-rbac.yaml
 |           └── grafana.yaml
 |           └── alertmanager.yaml
-|
-├── scripts/
-│   ├── env.sh
-│   ├── check-cluster.sh
-│   ├── deploy-monitoring.sh
-│   ├── show-monitoring-info.sh
-│   ├── rollout-status.sh
-│   ├── logs.sh
-│   └── cleanup.sh
 |
 ├── .trivyignore
 ├── docker-compose.yaml
@@ -509,4 +502,3 @@ These constraints are intentional to keep the project focused and explainable.
 - Applying DevSecOps principles in real-world workflows
 - Building service-level observability using Prometheus and Grafana
 - Cost-conscious cloud experimentation
-
