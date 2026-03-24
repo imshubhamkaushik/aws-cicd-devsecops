@@ -9,8 +9,8 @@ spec:
     apiVersion: apps/v1
     kind: Deployment
     name: user-svc
-  minReplicas: 2
-  maxReplicas: 4
+  minReplicas: {{ .Values.hpa.minReplicas }}
+  maxReplicas: {{ .Values.hpa.maxReplicas }}
   metrics:
     - type: Resource
       resource:
@@ -28,8 +28,8 @@ spec:
     apiVersion: apps/v1
     kind: Deployment
     name: product-svc
-  minReplicas: 2
-  maxReplicas: 4
+  minReplicas: {{ .Values.hpa.minReplicas }}
+  maxReplicas: {{ .Values.hpa.maxReplicas }}
   metrics:
     - type: Resource
       resource:
@@ -47,8 +47,8 @@ spec:
     apiVersion: apps/v1
     kind: Deployment
     name: frontend-svc
-  minReplicas: 2
-  maxReplicas: 4
+  minReplicas: {{ .Values.hpa.minReplicas }}
+  maxReplicas: {{ .Values.hpa.maxReplicas }}
   metrics:
     - type: Resource
       resource:

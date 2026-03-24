@@ -1,6 +1,6 @@
-resource "aws_iam_instance_profile" "profile" {
-  name = "${var.name}-ec2-instance-profile"
-  role = aws_iam_role.ec2_role.name
+resource "aws_iam_instance_profile" "jenkins_profile" {
+  name = "${var.name}-jenkins-instance-profile"
+  role = aws_iam_role.jenkins_ec2_role.name
 }
 
 resource "aws_instance" "jenkins_catalogix" {
@@ -8,7 +8,7 @@ resource "aws_instance" "jenkins_catalogix" {
   instance_type          = var.instance_type
   subnet_id              = aws_subnet.public[0].id
   key_name               = var.key_name
-  iam_instance_profile   = aws_iam_instance_profile.profile.name
+  iam_instance_profile   = aws_iam_instance_profile.jenkins_profile.name
   vpc_security_group_ids = [aws_security_group.jenkins.id]
 
   root_block_device {
@@ -30,12 +30,17 @@ resource "aws_instance" "jenkins_catalogix" {
   }
 }
 
+resource "aws_iam_instance_profile" "sonar_profile" {
+  name = "${var.name}-sonar-instance-profile"
+  role = aws_iam_role.sonar_ec2_role.name
+}
+
 resource "aws_instance" "sonarqube_catalogix" {
   ami                    = var.ami
   instance_type          = var.instance_type
   subnet_id              = aws_subnet.private[0].id
   key_name               = var.key_name
-  iam_instance_profile   = aws_iam_instance_profile.profile.name
+  iam_instance_profile   = aws_iam_instance_profile.sonar_profile.name
   vpc_security_group_ids = [aws_security_group.sonar.id]
 
   root_block_device {

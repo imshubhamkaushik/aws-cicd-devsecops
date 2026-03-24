@@ -11,6 +11,7 @@ output "cluster_endpoint" {
 output "cluster_certificate" {
   description = "EKS Cluster Certificate"
   value = aws_eks_cluster.cluster.certificate_authority[0].data
+  sensitive = true
 }
 
 output "oidc_provider_arn" {

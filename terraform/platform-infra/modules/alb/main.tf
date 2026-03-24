@@ -1,11 +1,11 @@
-data "http" "alb_iam_policy" {
-  url = "https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/v2.11.0/docs/install/iam_policy.json"
-}
+# Policy JSON is committed to the repo — no external HTTP call at plan time.
+# To update: download a new version of the file and commit it.
+# Source: https://github.com/kubernetes-sigs/aws-load-balancer-controller/blob/v2.11.0/docs/install/iam_policy.json
 
 resource "aws_iam_policy" "alb" {
   name        = "AWSLoadBalancerControllerIAMPolicy"
   description = "Scoped IAM policy for the AWS Load Balancer Controller"
-  policy      = data.http.alb_iam_policy.response_body
+  policy      = file("${path.module}/iam_policy.json")
 }
 
 # ALB IAM Role for AWS Load Balancer Controller

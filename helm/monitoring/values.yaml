@@ -38,39 +38,18 @@ kube-prometheus-stack:
               requests:
                 storage: 5Gi
 
-  # Alertmanager
-  alertmanager:
-    enabled: true
-
-    alertmanagerSpec:
-      resources:
-        requests:
-          cpu: 50m
-          memory: 64Mi
-        limits:
-          cpu: 200m
-          memory: 256Mi
-
-    config:
-      global:
-        resolve_timeout: 5m
-
-      route:
-        receiver: "default"
-        group_by: ["alertname", "namespace", "service"]
-        group_wait: 30s
-        group_interval: 5m
-        repeat_interval: 3h
-      receivers:
-        - name: "default"
-
   # Grafana
   grafana:
     enabled: true
 
-    # This is explicitly for demo. Never do this in real prod
-    # adminUser: admin
-    # adminPassword: admin
+      # DEV NOTE: existingSecret is empty so Grafana uses its default credentials.
+      # For production, create a k8s secret and reference it here:
+      #  kubectl create secret generic grafana-admin-secret \
+      #    --from-literal=admin-user=admin \
+      #    --from-literal=admin-password=<strong-password> \
+      #    -n monitoring
+      # Then set:
+      #   existingSecret: "grafana-admin-secret"
 
     admin:
       existingSecret: ""
@@ -118,7 +97,33 @@ kube-prometheus-stack:
         catalogix-health:
           file: dashboards/service-health-overview.json
 
-  # Custom Alert Rules (Equivalent to prometheus-alerts.yaml)
+  # Alertmanager
+  alertmanager:
+    enabled: true
+
+    alertmanagerSpec:
+      resources:
+        requests:
+          cpu: 50m
+          memory: 64Mi
+        limits:
+          cpu: 200m
+          memory: 256Mi
+
+    config:
+      global:
+        resolve_timeout: 5m
+
+      route:
+        receiver: "default"
+        group_by: ["alertname", "namespace", "service"]
+        group_wait: 30s
+        group_interval: 5m
+        repeat_interval: 3h
+      receivers:
+        - name: "default"
+
+  # Custom Alert Rules
   additionalPrometheusRules:
     - name: catalogix-alerts
       groups:

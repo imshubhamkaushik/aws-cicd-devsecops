@@ -3,10 +3,8 @@ kind: Ingress
 metadata:
   name: monitoring-ingress
   annotations:
-    kubernetes.io/ingress.class: alb
-
     alb.ingress.kubernetes.io/scheme: internal
-    # HIGHLIGHT:
+    # NOTE:
     # Monitoring is infrastructure, not user-facing.
     # Internal ALB prevents accidental public exposure.
 

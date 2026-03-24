@@ -23,6 +23,9 @@ locals {
   cluster_name        = module.eks.cluster_name
   cluster_endpoint    = module.eks.cluster_endpoint
   cluster_certificate = module.eks.cluster_certificate
+
+  # Env-specific prefix — change to "catalogix-staging" or "catalogix-prod" in other workspaces
+  env_prefix = "${var.project_name}-dev"
 }
 
 # Security Groups — all in the shared VPC from bootstrap
@@ -36,10 +39,13 @@ module "sg" {
 module "eks" {
   source = "../../modules/eks"
 
-  cluster_name    = "catalogix-dev"
+  cluster_name    = local.env_prefix
   cluster_version = "1.32"
-  instance_type = ["t2.micro"]
   private_subnets = local.private_subnets
+
+  min_size = 1
+  max_size = 2
+  desired_size = 1
 }
 
 # ECR — global, no VPC dependency
@@ -65,7 +71,7 @@ module "alb" {
 module "rds" {
   source = "../../modules/rds"
 
-  name            = "catalogix-db"
+  name            = "${local.env_prefix}-db"
   db_name         = "catalogix"
   username        = "postgres"
   password        = var.db_password
@@ -78,7 +84,7 @@ module "secrets" {
   source = "../../modules/secrets-manager"
   
   # Namespaced name avoids collision if you add more envs (staging, prod).
-  secret_name = "${var.project_name}/dev/db-credentials"
+  secret_name = "${local.env_prefix}/db-credentials"
 
   secret_values = {
     db_user = "postgres"

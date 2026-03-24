@@ -1,5 +1,44 @@
-# Ignore vulnerabilities listed in this file.
-# Populate this list after reviewing Trivy reports during CI.
-CVE-2026-22695 # libpng: libpng: Denial of service and information disclosure via heap buffer over-read... 
-CVE-2026-22801 # libpng: libpng: Information disclosure and denial of service via integer truncation in... 
-CVE-2026-25646 # libpng: LIBPNG has a heap buffer overflow in png_set_quantize
+# CVE-2026-22695
+
+# Package   : libpng (OS layer — ubuntu/debian/alpine base image)
+
+# Severity  : HIGH
+
+# Details   : Heap buffer over-read in png_image_finish_read() in libpng's simplified read API. Triggered only when an application actively reads PNG images through libpng's simplified API with a crafted input image.
+
+# Why ignored : None of the services in this project (Spring Boot user-svc / product-svc, React/Nginx frontend) call libpng's simplified read API at runtime. The Jenkins EC2 host and SonarQube instance also do not process PNG images through this code path. The library is present as an indirect OS dependency only; no network-reachable application code path invokes it.
+
+# Revisit   : When base image is next updated; remove if libpng >= patched version is shipped by the distro.
+
+CVE-2026-22695
+ 
+# ----------------------------------------------------------------------------------------------
+
+# CVE-2026-22801
+
+# Package   : libpng (OS layer — ubuntu/debian/alpine base image)
+
+# Severity  : HIGH
+
+# Details   : Information disclosure and denial of service via integer truncation in the libpng simplified write API (png_image_write_to_file / png_image_write_to_memory).
+
+# Why ignored : This project does not write PNG files at runtime. Neither the Spring Boot microservices, Nginx frontend, Jenkins pipeline executor, nor SonarQube use libpng's simplified write API. No Kubernetes workload in the shopease or monitoring namespaces has a code path that reaches this function.
+
+# Revisit   : When base image is next updated; remove if libpng >= patched version is shipped by the distro.
+
+CVE-2026-22801
+ 
+# ----------------------------------------------------------------------------------------------
+
+# CVE-2026-25646
+
+# Package   : libpng < 1.6.55 (OS layer — ubuntu/debian/alpine base image)
+
+# Severity  : HIGH (CVSS 8.1)
+
+# Details   : Out-of-bounds read and infinite loop in png_set_quantize() when called with a palette image that has no hIST chunk and more than 2× the display-supported colour count. Fixed in libpng 1.6.55.
+
+# Why ignored : png_set_quantize() is a colour-reduction function used by image editors and display applications. None of the workloads deployed to the EKS cluster — user-svc, product-svc, frontend-svc, Postgres StatefulSet, Prometheus, Grafana, Alertmanager — call this function. The vulnerability is triggered only by an application explicitly invoking png_set_quantize() on a malformed palette image, which no service in this project does.
+
+# Revisit   : When base image is next updated; remove once distro ships libpng >= 1.6.55-r0 (Alpine) or equivalent Debian/Ubuntu patch.
+CVE-2026-25646

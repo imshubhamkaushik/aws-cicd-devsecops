@@ -71,6 +71,9 @@ productSvc:
 
 hpa:
   enabled: true
+  minReplicas: 3
+  maxReplicas: 5
+  cpuUtilization: 75
 
 monitoring:
   enabled: true

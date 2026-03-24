@@ -58,6 +58,9 @@ resource "aws_nat_gateway" "natgw" {
   allocation_id = aws_eip.nat.id
   subnet_id     = aws_subnet.public[0].id
 
+  # PROD NOTE: This is a single NAT Gateway (cost-effective for dev).
+  # In production use one NAT GW per AZ so a single AZ failure doesn't cut outbound traffic for all private subnets. Add count = length(var.azs) and reference aws_subnet.public[count.index].id.
+
   tags = {
     Name = "${var.vpc_name}-natgw"
   }

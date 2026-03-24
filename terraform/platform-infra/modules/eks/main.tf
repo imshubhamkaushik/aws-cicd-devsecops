@@ -93,7 +93,7 @@ resource "aws_iam_role_policy_attachment" "ecr" {
 }
 
 # Node Group
-resource "aws_eks_node_group" "nodes" {
+resource "aws_eks_node_group" "node_group" {
   cluster_name = aws_eks_cluster.cluster.name
   node_role_arn = aws_iam_role.node_role.arn
   subnet_ids = var.private_subnets
@@ -102,16 +102,20 @@ resource "aws_eks_node_group" "nodes" {
   capacity_type = "ON_DEMAND"
   disk_size = 20
 
-  node_group_name = "${var.cluster_name}-nodes"
+  node_group_name = "${var.cluster_name}-node-group"
 
   scaling_config {
-    desired_size = 2
-    max_size = 3
-    min_size = 1
+    desired_size = var.desired_size
+    max_size = var.max_size
+    min_size = var.min_size
   }
 
   update_config {
     max_unavailable = 1
+  }
+
+  labels = {
+    role = "worker-node"
   }
 
   depends_on = [
@@ -120,7 +124,33 @@ resource "aws_eks_node_group" "nodes" {
     aws_iam_role_policy_attachment.ecr,
   ]
 
-  labels = {
-    role = "worker-node"
-  }
+}
+
+# EKS Add-ons — pinned versions so upgrades are deliberate, not silent.
+# To find latest versions: aws eks describe-addon-versions --kubernetes-version 1.32
+resource "aws_eks_addon" "vpc_cni" {
+  cluster_name      = aws_eks_cluster.cluster.name
+  addon_name        = "vpc-cni"
+  addon_version     = "v1.19.2-eksbuild.5"
+  resolve_conflicts_on_update = "OVERWRITE"
+
+  depends_on = [aws_eks_node_group.node_group]
+}
+
+resource "aws_eks_addon" "coredns" {
+  cluster_name      = aws_eks_cluster.cluster.name
+  addon_name        = "coredns"
+  addon_version     = "v1.11.4-eksbuild.2"
+  resolve_conflicts_on_update = "OVERWRITE"
+
+  depends_on = [aws_eks_node_group.node_group]
+}
+
+resource "aws_eks_addon" "kube_proxy" {
+  cluster_name      = aws_eks_cluster.cluster.name
+  addon_name        = "kube-proxy"
+  addon_version     = "v1.32.0-eksbuild.2"
+  resolve_conflicts_on_update = "OVERWRITE"
+
+  depends_on = [aws_eks_node_group.node_group]
 }
