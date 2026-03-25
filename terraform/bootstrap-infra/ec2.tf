@@ -14,19 +14,19 @@ resource "aws_instance" "jenkins_catalogix" {
   root_block_device {
     volume_size = 30
     volume_type = "gp3"
-    encrypted = true
+    encrypted   = true
   }
 
   metadata_options {
     http_endpoint = "enabled"
     # IMDSv2 — prevents SSRF attacks from reaching the metadata service
-    http_tokens   = "required"
+    http_tokens = "required"
   }
 
   tags = {
-    Name = "Jenkins Server - Catalogix"
+    Name    = "Jenkins Server - Catalogix"
     Project = var.project_tag
-    Role = "ci-cd"
+    Role    = "ci-cd"
   }
 }
 
@@ -46,7 +46,7 @@ resource "aws_instance" "sonarqube_catalogix" {
   root_block_device {
     volume_size = 30
     volume_type = "gp3"
-    encrypted = true
+    encrypted   = true
   }
 
   metadata_options {
@@ -55,8 +55,8 @@ resource "aws_instance" "sonarqube_catalogix" {
   }
 
   tags = {
-    Name = "SonarQube Server - Catalogix" 
+    Name    = "SonarQube Server - Catalogix"
     Project = var.project_tag
-    Role = "code-quality"
+    Role    = "code-quality"
   }
 }

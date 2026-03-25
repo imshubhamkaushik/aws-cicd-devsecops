@@ -74,7 +74,7 @@ resource "helm_release" "alb_controller" {
   ]
 
   depends_on = [
-    kubernetes_service_account.alb, 
+    kubernetes_service_account.alb,
     aws_iam_role_policy_attachment.alb
   ]
 }

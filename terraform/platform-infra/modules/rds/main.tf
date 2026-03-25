@@ -10,9 +10,9 @@ resource "aws_db_instance" "postgres" {
   engine_version = "16"
   instance_class = "db.t4g.micro"
 
-  allocated_storage = 20
+  allocated_storage     = 20
   max_allocated_storage = 100
-  storage_encrypted = true
+  storage_encrypted     = true
 
   db_name  = var.db_name
   username = var.username
@@ -21,7 +21,7 @@ resource "aws_db_instance" "postgres" {
   db_subnet_group_name   = aws_db_subnet_group.this.name
   vpc_security_group_ids = [var.security_group_id]
 
-  publicly_accessible = false
+  publicly_accessible     = false
   backup_retention_period = 7
   # DEV NOTE: skip_final_snapshot = true means no backup snapshot is taken when this RDS instance is destroyed. Fine for dev — acceptable to lose the data. 
   # For production set to false and set final_snapshot_identifier.

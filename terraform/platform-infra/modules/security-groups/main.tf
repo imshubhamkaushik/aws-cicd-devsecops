@@ -5,9 +5,9 @@
 # security group. ALB controller manages its own SGs when creating load balancers
 # via Ingress annotations. Neither needs a manually created SG here.
 resource "aws_security_group" "rds" {
-  name   = "rds-sg"
+  name        = "rds-sg"
   description = "Security group for RDS"
-  vpc_id = var.vpc_id
+  vpc_id      = var.vpc_id
 
   ingress {
     description = "Postgres access from VPC (EKS pods, Jenkins, EC2)"

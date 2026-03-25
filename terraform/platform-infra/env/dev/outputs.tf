@@ -1,11 +1,11 @@
 output "cluster_name" {
   description = "EKS cluster name — use in: aws eks update-kubeconfig --name <value>"
-  value = module.eks.cluster_name
+  value       = module.eks.cluster_name
 }
 
 output "cluster_endpoint" {
   description = "EKS API server endpoint"
-  value = module.eks.cluster_endpoint
+  value       = module.eks.cluster_endpoint
 }
 
 output "rds_endpoint" {

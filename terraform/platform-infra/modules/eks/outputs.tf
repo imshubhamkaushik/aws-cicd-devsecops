@@ -1,20 +1,20 @@
 output "cluster_name" {
   description = "EKS Cluster Name"
-  value = aws_eks_cluster.cluster.name
+  value       = aws_eks_cluster.cluster.name
 }
 
 output "cluster_endpoint" {
   description = "EKS Cluster Endpoint"
-  value = aws_eks_cluster.cluster.endpoint
+  value       = aws_eks_cluster.cluster.endpoint
 }
 
 output "cluster_certificate" {
   description = "EKS Cluster Certificate"
-  value = aws_eks_cluster.cluster.certificate_authority[0].data
-  sensitive = true
+  value       = aws_eks_cluster.cluster.certificate_authority[0].data
+  sensitive   = true
 }
 
 output "oidc_provider_arn" {
   description = "OIDC Provider ARN - used to create IRSA trust policies"
-  value = aws_iam_openid_connect_provider.oidc_provider.arn
+  value       = aws_iam_openid_connect_provider.oidc_provider.arn
 }

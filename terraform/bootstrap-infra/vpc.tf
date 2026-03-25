@@ -25,8 +25,8 @@ resource "aws_subnet" "public" {
   availability_zone       = var.azs[count.index]
 
   tags = {
-    Name = "${var.vpc_name}-public-subnet-${count.index + 1}"
-    "kubernetes.io/role/elb" = "1"
+    Name                                        = "${var.vpc_name}-public-subnet-${count.index + 1}"
+    "kubernetes.io/role/elb"                    = "1"
     "kubernetes.io/cluster/${var.cluster_name}" = "shared"
   }
 }
@@ -39,8 +39,8 @@ resource "aws_subnet" "private" {
   availability_zone = var.azs[count.index]
 
   tags = {
-    Name = "${var.vpc_name}-private-subnet-${count.index + 1}"
-    "kubernetes.io/role/internal-elb" = "1"
+    Name                                        = "${var.vpc_name}-private-subnet-${count.index + 1}"
+    "kubernetes.io/role/internal-elb"           = "1"
     "kubernetes.io/cluster/${var.cluster_name}" = "shared"
   }
 }
@@ -65,15 +65,15 @@ resource "aws_nat_gateway" "natgw" {
     Name = "${var.vpc_name}-natgw"
   }
 
-  depends_on = [ aws_internet_gateway.igw ]
+  depends_on = [aws_internet_gateway.igw]
 }
 
 # Route tables for public subnets
 resource "aws_route_table" "public" {
   vpc_id = aws_vpc.this.id
-  
-  tags   = { 
-    Name = "${var.vpc_name}-public-rt" 
+
+  tags = {
+    Name = "${var.vpc_name}-public-rt"
   }
 }
 
@@ -92,8 +92,8 @@ resource "aws_route_table_association" "public" {
 # Route tables for private subnets
 resource "aws_route_table" "private" {
   vpc_id = aws_vpc.this.id
-  tags   = { 
-    Name = "${var.vpc_name}-private-rt" 
+  tags = {
+    Name = "${var.vpc_name}-private-rt"
   }
 }
 
@@ -101,7 +101,7 @@ resource "aws_route" "private" {
   route_table_id         = aws_route_table.private.id
   destination_cidr_block = "0.0.0.0/0"
   nat_gateway_id         = aws_nat_gateway.natgw.id
-  depends_on = [ aws_nat_gateway.natgw ]
+  depends_on             = [aws_nat_gateway.natgw]
 }
 
 resource "aws_route_table_association" "private" {

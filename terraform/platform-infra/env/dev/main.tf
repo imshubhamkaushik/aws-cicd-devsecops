@@ -5,7 +5,7 @@ data "terraform_remote_state" "bootstrap" {
   backend = "s3"
   config = {
     bucket = "catalogix-tfstate"
-    key = "bootstrap/terraform.tfstate"
+    key    = "bootstrap/terraform.tfstate"
     region = "ap-south-1"
   }
 }
@@ -43,14 +43,14 @@ module "eks" {
   cluster_version = "1.32"
   private_subnets = local.private_subnets
 
-  min_size = 1
-  max_size = 2
+  min_size     = 1
+  max_size     = 2
   desired_size = 1
 }
 
 # ECR — global, no VPC dependency
 module "ecr" {
-  source = "../../modules/ecr"
+  source       = "../../modules/ecr"
   repositories = ["frontend-svc", "user-svc", "product-svc"]
 }
 
@@ -71,18 +71,18 @@ module "alb" {
 module "rds" {
   source = "../../modules/rds"
 
-  name            = "${local.env_prefix}-db"
-  db_name         = "catalogix"
-  username        = "postgres"
-  password        = var.db_password
-  private_subnets = local.private_subnets
+  name              = "${local.env_prefix}-db"
+  db_name           = "catalogix"
+  username          = "postgres"
+  password          = var.db_password
+  private_subnets   = local.private_subnets
   security_group_id = module.sg.rds_sg
 }
 
 # Secrets Manager
 module "secrets" {
   source = "../../modules/secrets-manager"
-  
+
   # Namespaced name avoids collision if you add more envs (staging, prod).
   secret_name = "${local.env_prefix}/db-credentials"
 
