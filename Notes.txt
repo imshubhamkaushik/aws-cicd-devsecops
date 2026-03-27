@@ -1,0 +1,17 @@
+mvn -pl user-svc -am clean package
+
+The Command Breakdown:-
+mvn ==> The Executable
+Invokes the Maven build tool.
+
+-pl user-svc ==> Project List
+Tells Maven to only focus on the user-svc artifact (using its artifactId or relative path).
+
+-am ==> Also Make
+Tells Maven to also build any modules that user-svc depends on.
+
+clean ==> Lifecycle Phase
+Deletes the target folder to ensure you aren't using old, stale compiled files.
+
+package ==> Lifecycle Phase
+Compiles the code, runs tests, and bundles it into its final format (usually a .jar or .war).

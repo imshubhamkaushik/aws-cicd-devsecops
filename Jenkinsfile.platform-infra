@@ -16,16 +16,16 @@ pipeline {
 
     stages {
 
-        stage('Checkout') {
-            steps {
-                git branch: 'main', url: 'https://github.com/YOUR_REPO.git'
-            }
-        }
-
         stage("Clean Workspace") { 
             steps { 
                 cleanWs() 
             } 
+        }
+
+        stage('Checkout') {
+            steps {
+                git branch: 'main', url: 'https://github.com/YOUR_REPO.git'
+            }
         }
 
         stage("Terraform Format Check"){ 
@@ -76,11 +76,17 @@ pipeline {
 
         stage("Verify EKS Cluster") {
             steps {
-                sh """
-                aws eks describe-cluster \
-                  --name ${CLUSTER_NAME} --region ${AWS_REGION} \
-                  --query "cluster.status"
-                """
+                withCredentials([[
+                    $class: 'AmazonWebServicesCredentialsBinding',
+                    credentialsId: 'aws-creds'
+                ]]) {
+                    sh """
+                    aws eks describe-cluster \
+                      --name ${CLUSTER_NAME} \
+                      --region ${AWS_REGION} \
+                      --query "cluster.status"
+                    """
+                }
             }
         }
     }
@@ -90,7 +96,7 @@ pipeline {
         failure { echo "Infrastructure pipeline failed." }
         always  { 
             dir("${TF_DIR}") { 
-                sh "rm -f main.tfplan" 
+                sh "rm -f main.tfplan || true" 
             } 
         }
     }
