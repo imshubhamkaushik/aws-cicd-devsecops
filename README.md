@@ -6,7 +6,7 @@
 
 ## Project Overview
 
-This project demonstrates the design and implementation of an **end-to-end DevSecOps CI/CD pipeline** for a containerized, microservices-based application deployed on Amazon EKS, with Jenkins running on Amazon EC2 and conatiner images stored in Amazon ECR.
+This project demonstrates the design and implementation of an **end-to-end DevSecOps CI/CD pipeline** for a containerized, microservices-based application deployed on Amazon EKS, with Infrastructure provisioned using Terraform, Jenkins running on Amazon EC2, and conatiner images stored in Amazon ECR.
 
 The primary objective is to showcase secure, automated application delivery using modern DevOps and DevSecOps practices, including:
 
@@ -25,17 +25,22 @@ The project intentionally focuses on **pipeline design, security integration, de
 
 ## Why This Project?
 
-This project focuses on CI/CD and DevSecOps practices for containerized applications, complementing infrastructure-focused DevOps projects.
+This project focuses on infrastructure, CI/CD and DevSecOps practices for containerized applications, complementing infrastructure-focused DevOps projects.
 
 Key focus areas include:
 
 - Secure CI/CD pipeline design using Jenkins
+- Terraform-based AWS provisioning (EKS, ECR, EC2, IAM)
 - Shift-left security using automated scanning
 - Kubernetes-based application delivery using Helm
 - Service-level observability for microservices
 - Operational automation for common day-to-day tasks
 
-Infrastructure provisioning (Terraform / Ansible) is intentionally kept out of scope to maintain clear separation between **CI/CD, application delivery, and infrastructure management**.
+Unlike isolated projects, this demonstrates full lifecycle DevOps:
+
+```
+Infrastructure → CI/CD → Deployment → Monitoring
+```
 
 ---
 

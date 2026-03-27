@@ -1,6 +1,3 @@
-// Terraform was inside the main app pipeline, meaning every code push
-// could trigger infra changes. This file is a separate, manually-triggered
-// pipeline with a human approval gate between plan and apply.
 // In Jenkins: configure this pipeline with NO webhook trigger.
 
 pipeline {
@@ -18,6 +15,13 @@ pipeline {
     }
 
     stages {
+
+        stage('Checkout') {
+            steps {
+                git branch: 'main', url: 'https://github.com/YOUR_REPO.git'
+            }
+        }
+
         stage("Clean Workspace") { 
             steps { 
                 cleanWs() 
@@ -25,8 +29,9 @@ pipeline {
         }
 
         stage("Terraform Format Check"){ 
-            steps { dir("${TF_DIR}") { 
-                sh "terraform fmt -check -recursive" 
+            steps { 
+                dir("${TF_DIR}") { 
+                    sh "terraform fmt -check -recursive" 
                 } 
             } 
         }
