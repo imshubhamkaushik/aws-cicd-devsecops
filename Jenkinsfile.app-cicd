@@ -2,6 +2,11 @@ pipeline {
     agent any
 
     environment {
+        // Jenkins credentials - Stoored as credentials in Jenkins UI
+        // SONARQUBE_SERVER = credentials("sonarqube")
+        DB_PASSWORD_CREDENTIAL_ID = credentials("catalogix-db-password")
+        AWS_ACCOUNT_ID = credentials("aws-account-id") // Stored as AWS Account ID or AWS Access Key
+
         // AWS
         AWS_REGION = "ap-south-1"
 
@@ -22,10 +27,6 @@ pipeline {
         HELM_CHART_DIR = "helm/catalogix-hc"
         K8S_NAMESPACE = "catalogix"
 
-        // Jenkins credentials
-        // SONARQUBE_SERVER = credentials("sonarqube")
-        DB_PASSWORD_CREDENTIAL_ID = credentials("catalogix-db-password")
-        AWS_ACCOUNT_ID = credentials("aws-account-id") //  Stored as a Jenkins credential, not hardcoded here
     }
 
     tools {
@@ -52,9 +53,7 @@ pipeline {
                     $class: 'AmazonWebServicesCredentialsBinding',
                     credentialsId: 'aws-creds'
                 ]]) {
-                    sh '''
-                    aws sts get-caller-identity
-                    '''
+                    sh "aws sts get-caller-identity"
                 }
             }
         }
@@ -64,27 +63,27 @@ pipeline {
                 stage('User Service') {
                     steps {
                         dir('user-svc') {
-                            sh 'mvn -B clean verify'
+                            sh "mvn -B clean verify"
                         }
                     }
                 }
                 stage('Product Service') {
                     steps {
                         dir('product-svc') {
-                            sh 'mvn -B clean verify'
+                            sh "mvn -B clean verify"
                         }
                     }
                 }
             }
         }
 
-        stage('Build Artifacts & SonarQube Analysis') {
+        stage('Build Artifacts') {
             parallel {
 
                 stage('User Service JAR') {
                     steps {
                         dir('user-svc') {
-                            sh 'mvn -B package -DskipTests'
+                            sh "mvn -B package -DskipTests"
                             // withSonarQubeEnv("${SONARQUBE_SERVER}") {
                             //     sh 'mvn sonar:sonar'
                             //     timeout(time: 5, unit: 'MINUTES') {
@@ -98,7 +97,7 @@ pipeline {
                 stage('Product Service JAR') {
                     steps {
                         dir('product-svc') {
-                            sh 'mvn -B package -DskipTests'
+                            sh "mvn -B package -DskipTests"
                             // withSonarQubeEnv("${SONARQUBE_SERVER}") {
                             //     sh 'mvn sonar:sonar'
                             //     timeout(time: 5, unit: 'MINUTES') {
@@ -112,42 +111,26 @@ pipeline {
                 stage('Frontend Service Build') {
                     steps {
                         dir('frontend-svc') {
-                            sh 'npm ci'
-                            sh 'npm run build'
+                            sh "npm ci"
+                            sh "npm run build"
                         }
                     }
                 }
             }
         }
 
-        stage('Build Docker Images') {
-            parallel {
-                stage('User Service') {
-                    steps {
-                        sh "docker build -t ${USER_SVC_IMAGE} user-svc"
-                    }
-                }
-                stage('Product Service') {
-                    steps {
-                        sh "docker build -t ${PRODUCT_SVC_IMAGE} product-svc"
-                    }
-                }
-                stage('Frontend Service') {
-                    steps {
-                        sh "docker build -t ${FRONTEND_SVC_IMAGE} frontend-svc"
-                    }
-                }
-            }
-        }
-
-        stage('Trivy Image Security Scan') {
+        stage('Build Docker Images and Trivy Image Scan') {
             parallel {
                 stage('User Service') {
                     steps {
                         sh """
+                        set -e
+
+                        docker build -t ${USER_SVC_IMAGE} user-svc
+
                         docker run --rm \
                           -v /var/run/docker.sock:/var/run/docker.sock \
-                          aquasec/trivy:latest image \
+                          aquasec/trivy:0.50.0 image \
                           --severity HIGH,CRITICAL \
                           --exit-code 1 \
                           --ignore-unfixed \
@@ -158,9 +141,13 @@ pipeline {
                 stage('Product Service') {
                     steps {
                         sh """
+                        set -e
+
+                        docker build -t ${PRODUCT_SVC_IMAGE} product-svc
+
                         docker run --rm \
                           -v /var/run/docker.sock:/var/run/docker.sock \
-                          aquasec/trivy:latest image \
+                          aquasec/trivy:0.50.0 image \
                           --severity HIGH,CRITICAL \
                           --exit-code 1 \
                           --ignore-unfixed \
@@ -171,9 +158,13 @@ pipeline {
                 stage('Frontend Service') {
                     steps {
                         sh """
+                        set -e 
+
+                        docker build -t ${FRONTEND_SVC_IMAGE} frontend-svc
+
                         docker run --rm \
                           -v /var/run/docker.sock:/var/run/docker.sock \
-                          aquasec/trivy:latest image \
+                          aquasec/trivy:0.50.0 image \
                           --severity HIGH,CRITICAL \
                           --exit-code 1 \
                           --ignore-unfixed \
@@ -190,10 +181,12 @@ pipeline {
                     $class: 'AmazonWebServicesCredentialsBinding',
                     credentialsId: 'aws-creds'
                 ]]) {
-                    sh '''
+                    sh """
+                    set -e
+
                     aws ecr get-login-password --region $AWS_REGION \
                     | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
-                    '''
+                    """
                 }
             }
         }
@@ -202,68 +195,67 @@ pipeline {
             parallel {
                 stage('Push User Service') {
                     steps {
-                        sh "docker push ${USER_SVC_IMAGE}"
+                        sh """
+                        set -e 
+                        
+                        docker push ${USER_SVC_IMAGE}
+                        """
                     }
                 }
                 stage('Push Product Service') {
                     steps {
-                        sh "docker push ${PRODUCT_SVC_IMAGE}"
+                        sh """
+                        set -e
+                        
+                        docker push ${PRODUCT_SVC_IMAGE}
+                        """
                     }
                 }
                 stage('Push Frontend Service') {
                     steps {
-                        sh "docker push ${FRONTEND_SVC_IMAGE}"
+                        sh """
+                        set -e
+
+                        docker push ${FRONTEND_SVC_IMAGE}
+                        """
                     }
                 }
             }
-        }
-
-        // stage('Terraform Infrastructure') {
-        //     steps {
-        //         dir('terraform/env/dev') {
-
-        //             sh 'terraform fmt -recursive'
-
-        //             sh 'terraform init'
-
-        //             sh 'terraform validate'
-
-        //             sh 'terraform plan -out main.tfplan'
-
-        //             sh 'terraform apply -auto-approve main.tfplan'
-        //         }
-        //     }
-        // }
-
-        // stage('Verify Infrastructure Readiness') {
-        //     steps {
-
-        //         sh """
-        //         aws eks describe-cluster \
-        //         --name ${CLUSTER_NAME} \
-        //         --region ${AWS_REGION} \
-        //         --query "cluster.status"
-        //         """
-
-        //     }
-        // }   
+        }   
 
         stage('Validate Kubernetes Access') {
             steps {
-                // Generate the config file for the Jenkins user dynamically
-                sh 'aws eks update-kubeconfig --region ${AWS_REGION} --name ${CLUSTER_NAME}'
+                withCredentials([[
+                    $class: 'AmazonWebServicesCredentialsBinding',
+                    credentialsId: 'aws-creds'
+                ]]){
+                    sh"""
+                    set -e
+
+                    export KUBECONFIG=$WORKSPACE/kubeconfig
+
+                    aws eks update-kubeconfig \
+                        --region ${AWS_REGION} \
+                        --name ${CLUSTER_NAME}
         
-                // Now this will work
-                sh 'kubectl get nodes' 
+                    kubectl get nodes
+                    """
+                }                
             }
         }
 
         stage('Create / Update Kubernetes Secrets') {
             steps {
                 withCredentials([
-                    string(credentialsId: "${DB_PASSWORD_CREDENTIAL_ID}", variable: 'DB_PASSWORD')
+                    string(credentialsId: "${DB_PASSWORD_CREDENTIAL_ID}", variable: 'DB_PASSWORD'),
+                    [
+                        $class: 'AmazonWebServicesCredentialsBinding',
+                        credentialsId: 'aws-creds'
+                    ]
                 ]) {
                     sh """
+                    set -e
+
                     kubectl create secret generic catalogix-secrets \
                       --from-literal=DB_PASSWORD="\${DB_PASSWORD}" \
                       --from-literal=DB_USER=postgres \
@@ -277,9 +269,11 @@ pipeline {
         stage('Trivy Scan Helm Charts') {
             steps {
                 sh """
+                set -e
+
                 docker run --rm \
                   -v \$(pwd):/catalogix \
-                  aquasec/trivy:latest config \
+                  aquasec/trivy:0.50.0 config \
                   --severity HIGH,CRITICAL \
                   --exit-code 1 \
                   --ignorefile /catalogix/.trivyignore \
@@ -291,10 +285,10 @@ pipeline {
         stage('Fetch RDS Endpoint') {
             steps {
                 dir('terraform/platform-infra/env/dev') {
-                    sh 'terraform init -input=false'
+                    sh "terraform init -input=false"
                     script {
                         env.RDS_ENDPOINT = sh(
-                            script: "terraform -chdir=terraform/platform-infra/env/dev output -raw rds_endpoint",
+                            script: "terraform output -raw rds_endpoint",
                             returnStdout: true
                         ).trim()
                     }
@@ -309,6 +303,7 @@ pipeline {
                     credentialsId: 'aws-creds'
                 ]]) {
                     sh """
+                    set -e
                     export KUBECONFIG=$WORKSPACE/kubeconfig
 
                     aws eks update-kubeconfig \
@@ -318,10 +313,12 @@ pipeline {
                     helm upgrade --install catalogix ${HELM_CHART_DIR} \
                         --namespace ${K8S_NAMESPACE} \
                         --create-namespace \
+                        -f ${HELM_CHART_DIR}/values-dev.yaml \
                         --set global.imageRegistry=${ECR_REGISTRY} \
                         --set global.imageTag=${IMAGE_TAG} \
                         --set global.cloudProvider=aws \
-                        --set database.host=${RDS_ENDPOINT}
+                        --set database.host=${RDS_ENDPOINT} \
+                        --wait --timeout 120s   
                     """
                 }
             }
@@ -339,27 +336,48 @@ pipeline {
 
         stage('Post-Deployment Verification') {
             steps {
-                sh 'kubectl get pods -n ${K8S_NAMESPACE}'
-                sh 'kubectl get svc -n ${K8S_NAMESPACE}'
-                sh 'kubectl get ingress -n ${K8S_NAMESPACE}'
+                sh "kubectl get pods -n ${K8S_NAMESPACE}"
+                sh "kubectl get svc -n ${K8S_NAMESPACE}"
+                sh "kubectl get ingress -n ${K8S_NAMESPACE}"
             }
         }
     }
 
     post {
         success {
-            echo 'Pipeline executed successfully'
+            echo "Deployment successful!!!"
         }
         failure {
-            echo 'Pipeline failed — check logs'
+            echo "Deployment failed - rolling back..."
+
+            withCredentials([
+                [
+                    $class: 'AmazonWebServicesCredentialsBinding',
+                    credentialsId: 'aws-creds'
+                ]
+            ]) {
+                sh """
+                set -e
+
+                export KUBECONFIG=$WORKSPACE/kubeconfig
+
+                aws eks update-kubeconfig \
+                    --name ${CLUSTER_NAME} \
+                    --region ${AWS_REGION}
+
+                helm history catalogix --namespace ${K8S_NAMESPACE} || true
+
+                helm rollback catalogix --namespace ${K8S_NAMESPACE} || true
+                """
+            }
         }
         always {
             // Clean up local Docker images after every build to
             // prevent the Jenkins agent disk from filling up over time
             sh """
-            docker rmi ${USER_SVC_IMAGE}     || true
-            docker rmi ${PRODUCT_SVC_IMAGE}  || true
-            docker rmi ${FRONTEND_SVC_IMAGE} || true
+            set -e
+
+            docker system prune -f || true
             """
         }
     }
