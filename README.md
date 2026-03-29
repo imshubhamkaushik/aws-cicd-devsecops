@@ -127,7 +127,7 @@ flowchart TD
     Jenkins -->|Deploy via Helm| EKS[Amazon EKS]
 
     subgraph EKS["Amazon EKS Cluster"]
-        subgraph AppNS["Namespace: shopease"]
+        subgraph AppNS["Namespace: catalogix"]
             FE[Frontend]
             US[User Service]
             PS[Product Service]

@@ -7,7 +7,7 @@ COPY . .
 RUN npm run build
 
 # Stage 2: Serve via Nginx
-FROM nginx:1.26-alpine
+FROM nginxinc/nginx-unprivileged:1.26-alpine
 RUN apk update && apk upgrade --no-cache
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /app/build /usr/share/nginx/html

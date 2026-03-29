@@ -16,6 +16,11 @@ public class RateLimiterFilter implements Filter {
     private static final long WINDOW_MS = 60000; // 1 minute
     private static final int MAX_REQUESTS = 30; // 30 requests per min
 
+    // DESIGN NOTE: This rate limiter is in-process (per-JVM). With HPA scaling to multiple
+    // replicas, each pod maintains its own counter — a single client can bypass the limit
+    // by distributing requests across pods. For production, move rate limiting to the
+    // ingress/ALB layer or use a shared store (e.g. Redis). Sufficient for a single-pod dev setup.
+
     private final Map<String, RequestCounter> ipStore = new ConcurrentHashMap<>();
 
     @Override

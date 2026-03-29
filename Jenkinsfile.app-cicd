@@ -4,7 +4,7 @@ pipeline {
     environment {
         // Jenkins credentials - Stoored as credentials in Jenkins UI
         // SONARQUBE_SERVER = credentials("sonarqube")
-        DB_PASSWORD_CREDENTIAL_ID = credentials("catalogix-db-password")
+        // DB_PASSWORD_CREDENTIAL_ID = credentials("catalogix-db-password") // DB password credentials hardcoded directly in Jenkinsfile
         AWS_ACCOUNT_ID = credentials("aws-account-id") // Stored as AWS Account ID or AWS Access Key
 
         // AWS
@@ -185,7 +185,7 @@ pipeline {
                     set -e
 
                     aws ecr get-login-password --region $AWS_REGION \
-                    | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
+                    | docker login --username AWS --password-stdin $ECR_REGISTRY
                     """
                 }
             }
@@ -247,7 +247,7 @@ pipeline {
         stage('Create / Update Kubernetes Secrets') {
             steps {
                 withCredentials([
-                    string(credentialsId: "${DB_PASSWORD_CREDENTIAL_ID}", variable: 'DB_PASSWORD'),
+                    string(credentialsId: "catalogix-db-password", variable: 'DB_PASSWORD'),
                     [
                         $class: 'AmazonWebServicesCredentialsBinding',
                         credentialsId: 'aws-creds'
@@ -256,9 +256,11 @@ pipeline {
                     sh """
                     set -e
 
+                    export KUBECONFIG=$WORKSPACE/kubeconfig
+
                     kubectl create secret generic catalogix-secrets \
                       --from-literal=DB_PASSWORD="\${DB_PASSWORD}" \
-                      --from-literal=DB_USER=postgres \
+                      --from-literal=DB_USER=catalogix \
                       --namespace ${K8S_NAMESPACE} \
                       --dry-run=client -o yaml | kubectl apply -f -
                     """
@@ -318,7 +320,7 @@ pipeline {
                         --set global.imageTag=${IMAGE_TAG} \
                         --set global.cloudProvider=aws \
                         --set database.host=${RDS_ENDPOINT} \
-                        --wait --timeout 120s   
+                        --wait --timeout 180s   
                     """
                 }
             }
@@ -326,10 +328,10 @@ pipeline {
 
         stage('Wait for Deployment Rollout') {
             steps {
-                // Added --timeout=120s so the pipeline doesn't hang indefinitely
-                sh "kubectl rollout status deployment/frontend-svc -n ${K8S_NAMESPACE} --timeout=120s"
-                sh "kubectl rollout status deployment/user-svc -n ${K8S_NAMESPACE} --timeout=120s"
-                sh "kubectl rollout status deployment/product-svc -n ${K8S_NAMESPACE} --timeout=120s"
+                // Added --timeout=180s so the pipeline doesn't hang indefinitely
+                sh "kubectl rollout status deployment/frontend-svc -n ${K8S_NAMESPACE} --timeout=180s"
+                sh "kubectl rollout status deployment/user-svc -n ${K8S_NAMESPACE} --timeout=180s"
+                sh "kubectl rollout status deployment/product-svc -n ${K8S_NAMESPACE} --timeout=180s"
 
             }
         }
