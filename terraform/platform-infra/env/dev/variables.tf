@@ -4,8 +4,8 @@ variable "aws_region" {
   default     = "ap-south-1"
 }
 
-variable "project_name" {
-  description = "Logical name of the project — used in Secrets Manager path"
+variable "cluster_name" {
+  description = "Logical name of the cluster — used in Secrets Manager path"
   type        = string
 }
 

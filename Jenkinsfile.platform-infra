@@ -6,10 +6,11 @@ pipeline {
 
     environment {
         AWS_REGION   = "ap-south-1"
-        CLUSTER_NAME = "catalogix-cluster"
+        CLUSTER_NAME = "catalogix-dev"
         TF_DIR       = "terraform/platform-infra/env/dev"
         // GIT_REPO_URL is injected by JCasC from /etc/default/jenkins — update group_vars/jenkins.yaml
         GIT_REPO_URL = "${env.GIT_REPO_URL}"
+        KUBECONFIG   = "${WORKSPACE}/kubeconfig"
     }
 
     options {
@@ -98,23 +99,27 @@ pipeline {
             }
         }
 
-        // Monitoring is deployed here — after the cluster and ESO are ready — rather than
-        // as a separate manual step. This makes the platform-infra pipeline the single entry
-        // point for all cluster-level infrastructure, with app deployments handled separately.
+        // Monitoring is deployed here — after the cluster and ESO are ready — rather than as a separate manual step. 
+        // This makes the platform-infra pipeline the single entry point for all cluster-level infrastructure, with app deployments handled separately.
         stage('Deploy Monitoring Stack') {
             steps {
-                sh """
-                set -e
-                aws eks update-kubeconfig --name ${CLUSTER_NAME} --region ${AWS_REGION}
+                withCredentials([[
+                    $class: 'AmazonWebServicesCredentialsBinding',
+                    credentialsId: 'aws-creds'
+                ]]) {
+                    sh """
+                    set -e
+                    aws eks update-kubeconfig --name ${CLUSTER_NAME} --region ${AWS_REGION}
  
-                # Resolve the kube-prometheus-stack dependency before install
-                helm dependency update helm/monitoring
+                    # Resolve the kube-prometheus-stack dependency before install
+                    helm dependency update helm/monitoring
  
-                helm upgrade --install monitoring helm/monitoring \
-                    --namespace monitoring \
-                    --create-namespace \
-                    --wait --timeout 300s
-                """
+                    helm upgrade --install monitoring helm/monitoring \
+                        --namespace monitoring \
+                        --create-namespace \
+                        --wait --timeout 300s
+                    """
+                }
             }
         }
 

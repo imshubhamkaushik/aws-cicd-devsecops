@@ -29,8 +29,8 @@ locals {
   cluster_endpoint    = module.eks.cluster_endpoint
   cluster_certificate = module.eks.cluster_certificate
 
-  # Env-specific prefix — change to "catalogix-staging" or "catalogix-prod" in other workspaces
-  env_prefix = "${var.project_name}-dev"
+  # Env-specific prefix — change to "catalogix-cluster-staging" or "catalogix-cluster-prod" in other workspaces
+  env_prefix = "${var.cluster_name}-dev"
 
   # Single source of truth for the DB username - referenced by RDS, Secrets Manager, and Helm
   db_username = "catalogix"
@@ -107,6 +107,12 @@ module "secrets" {
 module "eso" {
   source = "../../modules/eso"
 
-  
+  cluster_name      = module.eks.cluster_name
+  oidc_provider_arn = module.eks.oidc_provider_arn
+  oidc_provider     = trimprefix(module.eks.oidc_provider_arn, "arn:aws:iam::${data.aws_caller_identity.current.account_id}:oidc-provider/")
+  region            = var.aws_region
+
+  # ESO must come after EKS nodes and ALB controller so the cluster is stable
+  depends_on = [module.eks, module.alb]
   
 }
