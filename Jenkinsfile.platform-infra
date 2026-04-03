@@ -1,4 +1,5 @@
-// In Jenkins: configure this pipeline with NO webhook trigger.
+// Infrastructure pipeline — trigger manually only, never via webhook.
+// Runs: Terraform fmt → init → validate → plan → human approval → apply → verify EKS → deploy monitoring
 
 pipeline {
     agent any
@@ -7,6 +8,8 @@ pipeline {
         AWS_REGION   = "ap-south-1"
         CLUSTER_NAME = "catalogix-cluster"
         TF_DIR       = "terraform/platform-infra/env/dev"
+        // GIT_REPO_URL is injected by JCasC from /etc/default/jenkins — update group_vars/jenkins.yaml
+        GIT_REPO_URL = "${env.GIT_REPO_URL}"
     }
 
     options {
@@ -24,7 +27,10 @@ pipeline {
 
         stage('Checkout') {
             steps {
-                git branch: 'main', url: 'https://github.com/YOUR_REPO.git'
+                // credentialsId references the github-token defined in JCasC
+                git branch: 'main',
+                    url: "${GIT_REPO_URL}",
+                    credentialsId: 'github-token'
             }
         }
 
@@ -35,6 +41,7 @@ pipeline {
                 } 
             } 
         }
+
         stage("Terraform Init") { 
             steps { 
                 dir("${TF_DIR}") { 
@@ -84,16 +91,52 @@ pipeline {
                     aws eks describe-cluster \
                       --name ${CLUSTER_NAME} \
                       --region ${AWS_REGION} \
-                      --query "cluster.status"
+                      --query "cluster.status" \
+                        --output text
                     """
                 }
+            }
+        }
+
+        // Monitoring is deployed here — after the cluster and ESO are ready — rather than
+        // as a separate manual step. This makes the platform-infra pipeline the single entry
+        // point for all cluster-level infrastructure, with app deployments handled separately.
+        stage('Deploy Monitoring Stack') {
+            steps {
+                sh """
+                set -e
+                aws eks update-kubeconfig --name ${CLUSTER_NAME} --region ${AWS_REGION}
+ 
+                # Resolve the kube-prometheus-stack dependency before install
+                helm dependency update helm/monitoring
+ 
+                helm upgrade --install monitoring helm/monitoring \
+                    --namespace monitoring \
+                    --create-namespace \
+                    --wait --timeout 300s
+                """
+            }
+        }
+
+        stage('Verify Monitoring Stack') {
+            steps {
+                sh """
+                kubectl get pods -n monitoring
+                kubectl get svc  -n monitoring
+                """
             }
         }
     }
 
     post {
-        success { echo "Infrastructure applied successfully." }
-        failure { echo "Infrastructure pipeline failed." }
+        success { 
+            echo "Platform infrastructure and monitoring stack applied successfully." 
+        }
+
+        failure { 
+            echo "Platform infrastructure pipeline failed."
+        }
+        
         always  { 
             dir("${TF_DIR}") { 
                 sh "rm -f main.tfplan || true" 

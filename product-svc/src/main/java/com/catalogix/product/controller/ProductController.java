@@ -27,7 +27,7 @@ public class ProductController {
     // List products as ProductResponse DTOs
     @GetMapping
     public ResponseEntity<List<ProductResponse>> listAll(
-        @RequestHeader("X-USER-ID") Long userId
+        @RequestHeader(value = "X-USER-ID", required = false) Long userId
     ) {
         if (userId == null) {
             return ResponseEntity.status(401).build(); // Unauthorized

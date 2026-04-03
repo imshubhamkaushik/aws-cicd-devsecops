@@ -20,6 +20,18 @@
     <properties>
         <java.version>21</java.version>
         <spring.boot.version>3.5.13</spring.boot.version>
+
+        <!-- SonarQube — single project key covers both modules in one scan -->
+        <sonar.projectKey>catalogix</sonar.projectKey>
+        <sonar.projectName>Catalogix</sonar.projectName>
+        <sonar.projectVersion>1.0</sonar.projectVersion>
+        <sonar.sourceEncoding>UTF-8</sonar.sourceEncoding>
+        <sonar.sources>src/main/java</sonar.sources>
+        <sonar.tests>src/test/java</sonar.tests>
+        <sonar.java.binaries>target/classes</sonar.java.binaries>
+        <sonar.coverage.jacoco.xmlReportPaths>
+            ${project.basedir}/target/site/jacoco/jacoco.xml
+        </sonar.coverage.jacoco.xmlReportPaths>
     </properties>
 
     <!-- Dependency Management -->
@@ -72,6 +84,7 @@
                     <version>3.11.0</version>
                     <configuration>
                         <release>${java.version}</release>
+                        <parameters>true</parameters>
                     </configuration>
                 </plugin>
 
@@ -80,6 +93,9 @@
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-surefire-plugin</artifactId>
                     <version>3.1.2</version>
+                    <configuration>
+                        <excludedGroups>integration</excludedGroups>
+                    </configuration>
                 </plugin>
 
                 <!-- Coverage -->
@@ -90,6 +106,22 @@
                 </plugin>
 
             </plugins>
+
+            <plugin>
+                <groupId>org.jacoco</groupId>
+                <artifactId>jacoco-maven-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>prepare-agent</id>
+                        <goals><goal>prepare-agent</goal></goals>
+                    </execution>
+                    <execution>
+                        <id>report</id>
+                        <phase>verify</phase>
+                        <goals><goal>report</goal></goals>
+                    </execution>
+                </executions>
+            </plugin>
         </pluginManagement>
     </build>
 

@@ -2,31 +2,32 @@ pipeline {
     agent any
 
     environment {
-        // Jenkins credentials - Stoored as credentials in Jenkins UI
-        // SONARQUBE_SERVER = credentials("sonarqube")
-        // DB_PASSWORD_CREDENTIAL_ID = credentials("catalogix-db-password") // DB password credentials hardcoded directly in Jenkinsfile
-        AWS_ACCOUNT_ID = credentials("aws-account-id") // Stored as AWS Account ID or AWS Access Key
-
         // AWS
         AWS_REGION = "ap-south-1"
-
+        
         // Cluster Name
         CLUSTER_NAME = "catalogix-cluster"
-
+        
         // Image tags
         MAJOR_VERSION = "1.0"
         IMAGE_TAG = "${MAJOR_VERSION}-${BUILD_NUMBER}"
-
-        ECR_REGISTRY = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
-
-        USER_SVC_IMAGE = "${ECR_REGISTRY}/user-svc:${IMAGE_TAG}"
-        PRODUCT_SVC_IMAGE = "${ECR_REGISTRY}/product-svc:${IMAGE_TAG}"
-        FRONTEND_SVC_IMAGE = "${ECR_REGISTRY}/frontend-svc:${IMAGE_TAG}"
-
+        
         // Kubernetes / Helm
         HELM_CHART_DIR = "helm/catalogix-hc"
         K8S_NAMESPACE = "catalogix"
 
+        // Jenkins credentials - Stoored as credentials in Jenkins UI
+        SONARQUBE_SERVER = credentials("sonarqube")
+        // DB_PASSWORD_CREDENTIAL_ID = credentials("catalogix-db-password") // DB password credentials hardcoded directly in Jenkinsfile
+        AWS_ACCOUNT_ID = credentials("aws-creds") // Stored as AWS Account ID or AWS Access Key and Secret Key in Jenkins credentials. If using Access Key and Secret Key, ensure that the Jenkinsfile is updated to use those credentials instead of relying on instance metadata for AWS authentication.
+
+        // Amazon ECR registry URL format
+        ECR_REGISTRY = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+
+        // Docker images
+        USER_SVC_IMAGE = "${ECR_REGISTRY}/user-svc:${IMAGE_TAG}"
+        PRODUCT_SVC_IMAGE = "${ECR_REGISTRY}/product-svc:${IMAGE_TAG}"
+        FRONTEND_SVC_IMAGE = "${ECR_REGISTRY}/frontend-svc:${IMAGE_TAG}"
     }
 
     tools {
@@ -44,6 +45,12 @@ pipeline {
         stage('Clean Workspace') {
             steps {
                 cleanWs()
+            }
+        }
+
+        stage('Checkout') {
+            steps {
+                checkout scm
             }
         }
 
@@ -84,12 +91,6 @@ pipeline {
                     steps {
                         dir('user-svc') {
                             sh "mvn -B package -DskipTests"
-                            // withSonarQubeEnv("${SONARQUBE_SERVER}") {
-                            //     sh 'mvn sonar:sonar'
-                            //     timeout(time: 5, unit: 'MINUTES') {
-                            //         waitForQualityGate abortPipeline: true
-                            //     }
-                            // }
                         }
                     }
                 }
@@ -98,12 +99,6 @@ pipeline {
                     steps {
                         dir('product-svc') {
                             sh "mvn -B package -DskipTests"
-                            // withSonarQubeEnv("${SONARQUBE_SERVER}") {
-                            //     sh 'mvn sonar:sonar'
-                            //     timeout(time: 5, unit: 'MINUTES') {
-                            //         waitForQualityGate abortPipeline: true
-                            //     }
-                            // }
                         } 
                     }
                 }
@@ -115,6 +110,22 @@ pipeline {
                             sh "npm run build"
                         }
                     }
+                }
+            }
+        }
+
+        stage('SonarQube Analysis') {
+            steps {
+                // Run from the repo root — Maven aggregator covers user-svc and product-svc
+                // in a single scan. Both modules report under the same project key: catalogix.
+                // JARs must exist before this runs (Build Artifacts stage produces them).
+                withSonarQubeEnv('sonarqube') {
+                    sh "mvn -B sonar:sonar"
+                }
+                // Block the pipeline until SonarQube finishes analysis and reports the gate result.
+                // If the quality gate fails, the pipeline stops here — no images are built.
+                timeout(time: 5, unit: 'MINUTES') {
+                    waitForQualityGate abortPipeline: true
                 }
             }
         }
@@ -234,9 +245,7 @@ pipeline {
 
                     export KUBECONFIG=$WORKSPACE/kubeconfig
 
-                    aws eks update-kubeconfig \
-                        --region ${AWS_REGION} \
-                        --name ${CLUSTER_NAME}
+                    aws eks update-kubeconfig --region ${AWS_REGION} --name ${CLUSTER_NAME}
         
                     kubectl get nodes
                     """
@@ -244,29 +253,34 @@ pipeline {
             }
         }
 
-        stage('Create / Update Kubernetes Secrets') {
-            steps {
-                withCredentials([
-                    string(credentialsId: "catalogix-db-password", variable: 'DB_PASSWORD'),
-                    [
-                        $class: 'AmazonWebServicesCredentialsBinding',
-                        credentialsId: 'aws-creds'
-                    ]
-                ]) {
-                    sh """
-                    set -e
+        // NOTE: 'Create / Update Kubernetes Secrets' stage has been removed.
+        // The 'catalogix-secrets' Kubernetes Secret is now managed automatically by the
+        // External Secrets Operator via the ExternalSecret resource in helm/catalogix-hc/templates/.
+        // ESO pulls the DB password directly from AWS Secrets Manager and keeps it in sync.
+        // No Jenkins credential for the DB password is needed.
+        // stage('Create / Update Kubernetes Secrets') {
+        //     steps {
+        //         withCredentials([
+        //             string(credentialsId: "catalogix-db-password", variable: 'DB_PASSWORD'),
+        //             [
+        //                 $class: 'AmazonWebServicesCredentialsBinding',
+        //                 credentialsId: 'aws-creds'
+        //             ]
+        //         ]) {
+        //             sh """
+        //             set -e
 
-                    export KUBECONFIG=$WORKSPACE/kubeconfig
+        //             export KUBECONFIG=$WORKSPACE/kubeconfig
 
-                    kubectl create secret generic catalogix-secrets \
-                      --from-literal=DB_PASSWORD="\${DB_PASSWORD}" \
-                      --from-literal=DB_USER=catalogix \
-                      --namespace ${K8S_NAMESPACE} \
-                      --dry-run=client -o yaml | kubectl apply -f -
-                    """
-                }
-            }
-        }
+        //             kubectl create secret generic catalogix-secrets \
+        //               --from-literal=DB_PASSWORD="\${DB_PASSWORD}" \
+        //               --from-literal=DB_USER=catalogix \
+        //               --namespace ${K8S_NAMESPACE} \
+        //               --dry-run=client -o yaml | kubectl apply -f -
+        //             """
+        //         }
+        //     }
+        // }
 
         stage('Trivy Scan Helm Charts') {
             steps {
@@ -284,6 +298,8 @@ pipeline {
             }
         }
 
+        // Fetch the RDS endpoint from Terraform output
+        // add  --set database.host=${RDS_ENDPOINT} at the end of helm upgrade command in "Deploy to EKS using Helm" stage when use this block
         stage('Fetch RDS Endpoint') {
             steps {
                 dir('terraform/platform-infra/env/dev') {
@@ -296,8 +312,9 @@ pipeline {
                     }
                 }
             }
-        } // add  --set database.host=${RDS_ENDPOINT} at the end of helm upgrade command in "Deploy to EKS using Helm" stage when use this block
+        } 
 
+        // Deploy to EKS using Helm. The Helm chart will pull the latest pushed images from ECR and deploy to the cluster.
         stage('Deploy to EKS using Helm') {
             steps {
                 withCredentials([[
@@ -363,9 +380,7 @@ pipeline {
 
                 export KUBECONFIG=$WORKSPACE/kubeconfig
 
-                aws eks update-kubeconfig \
-                    --name ${CLUSTER_NAME} \
-                    --region ${AWS_REGION}
+                aws eks update-kubeconfig --name ${CLUSTER_NAME} --region ${AWS_REGION}
 
                 helm history catalogix --namespace ${K8S_NAMESPACE} || true
 

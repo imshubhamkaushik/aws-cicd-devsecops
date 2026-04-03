@@ -12,6 +12,11 @@ data "terraform_remote_state" "bootstrap" {
 
 data "aws_caller_identity" "current" {}
 
+resource "random_password" "db" {
+  length = 24
+  special = false # avoids JDBC URL encoding issues with special characters  
+}
+
 locals {
   # Pulled from remote state so every module uses the same source of truth
   vpc_id          = data.terraform_remote_state.bootstrap.outputs.vpc_id
@@ -26,6 +31,9 @@ locals {
 
   # Env-specific prefix — change to "catalogix-staging" or "catalogix-prod" in other workspaces
   env_prefix = "${var.project_name}-dev"
+
+  # Single source of truth for the DB username - referenced by RDS, Secrets Manager, and Helm
+  db_username = "catalogix"
 }
 
 # Security Groups — all in the shared VPC from bootstrap
@@ -73,13 +81,15 @@ module "rds" {
 
   name              = "${local.env_prefix}-db"
   db_name           = "catalogix"
-  username          = "postgres"
-  password          = var.db_password
+  username          = local.db_username
+  password          = random_password.db.result
   private_subnets   = local.private_subnets
   security_group_id = module.sg.rds_sg
 }
 
 # Secrets Manager
+# Stores the generated credentials so the ap can read them via ESO
+# No one ever needs to know or handle the password except the app itself
 module "secrets" {
   source = "../../modules/secrets-manager"
 
@@ -87,7 +97,16 @@ module "secrets" {
   secret_name = "${local.env_prefix}/db-credentials"
 
   secret_values = {
-    db_user = "postgres"
-    db_pass = var.db_password
+    db_user = local.db_username
+    db_pass = random_password.db.result
   }
+}
+
+# External Secrets Operator - syncs Secrets Manager secrets into K8s Secrets
+# This replaces the manual process of creating K8s Secrets wth `kubectl create secrets` in the Jenkins pipeline
+module "eso" {
+  source = "../../modules/eso"
+
+  
+  
 }

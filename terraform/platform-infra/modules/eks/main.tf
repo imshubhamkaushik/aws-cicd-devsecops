@@ -11,8 +11,7 @@ data "aws_iam_policy_document" "cluster_assume_role" {
 }
 
 resource "aws_iam_role" "cluster_role" {
-  name = "${var.cluster_name}-cluster-role"
-
+  name               = "${var.cluster_name}-cluster-role"
   assume_role_policy = data.aws_iam_policy_document.cluster_assume_role.json
 }
 
@@ -128,6 +127,7 @@ resource "aws_eks_node_group" "node_group" {
 
 # EKS Add-ons — pinned versions so upgrades are deliberate, not silent.
 # To find latest versions: aws eks describe-addon-versions --kubernetes-version 1.32
+# VPC CNI
 resource "aws_eks_addon" "vpc_cni" {
   cluster_name                = aws_eks_cluster.cluster.name
   addon_name                  = "vpc-cni"
@@ -137,6 +137,7 @@ resource "aws_eks_addon" "vpc_cni" {
   depends_on = [aws_eks_node_group.node_group]
 }
 
+# CoreDNS
 resource "aws_eks_addon" "coredns" {
   cluster_name                = aws_eks_cluster.cluster.name
   addon_name                  = "coredns"
@@ -146,6 +147,7 @@ resource "aws_eks_addon" "coredns" {
   depends_on = [aws_eks_node_group.node_group]
 }
 
+# kube-proxy
 resource "aws_eks_addon" "kube_proxy" {
   cluster_name                = aws_eks_cluster.cluster.name
   addon_name                  = "kube-proxy"
@@ -153,4 +155,70 @@ resource "aws_eks_addon" "kube_proxy" {
   resolve_conflicts_on_update = "OVERWRITE"
 
   depends_on = [aws_eks_node_group.node_group]
+}
+
+# EBS CSI Driver
+data "aws_iam_policy_document" "ebs_csi_assume_role" {
+  statement {
+    actions = ["sts:AssumeRoleWithWebIdentity"]
+    principals {
+      type        = "Federated"
+      identifiers = [aws_iam_openid_connect_provider.oidc_provider.arn]
+    }
+    condition {
+      test     = "StringEquals"
+      variable = "${aws_iam_openid_connect_provider.oidc_provider.url}:sub"
+      values   = ["system:serviceaccount:kube-system:ebs-csi-controller-sa"]
+    }
+    condition {
+      test     = "StringEquals"
+      variable = "${aws_iam_openid_connect_provider.oidc_provider.url}:aud"
+      values   = ["sts.amazonaws.com"]
+    }
+  }
+}
+
+resource "aws_iam_role" "ebs_csi" {
+  name               = "${var.cluster_name}-ebs-csi-role"
+  assume_role_policy = data.aws_iam_policy_document.ebs_csi_assume_role.json
+}
+
+resource "aws_iam_role_policy_attachment" "ebs_csi" {
+  role       = aws_iam_role.ebs_csi.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy"
+}
+
+resource "aws_eks_addon" "ebs_cni" {
+  cluster_name             = aws_eks_cluster.cluster.name
+  addon_name               = "aws-ebs-csi-driver"
+  service_account_role_arn = aws_iam_role.ebs_csi.arn
+  resolve_conflicts_on_update = "OVERWRITE"
+
+  depends_on = [
+    aws_eks_node_group.node_group,
+    aws_iam_role_policy_attachment.ebs_csi
+  ] 
+}
+
+# gp3 StorageClass — used by Prometheus and Grafana PVC requests.
+# WaitForFirstConsumer ensures the volume is created in the same AZ as the pod.
+resource "kubernetes_storage_class_v1" "gp3" {
+  metadata {
+    name = "gp3-sc"
+    annotations = {
+      # Not set as default to avoid silently provisioning volumes for other workloads
+      "storageclass.kubernetes.io/is-default-class" = "false"
+    }
+  }
+
+  storage_provisioner    = "ebs.csi.aws.com"
+  reclaim_policy         = "Retain"
+  volume_binding_mode    = "WaitForFirstConsumer"
+  allow_volume_expansion = true
+
+  parameters = {
+    type = "gp3"
+  }
+
+  depends_on = [aws_eks_addon.ebs_csi]
 }
