@@ -7,6 +7,7 @@ variable "aws_region" {
 variable "cluster_name" {
   description = "Logical name of the cluster — used in Secrets Manager path"
   type        = string
+  default     = "catalogix"
 }
 
 # db_password has been intentionally removed. The DB password is now generated automatically by random_password.db in main.tf and stored in AWS Secrets Manager. No human input or pipeline credential is needed.

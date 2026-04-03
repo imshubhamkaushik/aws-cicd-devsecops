@@ -13,7 +13,7 @@ data "terraform_remote_state" "bootstrap" {
 data "aws_caller_identity" "current" {}
 
 resource "random_password" "db" {
-  length = 24
+  length  = 24
   special = false # avoids JDBC URL encoding issues with special characters  
 }
 
@@ -114,5 +114,5 @@ module "eso" {
 
   # ESO must come after EKS nodes and ALB controller so the cluster is stable
   depends_on = [module.eks, module.alb]
-  
+
 }
