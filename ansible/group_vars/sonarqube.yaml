@@ -1,0 +1,7 @@
+# SonarQube EC2 is in a private subnet with no public IP.
+# Ansible reaches it by jumping through the Jenkins EC2 (which is in a public subnet).
+# This is equivalent to: ssh -J ubuntu@<jenkins-public-ip> ubuntu@<sonarqube-private-ip>
+ansible_ssh_common_args: >-
+  -o StrictHostKeyChecking=no
+  -o UserKnownHostsFile=/dev/null
+  -J ubuntu@{{ hostvars[groups['jenkins'][0]]['ansible_host'] }}

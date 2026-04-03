@@ -1,0 +1,16 @@
+# Non-sensitive Jenkins configuration variables.
+# Sensitive values (tokens, passwords) must be stored in Ansible Vault:
+#   ansible-vault create group_vars/jenkins_vault.yaml
+#   ansible-vault edit group_vars/jenkins_vault.yaml
+#
+# Expected vault variables:
+#   vault_jenkins_admin_password: <strong password>
+#   vault_github_token:           <GitHub personal access token>
+#   vault_sonar_token:            <SonarQube user token>
+#   vault_aws_access_key_id:      <AWS IAM user access key ID>
+#   vault_aws_secret_access_key:  <AWS IAM user secret access key>
+#
+# Reference vault vars in tasks via: "{{ vault_jenkins_admin_password }}"
+
+jenkins_admin_user: "admin"
+git_repo_url: "https://github.com/YOUR_ORG/aws-cicd-devsecops.git"  # UPDATE THIS

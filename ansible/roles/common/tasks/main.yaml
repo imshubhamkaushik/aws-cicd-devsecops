@@ -1,0 +1,26 @@
+---
+- name: Update apt cache
+  apt:
+    update_cache: yes
+    cache_valid_time: 3600 # skip re-fetching if cache is less than 1 hour old
+
+- name: Upgrade all packages
+  apt:
+    upgrade: dist
+
+- name: Install base utilities
+  apt:
+    name:
+      - git
+      - unzip
+      - curl
+      - wget
+      - tar
+      - gnupg
+      - lsb-release 
+      - python3-pip
+    state: present
+
+- name: Set timezone to IST
+  timezone:
+    name: Asia/Kolkata

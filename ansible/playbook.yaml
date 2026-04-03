@@ -1,0 +1,26 @@
+---
+# Run on all instances: baseline packages + Docker
+- name: Configure all instances
+  hosts: all
+  become: true
+  
+  roles:
+    - common
+    - docker
+
+# Jenkins server: DevOps CLI tools + Jenkins itself
+- name: Configure Jenkins server
+  hosts: jenkins
+  become: true
+  
+  roles:
+    - devops-tools
+    - jenkins
+
+# SonarQube server: run as Docker container
+- name: Configure SonarQube server
+  hosts: sonarqube
+  become: true
+  
+  roles:
+    - sonarqube

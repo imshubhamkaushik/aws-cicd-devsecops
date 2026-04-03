@@ -1,0 +1,10 @@
+configuration-as-code
+git
+workflow-aggregator
+docker-workflow
+credentials-binding
+aws-credentials
+pipeline-stage-view
+blueocean
+sonar
+sonar-quality-gates

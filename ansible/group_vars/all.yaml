@@ -1,0 +1,8 @@
+# This file contains global variables for Ansible playbooks in the AWS CI/CD DevSecOps setup.
+# It defines versions for key tools like kubectl, helm, trivy, and sonar-scanner, ensuring consistency across all playbooks that reference these variables.
+# Note: The directory should be named group_vars to align with Ansible's variable loading convention.
+
+kubectl_version: "v1.32.0"
+helm_version: "v3.17.0"
+trivy_version: "0.61.0"
+sonar_scanner_version: "6.2.1.4610"

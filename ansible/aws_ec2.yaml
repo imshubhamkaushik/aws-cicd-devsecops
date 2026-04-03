@@ -1,0 +1,25 @@
+plugin: amazon.aws.aws_ec2
+
+regions:
+  - ap-south-1
+
+filters:
+  tag:Project: catalogix
+  instance-state-name: running
+  # This prevent Ansible from targeting stopped or termminated instances
+
+keyed_groups:
+  - key: tags.Role
+    prefix: ""
+    separator: ""
+    # Setting prefix to "" and separator to "" means the group name is exactly the tag value: "jenkins" and "sonarqube".
+
+groups:
+  jenkins: "'{{ tags.Role }}' == 'jenkins'"
+  sonarqube: "'{{ tags.Role }}' == 'sonarqube'"
+
+compose:
+  # Jenkins is in a public subnet — use its public IP for direct SSH from your machine.
+  # SonarQube is in a private subnet — use its private IP, accessed via Jenkins as a jump host.
+  # See group_vars/sonarqube.yaml for the ProxyJump configuration.
+  ansible_host: "(public_ip_address if public_ip_address else private_ip_address)"
