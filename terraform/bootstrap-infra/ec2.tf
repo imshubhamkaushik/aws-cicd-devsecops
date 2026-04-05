@@ -1,7 +1,4 @@
-resource "aws_iam_instance_profile" "jenkins_profile" {
-  name = "${var.name}-jenkins-instance-profile"
-  role = aws_iam_role.jenkins_ec2_role.name
-}
+
 
 resource "aws_instance" "jenkins_catalogix" {
   ami                    = var.ami
@@ -28,11 +25,6 @@ resource "aws_instance" "jenkins_catalogix" {
     Project = var.project_tag
     Role    = "ci-cd"
   }
-}
-
-resource "aws_iam_instance_profile" "sonar_profile" {
-  name = "${var.name}-sonar-instance-profile"
-  role = aws_iam_role.sonar_ec2_role.name
 }
 
 resource "aws_instance" "sonarqube_catalogix" {

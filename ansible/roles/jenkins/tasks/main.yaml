@@ -56,7 +56,7 @@
   shell: |
     jenkins-plugin-cli --plugin-file /tmp/plugins.yaml
   args:
-    creates: var/lib/jenkins/plugins
+    creates: /var/lib/jenkins/plugins
 
 # Add JSasC config
 - name: Create JCasC configs directory # Create the casc_configs directory
@@ -67,7 +67,8 @@
     group: jenkins
     mode: '0755'
 
-- name: Copy JCasC config file to Jenkins server # Copy to jcasc.yaml
+# Copy JCasC config file to Jenkins server
+- name: Copy JCasC config file to Jenkins server 
   copy:
     src: jcasc.yaml
     dest: /var/lib/jenkins/casc_configs/jcasc.yaml

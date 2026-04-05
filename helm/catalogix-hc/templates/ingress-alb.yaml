@@ -3,7 +3,7 @@ apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: catalogix-ingress
-  # namespace: {{ .Release.Namespace }}
+  namespace: {{ .Release.Namespace }}
   annotations:
     alb.ingress.kubernetes.io/load-balancer-name: catalogix-alb
     alb.ingress.kubernetes.io/group.name: catalogix
@@ -19,7 +19,7 @@ metadata:
     #   alb.ingress.kubernetes.io/ssl-redirect: '443'
     # TLS-ready design (ACM can be attached later).
     # Enforces HTTPS without app-level changes.
-    alb.ingress.kubernetes.io/healthcheck-path: /
+    alb.ingress.kubernetes.io/healthcheck-path: /actuator/health
     alb.ingress.kubernetes.io/healthcheck-port: traffic-port
     alb.ingress.kubernetes.io/success-codes: "200-399"
     

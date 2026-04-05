@@ -12,7 +12,10 @@ resource "aws_iam_policy" "eso" {
         "secretsmanager:GetSecretValue",
         "secretsmanager:DescribeSecret"
       ]
-      Resource = "*"
+      # Scoped to secrets whose name starts with the cluster name.
+      # The trailing /* covers both the secret itself and any version stages.
+      # Example: catalogix-dev/db-credentials matches catalogix-dev/*
+      Resource = "arn:aws:secretsmanager:${var.region}:*:secret:${var.cluster_name}/*"
       # PROD NOTE: scope Resource to specific secret ARNs for least-privilege
     }]
   })
@@ -66,10 +69,12 @@ resource "helm_release" "eso" {
   wait             = true
   timeout          = 300
 
-  set {
-    name  = "serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn"
-    value = aws_iam_role.eso.arn
-  }
+  set = [
+    {
+      name  = "serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn"
+      value = aws_iam_role.eso.arn
+    }
+  ]
 
   depends_on = [aws_iam_role_policy_attachment.eso]
 }

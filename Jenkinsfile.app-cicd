@@ -136,7 +136,7 @@ pipeline {
 
                         docker run --rm \
                           -v /var/run/docker.sock:/var/run/docker.sock \
-                          aquasec/trivy:0.50.0 image \
+                          aquasec/trivy:0.61.0 image \
                           --severity HIGH,CRITICAL \
                           --exit-code 1 \
                           --ignore-unfixed \
@@ -153,7 +153,7 @@ pipeline {
 
                         docker run --rm \
                           -v /var/run/docker.sock:/var/run/docker.sock \
-                          aquasec/trivy:0.50.0 image \
+                          aquasec/trivy:0.61.0 image \
                           --severity HIGH,CRITICAL \
                           --exit-code 1 \
                           --ignore-unfixed \
@@ -170,7 +170,7 @@ pipeline {
 
                         docker run --rm \
                           -v /var/run/docker.sock:/var/run/docker.sock \
-                          aquasec/trivy:0.50.0 image \
+                          aquasec/trivy:0.61.0 image \
                           --severity HIGH,CRITICAL \
                           --exit-code 1 \
                           --ignore-unfixed \
@@ -258,7 +258,7 @@ pipeline {
 
                 docker run --rm \
                   -v \$(pwd):/catalogix \
-                  aquasec/trivy:0.50.0 config \
+                  aquasec/trivy:0.61.0 config \
                   --severity HIGH,CRITICAL --exit-code 1 \
                   --ignorefile /catalogix/.trivyignore \
                   /catalogix/${HELM_CHART_DIR}
