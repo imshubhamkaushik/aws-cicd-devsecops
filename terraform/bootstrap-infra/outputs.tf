@@ -18,10 +18,10 @@ output "public_subnets" {
   value       = aws_subnet.public[*].id
 }
 
-# output "private_subnets" {
-#   description = "Private Subnets of VPC — consumed by platform-infra security groups"
-#   value       = aws_subnet.private[*].id
-# }
+output "private_subnets" {
+  description = "Private Subnets of VPC — consumed by platform-infra security groups"
+  value       = aws_subnet.private[*].id
+}
 
 output "vpc_cidr" {
   description = "VPC CIDR block — consumed by platform-infra security groups"

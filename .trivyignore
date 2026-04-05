@@ -22,7 +22,7 @@ CVE-2026-22695
 
 # Details   : Information disclosure and denial of service via integer truncation in the libpng simplified write API (png_image_write_to_file / png_image_write_to_memory).
 
-# Why ignored : This project does not write PNG files at runtime. Neither the Spring Boot microservices, Nginx frontend, Jenkins pipeline executor, nor SonarQube use libpng's simplified write API. No Kubernetes workload in the shopease or monitoring namespaces has a code path that reaches this function.
+# Why ignored : This project does not write PNG files at runtime. Neither the Spring Boot microservices, Nginx frontend, Jenkins pipeline executor, nor SonarQube use libpng's simplified write API. No Kubernetes workload in the catalogix or monitoring namespaces has a code path that reaches this function.
 
 # Revisit   : When base image is next updated; remove if libpng >= patched version is shipped by the distro.
 
