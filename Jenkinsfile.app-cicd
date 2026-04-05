@@ -46,6 +46,21 @@ pipeline {
             }
         }
 
+        stage('Secret Scanning') {
+            steps {
+                sh """
+                set -e
+
+                docker run --rm \
+                    -v \$(pwd):/repo \
+                    zricethezav/gitleaks:v8.21.2 detect \
+                    --source /repo \
+                    --exit-code 1 \
+                    --redact
+                """
+            }
+        }
+
         stage('AWS Authentication') {
             steps {
                 withCredentials([[

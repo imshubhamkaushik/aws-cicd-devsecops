@@ -1,0 +1,10 @@
+title = "Catalogix Gitleaks Config"
+
+[extend]
+useDefault = true
+
+[[rules.allowlist]]
+description = "Allow test/example credential patterns"
+paths = [
+    '''^\.env\.example$''',
+]
