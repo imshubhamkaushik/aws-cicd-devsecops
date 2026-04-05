@@ -7,7 +7,7 @@
 
     <groupId>com.catalogix</groupId>
     <artifactId>catalogix</artifactId>
-    <version>1.0.0</version>
+    <version>1.0</version>
     <packaging>pom</packaging>
 
     <!-- Modules -->
