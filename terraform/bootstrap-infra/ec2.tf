@@ -1,5 +1,4 @@
-
-
+# EC2 Instances for Jenkins
 resource "aws_instance" "jenkins_catalogix" {
   ami                    = var.ami
   instance_type          = var.instance_type
@@ -27,6 +26,7 @@ resource "aws_instance" "jenkins_catalogix" {
   }
 }
 
+# EC2 Instances for SonarQube
 resource "aws_instance" "sonarqube_catalogix" {
   ami                    = var.ami
   instance_type          = var.instance_type

@@ -77,7 +77,7 @@
     mode: '0644'
 
 # Ensure correct permissions
-- name: Fix Jenkins home directorypermissions
+- name: Fix Jenkins home directory permissions
   file:
     path: /var/lib/jenkins
     owner: jenkins

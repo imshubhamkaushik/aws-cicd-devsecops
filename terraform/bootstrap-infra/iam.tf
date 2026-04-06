@@ -1,5 +1,5 @@
 resource "aws_iam_role" "jenkins_ec2_role" {
-  name = "${var.name}-jenkins-ec2-role"
+  name = "${var.ec2_name}-jenkins-ec2-role"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -34,7 +34,7 @@ resource "aws_iam_role_policy_attachment" "jenkins_elb" {
 
 # Custom policy for Jenkins to manage ECR
 resource "aws_iam_policy" "jenkins_ecr" {
-  name        = "${var.name}-jenkins-ecr-policy"
+  name        = "${var.ec2_name}-jenkins-ecr-policy"
   description = "ECR push/pull and repository lifecycle management for Jenkins"
 
   policy = jsonencode({
@@ -81,7 +81,7 @@ resource "aws_iam_role_policy_attachment" "jenkins_ecr" {
 
 # Custom policy for Jenkins to manage EKS
 resource "aws_iam_policy" "jenkins_eks" {
-  name        = "${var.name}-jenkins-eks-policy"
+  name        = "${var.ec2_name}-jenkins-eks-policy"
   description = "Full EKS cluster and node group management for Jenkins / Terraform"
 
   policy = jsonencode({
@@ -130,7 +130,7 @@ resource "aws_iam_role_policy_attachment" "jenkins_eks" {
 
 # Custom policy for Jenkins to manage IAM
 resource "aws_iam_policy" "jenkins_iam" {
-  name        = "${var.name}-jenkins-iam-policy"
+  name        = "${var.ec2_name}-jenkins-iam-policy"
   description = "IAM role/policy/OIDC management for Terraform-managed resources"
 
   policy = jsonencode({
@@ -156,7 +156,7 @@ resource "aws_iam_policy" "jenkins_iam" {
           "iam:GetRolePolicy",
           "iam:PassRole"
         ]
-        Resource = "arn:aws:iam::*:role/${var.name}-*"
+        Resource = "arn:aws:iam::*:role/${var.ec2_name}-*"
       },
       {
         Sid    = "PolicyManagement"
@@ -173,7 +173,7 @@ resource "aws_iam_policy" "jenkins_iam" {
           "iam:TagPolicy",
           "iam:UntagPolicy"
         ]
-        Resource = "arn:aws:iam::*:policy/${var.name}-*"
+        Resource = "arn:aws:iam::*:policy/${var.ec2_name}-*"
       },
       {
         Sid    = "InstanceProfileManagement"
@@ -188,7 +188,7 @@ resource "aws_iam_policy" "jenkins_iam" {
           "iam:ListInstanceProfilesForRole",
           "iam:TagInstanceProfile"
         ]
-        Resource = "arn:aws:iam::*:instance-profile/${var.name}-*"
+        Resource = "arn:aws:iam::*:instance-profile/${var.ec2_name}-*"
       },
       {
         Sid    = "OIDCProviderManagement"
@@ -214,7 +214,7 @@ resource "aws_iam_role_policy_attachment" "jenkins_iam" {
 
 # Custom policy for Jenkins to manage S3 (for Terraform state)
 resource "aws_iam_policy" "jenkins_s3" {
-  name        = "${var.name}-jenkins-s3-policy"
+  name        = "${var.ec2_name}-jenkins-s3-policy"
   description = "S3 read/write access scoped to the Terraform state bucket"
 
   policy = jsonencode({
@@ -252,7 +252,7 @@ resource "aws_iam_role_policy_attachment" "jenkins_s3" {
 
 # Custom policy for Jenkins to manage Secrets Manager (for storing DB credentials, etc.)
 resource "aws_iam_policy" "jenkins_secrets" {
-  name        = "${var.name}-jenkins-secrets-policy"
+  name        = "${var.ec2_name}-jenkins-secrets-policy"
   description = "Secrets Manager access scoped to catalogix-* secrets"
 
   policy = jsonencode({
@@ -283,7 +283,7 @@ resource "aws_iam_role_policy_attachment" "jenkins_secrets" {
 
 # Custom policy for Jenkins to manage CloudWatch Logs
 resource "aws_iam_policy" "jenkins_misc" {
-  name        = "${var.name}-jenkins-misc-policy"
+  name        = "${var.ec2_name}-jenkins-misc-policy"
   description = "STS caller identity and CloudWatch Logs for EKS control-plane logging"
 
   policy = jsonencode({
@@ -321,14 +321,14 @@ resource "aws_iam_role_policy_attachment" "jenkins_misc" {
 }
 
 resource "aws_iam_instance_profile" "jenkins_profile" {
-  name = "${var.name}-jenkins-instance-profile"
+  name = "${var.ec2_name}-jenkins-instance-profile"
   role = aws_iam_role.jenkins_ec2_role.name
 }
 
 # SonarQube IAM role
 # No policy attachments - SonarQube needs no AWS permission
 resource "aws_iam_role" "sonar_ec2_role" {
-  name = "${var.name}-sonar-ec2-role"
+  name = "${var.ec2_name}-sonar-ec2-role"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -341,6 +341,6 @@ resource "aws_iam_role" "sonar_ec2_role" {
 }
 
 resource "aws_iam_instance_profile" "sonar_profile" {
-  name = "${var.name}-sonar-instance-profile"
+  name = "${var.ec2_name}-sonar-instance-profile"
   role = aws_iam_role.sonar_ec2_role.name
 }
