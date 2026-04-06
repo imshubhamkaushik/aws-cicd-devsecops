@@ -17,7 +17,7 @@ variable "private_subnets" {
 variable "instance_type" {
   description = "EC2 instance types of Worker nodes"
   type        = list(string)
-  default     = ["t3.medium"]
+  default     = ["c7i-flex.large"]
 }
 
 variable "min_size" {
