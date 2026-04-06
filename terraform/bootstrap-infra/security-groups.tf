@@ -44,11 +44,19 @@ resource "aws_security_group" "sonar" {
   }
 
   ingress {
-    description = "SonarQube UI and Jenkins webhook"
+    description = "SonarQube UI — admin browser access via SSH tunnel"
     from_port   = 9000
     to_port     = 9000
     protocol    = "tcp"
     cidr_blocks = [var.admin_cidr] # need to set this to My IP only
+  }
+
+  ingress {
+    description = "Jenkins pipeline - SonarQube analysis and Quality gate webhook"
+    from_port   = 9000
+    to_port     = 9000
+    protocol    = "tcp"
+    cidr_blocks = [aws_security_group.jenkins.id] # Allow Jenkins SG to access SonarQube
   }
 
   egress {
