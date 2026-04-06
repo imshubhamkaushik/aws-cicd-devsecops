@@ -34,7 +34,7 @@ resource "aws_iam_role_policy_attachment" "jenkins_elb" {
 
 # Custom policy for Jenkins to manage ECR
 resource "aws_iam_policy" "jenkins_ecr" {
-  name        = "${var.ec2_name}-jenkins-ecr-policy"
+  name        = "${var.cluster_name}-jenkins-ecr-policy"
   description = "ECR push/pull and repository lifecycle management for Jenkins"
 
   policy = jsonencode({
@@ -81,7 +81,7 @@ resource "aws_iam_role_policy_attachment" "jenkins_ecr" {
 
 # Custom policy for Jenkins to manage EKS
 resource "aws_iam_policy" "jenkins_eks" {
-  name        = "${var.ec2_name}-jenkins-eks-policy"
+  name        = "${var.cluster_name}-jenkins-eks-policy"
   description = "Full EKS cluster and node group management for Jenkins / Terraform"
 
   policy = jsonencode({
