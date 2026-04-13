@@ -29,8 +29,8 @@ locals {
   cluster_endpoint    = module.eks.cluster_endpoint
   cluster_certificate = module.eks.cluster_certificate
 
-  # Env-specific prefix — change to "catalogix-cluster-staging" or "catalogix-cluster-prod" in other workspaces
-  env_prefix = "${var.cluster_name}-dev"
+  # Env-specific prefix — change to "catalogix-staging" or "catalogix-prod" in other workspaces
+  env_prefix = "${var.cluster_name}-${var.environment}"
 
   # Single source of truth for the DB username - referenced by RDS, Secrets Manager, and Helm
   db_username = "catalogix"

@@ -13,6 +13,14 @@ pipeline {
         KUBECONFIG   = "${WORKSPACE}/kubeconfig"
     }
 
+    parameters { 
+        booleanParam( 
+            name: 'DEPLOY_APP_AFTER_INFRA', 
+            defaultValue: true, 
+            description: 'Deploy app after infra provisioning?' 
+        ) 
+    }
+
     options {
         timestamps()
         disableConcurrentBuilds()
@@ -136,10 +144,18 @@ pipeline {
     post {
         success { 
             echo "Platform infrastructure and monitoring stack applied successfully." 
+
+            if (params.DEPLOY_APP_AFTER_INFRA) {
+                echo "Triggering app deployment pipeline..."
+                build job: 'app-cicd', wait: false
+                echo "App deployment pipeline triggered."
+            } else {
+                echo "Skipping app deployment as per parameter."
+            }
         }
 
         failure { 
-            echo "Platform infrastructure pipeline failed."
+            echo "Platform infrastructure pipeline failed. Wont proceed with app deployment. Please check the logs and fix the issues."
         }
         
         always  { 

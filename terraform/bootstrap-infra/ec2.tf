@@ -22,7 +22,7 @@ resource "aws_instance" "jenkins_catalogix" {
   tags = {
     Name    = "Jenkins Server - Catalogix"
     Project = var.project_tag
-    Role    = "ci-cd"
+    Role    = "jenkins"
   }
 }
 
@@ -49,6 +49,6 @@ resource "aws_instance" "sonarqube_catalogix" {
   tags = {
     Name    = "SonarQube Server - Catalogix"
     Project = var.project_tag
-    Role    = "code-quality"
+    Role    = "sonarqube"
   }
 }

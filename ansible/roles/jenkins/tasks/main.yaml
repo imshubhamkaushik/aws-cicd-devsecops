@@ -119,3 +119,14 @@
       AWS_ACCESS_KEY_ID={{ vault_aws_access_key_id }}
       AWS_SECRET_ACCESS_KEY={{ vault_aws_secret_access_key }}
   notify: restart jenkins
+
+- name: Configure Jenkins Java opts safely
+  copy:
+    dest: /etc/default/jenkins
+    content: |
+      JAVA_ARGS="-Djenkins.install.runSetupWizard=false"
+      JENKINS_JAVA_OPTIONS="-Djava.awt.headless=true"
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Restart Jenkins
