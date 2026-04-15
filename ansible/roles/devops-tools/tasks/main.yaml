@@ -90,34 +90,3 @@
   apt:
     deb: /tmp/trivy.deb
   when: trivy_version not in (trivy_check.stdout | default(''))
-
-# Sonar Scanner
-- name: Check Sonar Scanner version
-  command: sonar-scanner --version
-  register: sonar_check
-  changed_when: false
-  failed_when: false
-
-- name: Download Sonar Scanner {{ sonar_scanner_version }}
-  get_url:
-    url: "https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-{{ sonar_scanner_version }}-linux-x64.zip"
-    dest: /tmp/sonar-scanner.zip
-    force: true
-  when: sonar_scanner_version not in (sonar_check.stdout | default(''))
-
-- name: Unzip Sonar Scanner
-  unarchive:
-    src: /tmp/sonar-scanner.zip
-    dest: /opt/
-    remote_src: yes
-  when: sonar_scanner_version not in (sonar_check.stdout | default(''))
-
-# Create symlink so 'sonar-scanner' is available on PATH without full path.
-# Previously the binary was extracted to /opt/ but never added to PATH.
-- name: Create sonar-scanner symlink in /usr/local/bin
-  file:
-    src: "/opt/sonar-scanner-cli-{{ sonar_scanner_version }}-linux-x64/bin/sonar-scanner"
-    dest: /usr/local/bin/sonar-scanner
-    state: link
-    force: yes
-  when: sonar_scanner_version not in (sonar_check.stdout | default(''))

@@ -5,4 +5,3 @@
 kubectl_version: "v1.32.0"
 helm_version: "v3.17.0"
 trivy_version: "0.61.0"
-sonar_scanner_version: "6.2.1.4610"
