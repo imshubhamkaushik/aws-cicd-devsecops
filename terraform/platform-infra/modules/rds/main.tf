@@ -7,7 +7,7 @@ resource "aws_db_instance" "postgres" {
   identifier = var.name
 
   engine         = "postgres"
-  engine_version = "18.1"
+  engine_version = "17.2"
   instance_class = "db.t4g.micro"
 
   allocated_storage     = 20
@@ -27,7 +27,8 @@ resource "aws_db_instance" "postgres" {
   # For production set to false and set final_snapshot_identifier.
   skip_final_snapshot = true # Fine for dev, but not for production
 
-  # DEV NOTE: lifecycle { prevent_destroy=true } prevents accidental deletion via a mistyped terraform destroy or workspace destroy. To intentionally delete: comment this bock out, apply, then destroy 
+  # DEV NOTE: lifecycle { prevent_destroy=true } prevents accidental deletion via a mistyped terraform destroy or workspace destroy. 
+  # To intentionally delete: comment this bock out, apply, then destroy .
   # lifecycle {
   #   prevent_destroy = true
   # }

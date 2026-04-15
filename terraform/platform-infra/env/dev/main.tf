@@ -14,7 +14,14 @@ data "aws_caller_identity" "current" {}
 
 resource "random_password" "db" {
   length  = 24
-  special = false # avoids JDBC URL encoding issues with special characters  
+  special = false # avoids JDBC URL encoding issues with special characters 
+
+  # keepers tie the password lifecycle to the RDS instance name.
+  # Without keepers, a terraform state refresh or re-import silently regenerates the password, rotating the secret and breaking the running app.
+  # Password only changes if the RDS name changes — which is always intentional.
+  keepers = {
+    rds_name = "${local.env_prefix}-db"
+  } 
 }
 
 locals {
