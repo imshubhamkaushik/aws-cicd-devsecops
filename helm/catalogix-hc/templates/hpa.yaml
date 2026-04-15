@@ -9,15 +9,15 @@ spec:
     apiVersion: apps/v1
     kind: Deployment
     name: user-svc
-  minReplicas: {{ .Values.hpa.minReplicas }}
-  maxReplicas: {{ .Values.hpa.maxReplicas }}
+  minReplicas: {{ .Values.userSvc.hpa.minReplicas }}
+  maxReplicas: {{ .Values.userSvc.hpa.maxReplicas }}
   metrics:
     - type: Resource
       resource:
         name: cpu
         target:
           type: Utilization
-          averageUtilization: {{ .Values.hpa.cpuUtilization }}
+          averageUtilization: {{ .Values.userSvc.hpa.cpuUtilization }}
 ---
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
@@ -28,15 +28,15 @@ spec:
     apiVersion: apps/v1
     kind: Deployment
     name: product-svc
-  minReplicas: {{ .Values.hpa.minReplicas }}
-  maxReplicas: {{ .Values.hpa.maxReplicas }}
+  minReplicas: {{ .Values.productSvc.hpa.minReplicas }}
+  maxReplicas: {{ .Values.productSvc.hpa.maxReplicas }}
   metrics:
     - type: Resource
       resource:
         name: cpu
         target:
           type: Utilization
-          averageUtilization: {{ .Values.hpa.cpuUtilization }}
+          averageUtilization: {{ .Values.productSvc.hpa.cpuUtilization }}
 ---
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
@@ -47,13 +47,13 @@ spec:
     apiVersion: apps/v1
     kind: Deployment
     name: frontend-svc
-  minReplicas: {{ .Values.hpa.minReplicas }}
-  maxReplicas: {{ .Values.hpa.maxReplicas }}
+  minReplicas: {{ .Values.frontendSvc.hpa.minReplicas }}
+  maxReplicas: {{ .Values.frontendSvc.hpa.maxReplicas }}
   metrics:
     - type: Resource
       resource:
-        name: cpu
+        name: memory
         target:
           type: Utilization
-          averageUtilization: {{ .Values.hpa.cpuUtilization }}
+          averageUtilization: {{ .Values.hpa.memoryUtilization }}
 {{- end }}
