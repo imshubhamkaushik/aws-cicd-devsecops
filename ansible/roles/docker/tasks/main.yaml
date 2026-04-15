@@ -1,4 +1,4 @@
-# This Ansible playbook installs Docker CE on an Ubuntu system
+# This Ansible playbook installs Docker CE on an Ubuntu system. Supports both amd64 (Intel/AMD) and arm64 (Graviton/ARM) architectures
 ---
 - name: Install prerequisite packages
   apt:
@@ -22,7 +22,8 @@
 - name: Add Docker apt repository
   apt_repository:
     repo: >-
-      deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc]
+      deb [arch={{ 'arm64' if ansible_architecture == 'aarch64' else 'amd64' }}
+      signed-by=/etc/apt/keyrings/docker.asc]
       https://download.docker.com/linux/ubuntu
       {{ ansible_distribution_release }} stable
     state: present
