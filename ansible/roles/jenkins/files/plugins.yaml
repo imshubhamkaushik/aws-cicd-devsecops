@@ -5,6 +5,5 @@ docker-workflow
 credentials-binding
 aws-credentials
 pipeline-stage-view
-blueocean
 sonar
-sonar-quality-gates
+nodejs
