@@ -67,13 +67,13 @@ echo ""
 terraform show main.tfplan
 echo ""
 read -rp "Review the plan above. Proceed with Terraform apply? (yes/no): " confirm
-if [[ "$confirm" != "yes || y" ]]; then
+if [[ "$confirm" != "yes" && "$confirm" != "y" ]]; then
     info "Aborted by user. No infrastructure was changed."
     exit 0
 fi
 
 terraform apply main.tfplan
-rm-f main.tfplan
+rm -f main.tfplan
 
 info "Bootstrap Infrastructure Complete."
 
