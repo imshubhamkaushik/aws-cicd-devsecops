@@ -24,6 +24,7 @@ pipeline {
     options {
         timestamps()
         disableConcurrentBuilds()
+        timeout(time: 90, unit: 'MINUTES')
     }
 
     stages {
@@ -45,10 +46,23 @@ pipeline {
 
         stage("Terraform Format Check"){ 
             steps { 
-                dir("${TF_DIR}") { 
-                    sh "terraform fmt -check -recursive" 
-                } 
+                sh "terraform fmt -check -recursive terraform/"
             } 
+        }
+
+        stage("Trivy IaC Scan") {
+            steps {
+                sh """
+                set -e
+
+                echo "=== Trivy IaC scan — terraform/ ==="
+                trivy config \\
+                    --severity HIGH,CRITICAL \\
+                    --exit-code 1 \\
+                    --ignorefile .trivyignore \\
+                    terraform/
+                """
+            }
         }
 
         stage("Terraform Init") { 
@@ -145,17 +159,19 @@ pipeline {
         success { 
             echo "Platform infrastructure and monitoring stack applied successfully." 
 
-            if (params.DEPLOY_APP_AFTER_INFRA) {
-                echo "Triggering app deployment pipeline..."
-                build job: 'app-cicd', wait: false
-                echo "App deployment pipeline triggered."
-            } else {
-                echo "Skipping app deployment as per parameter."
+            script {
+                if (params.DEPLOY_APP_AFTER_INFRA) {
+                    echo "Triggering app deployment pipeline..."
+                    build job: 'app-cicd', wait: false
+                    echo "App deployment pipeline triggered."
+                } else {
+                    echo "Skipping app deployment as per parameter."
+                }
             }
         }
 
         failure { 
-            echo "Platform infrastructure pipeline failed. Wont proceed with app deployment. Please check the logs and fix the issues."
+            echo "Platform infrastructure pipeline failed. Will not proceed with app deployment. Please check the logs and fix the issues."
         }
         
         always  { 
