@@ -7,13 +7,13 @@ variable "ec2_name" {
 variable "ami" {
   description = "AMI ID for the EC2 instance"
   type        = string
-  default = "ami-07216ac99dc46a187" // Ubuntu 22.04 LTS in ap-south-1
+  default     = "ami-07216ac99dc46a187" // Ubuntu 22.04 LTS in ap-south-1
 }
 
 variable "instance_type" {
   description = "EC2 instance type"
   type        = string
-  default = "c7i-flex.large"
+  default     = "c7i-flex.large"
 }
 
 variable "vpc_name" {

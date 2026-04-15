@@ -52,11 +52,11 @@ resource "aws_security_group" "sonar" {
   }
 
   ingress {
-    description = "Jenkins pipeline - SonarQube analysis and Quality gate webhook"
-    from_port   = 9000
-    to_port     = 9000
-    protocol    = "tcp"
-    cidr_blocks = [aws_security_group.jenkins.id] # Allow Jenkins SG to access SonarQube
+    description     = "Jenkins pipeline - SonarQube analysis and Quality gate webhook"
+    from_port       = 9000
+    to_port         = 9000
+    protocol        = "tcp"
+    security_groups = [aws_security_group.jenkins.id] # Allow Jenkins SG to access SonarQube
   }
 
   egress {
