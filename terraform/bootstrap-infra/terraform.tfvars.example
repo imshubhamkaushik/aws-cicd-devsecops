@@ -1,0 +1,33 @@
+# terraform.tfvars.example — copy to terraform.tfvars and fill in your values.
+# DO NOT commit terraform.tfvars to source control (it is in .gitignore).
+
+# ── AWS ───────────────────────────────────────────────────────────────────────
+aws_region = "ap-south-1"
+
+# ── EC2 ───────────────────────────────────────────────────────────────────────
+# AMI: Ubuntu 22.04 LTS in ap-south-1. Verify current ID at:
+#   aws ec2 describe-images --owners 099720109477 --filters Name=name,Values="ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64*" --query 'sort_by(Images,&CreationDate)[-1].ImageId'
+ami           = "ami-07216ac99dc46a187"
+instance_type = "c7i-flex.large"
+
+# admin_cidr: your IP in CIDR notation. Used for SSH and Jenkins/SonarQube UI access.
+# Get your IP: curl -s https://checkip.amazonaws.com
+# NEVER use 0.0.0.0/0 — the variable has a validation block that rejects it.
+admin_cidr = "YOUR_IP/32"
+
+# key_name: name of an existing EC2 key pair in your account.
+# Create one: aws ec2 create-key-pair --key-name catalogix-key --query 'KeyMaterial' --output text > ~/.ssh/catalogix-key.pem
+key_name = "catalogix-key"
+
+# ── VPC ───────────────────────────────────────────────────────────────────────
+vpc_name = "catalogix-vpc"
+vpc_cidr = "10.0.0.0/16"
+
+azs             = ["ap-south-1a", "ap-south-1b"]
+public_subnets  = ["10.0.1.0/24", "10.0.2.0/24"]
+private_subnets = ["10.0.3.0/24", "10.0.4.0/24"]
+
+# ── TAGS ──────────────────────────────────────────────────────────────────────
+ec2_name    = "catalogix"
+project_tag = "catalogix-bootstrap"
+cluster_name = "catalogix-dev"

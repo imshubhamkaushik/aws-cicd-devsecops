@@ -11,15 +11,145 @@ resource "aws_iam_role" "jenkins_ec2_role" {
   })
 }
 
-# AWS Managed Policies for Jenkins
-resource "aws_iam_role_policy_attachment" "jenkins_ec2_full" {
-  role       = aws_iam_role.jenkins_ec2_role.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2FullAccess"
+# Custom policy for Jenkins to manage VPC and network resources — scoped to what Terraform actually creates
+resource "aws_iam_policy" "jenkins_vpc" {
+  name        = "${var.ec2_name}-jenkins-vpc-policy"
+  description = "VPC, subnet, IGW, NAT, EIP, route table management for Terraform"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "VPCManagement"
+        Effect = "Allow"
+        Action = [
+          "ec2:CreateVpc", "ec2:DeleteVpc", "ec2:DescribeVpcs",
+          "ec2:ModifyVpcAttribute", "ec2:DescribeVpcAttribute",
+          "ec2:CreateSubnet", "ec2:DeleteSubnet", "ec2:DescribeSubnets",
+          "ec2:ModifySubnetAttribute",
+          "ec2:CreateInternetGateway", "ec2:DeleteInternetGateway",
+          "ec2:AttachInternetGateway", "ec2:DetachInternetGateway",
+          "ec2:DescribeInternetGateways",
+          "ec2:CreateNatGateway", "ec2:DeleteNatGateway", "ec2:DescribeNatGateways",
+          "ec2:AllocateAddress", "ec2:ReleaseAddress",
+          "ec2:AssociateAddress", "ec2:DisassociateAddress", "ec2:DescribeAddresses",
+          "ec2:CreateRouteTable", "ec2:DeleteRouteTable", "ec2:DescribeRouteTables",
+          "ec2:CreateRoute", "ec2:DeleteRoute",
+          "ec2:AssociateRouteTable", "ec2:DisassociateRouteTable",
+          "ec2:CreateTags", "ec2:DeleteTags", "ec2:DescribeTags",
+          "ec2:DescribeAvailabilityZones",
+          "ec2:DescribeAccountAttributes"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
 }
 
-resource "aws_iam_role_policy_attachment" "jenkins_rds_full" {
+resource "aws_iam_role_policy_attachment" "jenkins_vpc" {
   role       = aws_iam_role.jenkins_ec2_role.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonRDSFullAccess"
+  policy_arn = aws_iam_policy.jenkins_vpc.arn
+}
+
+# Custom policy for Jenkins to manage EC2 compute resources — instances, security groups, launch templates, volumes
+resource "aws_iam_policy" "jenkins_compute" {
+  name        = "${var.ec2_name}-jenkins-compute-policy"
+  description = "EC2 instances, security groups, launch templates, EBS volumes for Terraform"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "SecurityGroupManagement"
+        Effect = "Allow"
+        Action = [
+          "ec2:CreateSecurityGroup", "ec2:DeleteSecurityGroup",
+          "ec2:DescribeSecurityGroups", "ec2:DescribeSecurityGroupRules",
+          "ec2:AuthorizeSecurityGroupIngress", "ec2:RevokeSecurityGroupIngress",
+          "ec2:AuthorizeSecurityGroupEgress", "ec2:RevokeSecurityGroupEgress",
+          "ec2:UpdateSecurityGroupRuleDescriptionsIngress",
+          "ec2:UpdateSecurityGroupRuleDescriptionsEgress",
+          "ec2:ModifySecurityGroupRules"
+        ]
+        Resource = "*"
+      },
+      {
+        Sid    = "InstanceManagement"
+        Effect = "Allow"
+        Action = [
+          "ec2:RunInstances", "ec2:TerminateInstances",
+          "ec2:StartInstances", "ec2:StopInstances",
+          "ec2:DescribeInstances", "ec2:DescribeInstanceStatus",
+          "ec2:DescribeInstanceTypes", "ec2:DescribeInstanceAttribute",
+          "ec2:ModifyInstanceAttribute",
+          "ec2:DescribeImages", "ec2:DescribeKeyPairs"
+        ]
+        Resource = "*"
+      },
+      {
+        Sid    = "LaunchTemplateManagement"
+        Effect = "Allow"
+        Action = [
+          "ec2:CreateLaunchTemplate", "ec2:DeleteLaunchTemplate",
+          "ec2:DescribeLaunchTemplates", "ec2:DescribeLaunchTemplateVersions",
+          "ec2:ModifyLaunchTemplate",
+          "ec2:CreateLaunchTemplateVersion", "ec2:DeleteLaunchTemplateVersions",
+          "ec2:GetLaunchTemplateData"
+        ]
+        Resource = "*"
+      },
+      {
+        Sid    = "VolumeManagement"
+        Effect = "Allow"
+        Action = [
+          "ec2:CreateVolume", "ec2:DeleteVolume",
+          "ec2:AttachVolume", "ec2:DetachVolume",
+          "ec2:DescribeVolumes", "ec2:ModifyVolume",
+          "ec2:DescribeVolumesModifications"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "jenkins_compute" {
+  role       = aws_iam_role.jenkins_ec2_role.name
+  policy_arn = aws_iam_policy.jenkins_compute.arn
+}
+
+# Custom policy for Jenkins to manage RDS instances and subnet groups
+resource "aws_iam_policy" "jenkins_rds" {
+  name        = "${var.ec2_name}-jenkins-rds-policy"
+  description = "RDS instance and subnet group management for Terraform"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "RDSManagement"
+        Effect = "Allow"
+        Action = [
+          "rds:CreateDBInstance", "rds:DeleteDBInstance",
+          "rds:DescribeDBInstances", "rds:ModifyDBInstance",
+          "rds:RebootDBInstance",
+          "rds:CreateDBSubnetGroup", "rds:DeleteDBSubnetGroup",
+          "rds:DescribeDBSubnetGroups", "rds:ModifyDBSubnetGroup",
+          "rds:DescribeDBEngineVersions",
+          "rds:DescribeOrderableDBInstanceOptions",
+          "rds:DescribeDBParameterGroups",
+          "rds:AddTagsToResource", "rds:RemoveTagsFromResource",
+          "rds:ListTagsForResource"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "jenkins_rds" {
+  role       = aws_iam_role.jenkins_ec2_role.name
+  policy_arn = aws_iam_policy.jenkins_rds.arn
 }
 
 resource "aws_iam_role_policy_attachment" "jenkins_autoscaling" {
@@ -27,9 +157,43 @@ resource "aws_iam_role_policy_attachment" "jenkins_autoscaling" {
   policy_arn = "arn:aws:iam::aws:policy/AutoScalingFullAccess"
 }
 
-resource "aws_iam_role_policy_attachment" "jenkins_elb" {
+# Custom policy for Jenkins to manage Auto Scaling Groups for EKS node groups
+resource "aws_iam_policy" "jenkins_asg" {
+  name        = "${var.ec2_name}-jenkins-asg-policy"
+  description = "Auto Scaling group management for EKS node groups via Terraform"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "AutoScalingManagement"
+        Effect = "Allow"
+        Action = [
+          "autoscaling:CreateAutoScalingGroup",
+          "autoscaling:UpdateAutoScalingGroup",
+          "autoscaling:DeleteAutoScalingGroup",
+          "autoscaling:DescribeAutoScalingGroups",
+          "autoscaling:DescribeAutoScalingInstances",
+          "autoscaling:DescribeScalingActivities",
+          "autoscaling:DescribeTerminationPolicyTypes",
+          "autoscaling:SetDesiredCapacity",
+          "autoscaling:TerminateInstanceInAutoScalingGroup",
+          "autoscaling:CreateOrUpdateTags",
+          "autoscaling:DeleteTags",
+          "autoscaling:DescribeTags",
+          "autoscaling:PutLifecycleHook",
+          "autoscaling:DeleteLifecycleHook",
+          "autoscaling:DescribeLifecycleHooks"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "jenkins_asg" {
   role       = aws_iam_role.jenkins_ec2_role.name
-  policy_arn = "arn:aws:iam::aws:policy/ElasticLoadBalancingFullAccess"
+  policy_arn = aws_iam_policy.jenkins_asg.arn
 }
 
 # Custom policy for Jenkins to manage ECR
@@ -279,6 +443,36 @@ resource "aws_iam_policy" "jenkins_secrets" {
 resource "aws_iam_role_policy_attachment" "jenkins_secrets" {
   role       = aws_iam_role.jenkins_ec2_role.name
   policy_arn = aws_iam_policy.jenkins_secrets.arn
+}
+
+# SSM Parameter Store — Jenkins reads the RDS endpoint written by Terraform
+# instead of running `terraform init + terraform output` on every pipeline run
+resource "aws_iam_policy" "jenkins_ssm" {
+  name        = "${var.ec2_name}-jenkins-ssm-policy"
+  description = "SSM Parameter Store access for CI/CD pipeline runtime lookups"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "SSMParameterReadWrite"
+        Effect = "Allow"
+        Action = [
+          "ssm:GetParameter", "ssm:GetParameters",
+          "ssm:PutParameter", "ssm:DeleteParameter",
+          "ssm:DescribeParameters",
+          "ssm:AddTagsToResource", "ssm:ListTagsForResource"
+        ]
+        # Scoped to /${var.ec2_name}/ prefix — covers /catalogix/dev/rds-endpoint etc.
+        Resource = "arn:aws:ssm:${var.aws_region}:*:parameter/${var.ec2_name}/*"
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "jenkins_ssm" {
+  role       = aws_iam_role.jenkins_ec2_role.name
+  policy_arn = aws_iam_policy.jenkins_ssm.arn
 }
 
 # Custom policy for Jenkins to manage CloudWatch Logs
