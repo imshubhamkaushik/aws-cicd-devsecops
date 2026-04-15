@@ -1,4 +1,3 @@
-```bash id="5"
 #!/bin/bash
 
 set -euo pipefail
@@ -50,6 +49,10 @@ error() {
 
 trap 'error "Bootstrap infra failed at line $LINENO"' ERR
 
+# PRE-FLIGHT CHECKS
+check_dependencies
+check_aws_auth
+
 # APPLY BOOTSTRAP INFRA
 info "Running Bootstrap Infrastructure Terraform..."
 
@@ -58,29 +61,41 @@ cd "$ROOT_DIR/terraform/bootstrap-infra"
 terraform init
 terraform fmt -check
 terraform validate
-terraform plan -out=tfplan
-terraform apply -auto-approve tfplan
-read -p "Proceed with Terraform apply? (yes/no): " confirm
-[[ "$confirm" == "yes" ]] || exit 1
+terraform plan -out main.tfplan
+
+echo ""
+terraform show main.tfplan
+echo ""
+read -rp "Review the plan above. Proceed with Terraform apply? (yes/no): " confirm
+if [[ "$confirm" != "yes || y" ]]; then
+    info "Aborted by user. No infrastructure was changed."
+    exit 0
+fi
+
+terraform apply main.tfplan
+rm-f main.tfplan
 
 info "Bootstrap Infrastructure Complete."
 
 # WAIT FOR EC2 HEALTH
-info "Waiting for Bootstrap EC2 Instances..."
-
-sleep 20
+info "Waiting for Bootstrap EC2 Instances to pass status checks..."
 
 INSTANCE_IDS=$(aws ec2 describe-instances \
     --filters "Name=tag:Project,Values=${PROJECT_TAG}" \
     --query "Reservations[*].Instances[*].InstanceId" \
     --output text)
 
+if [[ -z "$INSTANCE_IDS" ]]; then
+    error "No EC2 instances found with tag Project=${PROJECT_TAG}. Did Terraform apply succeed?"
+    exit 1
+fi
+
+info "Found instances: ${INSTANCE_IDS}"
 aws ec2 wait instance-status-ok --instance-ids $INSTANCE_IDS
 
 info "EC2 Instances Healthy."
 
 # RUN ANSIBLE CONFIGURATION
-
 info "Running Ansible Configuration..."
 
 cd "$ROOT_DIR/ansible"
@@ -89,4 +104,3 @@ ansible-galaxy collection install -r requirements.yaml
 ansible-playbook playbook.yaml
 
 info "Bootstrap Infra Completed Successfully."
-```

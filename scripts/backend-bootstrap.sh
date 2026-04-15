@@ -1,4 +1,3 @@
-```bash id="3"
 #!/bin/bash
 
 set -euo pipefail
@@ -60,4 +59,4 @@ info "Starting Bootstrap Infrastructure Phase..."
 bash "$ROOT_DIR/scripts/bootstrap-infra.sh"
 
 info "Bootstrap Completed Successfully."
-```
+
