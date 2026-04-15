@@ -17,8 +17,7 @@ pipeline {
         K8S_NAMESPACE = "catalogix"
 
         // KUBECONFIG is set as a pipeline-level env var pointing to $WORKSPACE/kubeconfig.
-        // It persists across all stages because it's in the environment{} block, not
-        // inside a shell subprocess. The kubeconfig file was written by the previous stage.
+        // It persists across all stages because it's in the environment{} block, not inside a shell subprocess. The kubeconfig file was written by Validate Kubernetes Access.
         KUBECONFIG     = "${WORKSPACE}/kubeconfig"
     }
 
@@ -30,6 +29,7 @@ pipeline {
     options {
         timestamps()
         disableConcurrentBuilds()
+        timeout(time: 45, unit: 'MINUTES')
     }
 
     stages {
@@ -78,7 +78,7 @@ pipeline {
                         env.FRONTEND_SVC_IMAGE = "${env.ECR_REGISTRY}/frontend-svc:${env.IMAGE_TAG}"
                     }
                 }
-            }
+            }   
         }
 
         stage('Unit & Integration Tests (Backend)') {
@@ -129,11 +129,13 @@ pipeline {
         stage('SonarQube Analysis') {
             steps {
                 // Run from the repo root — Maven aggregator covers user-svc and product-svc in a single scan. 
-                // Both modules report under the same project key: catalogix. JARs must exist before this runs (Build Artifacts stage produces them).
+                // Both modules report under the same project key: catalogix. 
+                // JARs must exist before this runs (Build Artifacts stage produces them).
                 withSonarQubeEnv('sonarqube') {
                     sh "mvn -B sonar:sonar"
                 }
-                // Block the pipeline until SonarQube finishes analysis and reports the gate result. If the quality gate fails, the pipeline stops here — no images are built.
+                // Block the pipeline until SonarQube finishes analysis and reports the gate result. 
+                // If the quality gate fails, the pipeline stops here — no images are built.
                 timeout(time: 5, unit: 'MINUTES') {
                     waitForQualityGate abortPipeline: true
                 }
@@ -237,35 +239,6 @@ pipeline {
             }
         }
 
-        // NOTE: 'Create / Update Kubernetes Secrets' stage has been removed.
-        // The 'catalogix-secrets' Kubernetes Secret is now managed automatically by the
-        // External Secrets Operator via the ExternalSecret resource in helm/catalogix-hc/templates/.
-        // ESO pulls the DB password directly from AWS Secrets Manager and keeps it in sync.
-        // No Jenkins credential for the DB password is needed.
-        // stage('Create / Update Kubernetes Secrets') {
-        //     steps {
-        //         withCredentials([
-        //             string(credentialsId: "catalogix-db-password", variable: 'DB_PASSWORD'),
-        //             [
-        //                 $class: 'AmazonWebServicesCredentialsBinding',
-        //                 credentialsId: 'aws-creds'
-        //             ]
-        //         ]) {
-        //             sh """
-        //             set -e
-
-        //             export KUBECONFIG=$WORKSPACE/kubeconfig
-
-        //             kubectl create secret generic catalogix-secrets \
-        //               --from-literal=DB_PASSWORD="\${DB_PASSWORD}" \
-        //               --from-literal=DB_USER=catalogix \
-        //               --namespace ${K8S_NAMESPACE} \
-        //               --dry-run=client -o yaml | kubectl apply -f -
-        //             """
-        //         }
-        //     }
-        // }
-
         stage('Trivy Scan Helm Charts') {
             steps {
                 sh """
@@ -340,9 +313,44 @@ pipeline {
 
         stage('Post-Deployment Verification') {
             steps {
-                sh "kubectl get pods -n ${K8S_NAMESPACE}"
-                sh "kubectl get svc -n ${K8S_NAMESPACE}"
-                sh "kubectl get ingress -n ${K8S_NAMESPACE}"
+                sh """
+                set -e
+
+                echo "=== Pod status ==="
+                kubectl get pods -n ${K8S_NAMESPACE}
+
+                echo ""
+                echo "=== Services ==="
+                kubectl get svc -n ${K8S_NAMESPACE}
+
+                echo ""
+                echo "=== Ingress ==="
+                kubectl get ingress -n ${K8S_NAMESPACE}
+
+                echo ""
+                echo "=== Readiness check ==="
+                # This waits for every pod to actually be Ready before marking the stage green.
+                kubectl wait pod \\
+                    --for=condition=Ready \\
+                    --selector=app=user-svc \\
+                    --namespace=${K8S_NAMESPACE} \\
+                    --timeout=120s
+
+                kubectl wait pod \\
+                    --for=condition=Ready \\
+                    --selector=app=product-svc \\
+                    --namespace=${K8S_NAMESPACE} \\
+                    --timeout=120s
+
+                kubectl wait pod \\
+                    --for=condition=Ready \\
+                    --selector=app=frontend-svc \\
+                    --namespace=${K8S_NAMESPACE} \\
+                    --timeout=120s
+
+                echo ""
+                echo "All pods Ready. Deployment verified."
+                """
             }
         }
     }
@@ -351,29 +359,41 @@ pipeline {
         success {
             echo "Deployment successful!!! — release ${IMAGE_TAG} is live."
         }
-        failure {
-            echo "Deployment failed - rolling back..."
 
-            withCredentials([
-                [
-                    $class: 'AmazonWebServicesCredentialsBinding',
-                    credentialsId: 'aws-creds'
-                ]
-            ]) {
+        failure {
+            echo "Deployment failed - rolling back to last known-good revision..."
+
+            withCredentials([[
+                $class: 'AmazonWebServicesCredentialsBinding',
+                credentialsId: 'aws-creds'
+            ]]) {
                 sh """
                 set -e
 
                 aws eks update-kubeconfig --name ${CLUSTER_NAME} --region ${AWS_REGION}
 
+                echo "=== Release history ==="
                 helm history catalogix --namespace ${K8S_NAMESPACE} || true
 
-                helm rollback catalogix --namespace ${K8S_NAMESPACE} || true
+                # Find the last revision with DEPLOYED status — that is the last good release.
+                # If no deployed revision exists (first ever deploy failed), skip rollback.
+                LAST_GOOD=\$(helm history catalogix --namespace ${K8S_NAMESPACE} --output json 2>/dev/null \\
+                    | grep -o '"revision":[0-9]*,"updated":"[^"]*","status":"deployed"' \\
+                    | tail -1 \\
+                    | grep -o '"revision":[0-9]*' \\
+                    | grep -o '[0-9]*' || echo "")
+
+                if [ -z "\$LAST_GOOD" ]; then
+                    echo "No previously deployed revision found — skipping rollback."
+                else
+                    echo "Rolling back to revision \$LAST_GOOD..."
+                    helm rollback catalogix "\$LAST_GOOD" --namespace ${K8S_NAMESPACE} || true
+                fi
                 """
             }
         }
         always {
-            // Clean up local Docker images after every build to
-            // prevent the Jenkins agent disk from filling up over time
+            // Clean up local Docker images after every build to prevent the Jenkins agent disk from filling up over time
             sh "docker system prune -f || true"
         }
     }
