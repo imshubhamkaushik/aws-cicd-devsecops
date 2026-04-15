@@ -37,6 +37,10 @@ frontendSvc:
     limits:
       cpu: "200m"
       memory: "256Mi"
+  hpa:
+    minReplicas: 2
+    maxReplicas: 4
+    memoryUtilization: 75
 
 userSvc:
   image:
@@ -55,6 +59,10 @@ userSvc:
       memory: "512Mi"
   env:
     ALLOWED_ORIGINS: "*"
+  hpa:
+    minReplicas: 2
+    maxReplicas: 4
+    cpuUtilization: 75
 
 productSvc:
   image:
@@ -73,12 +81,13 @@ productSvc:
       memory: "512Mi"
   env:
     ALLOWED_ORIGINS: "*"
+  hpa:
+    minReplicas: 2
+    maxReplicas: 4
+    cpuUtilization: 75
 
 hpa:
   enabled: true
-  minReplicas: 2
-  maxReplicas: 4
-  cpuUtilization: 75
 
 monitoring:
   enabled: true
