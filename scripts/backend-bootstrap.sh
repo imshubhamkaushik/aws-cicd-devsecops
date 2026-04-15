@@ -18,7 +18,7 @@ error() {
 }
 
 cleanup() {
-    rm -f "$ROOT_DIR/terraform/backend-bootstrap/tfplan" 2>/dev/null || true
+    rm -f "$ROOT_DIR/terraform/backend-bootstrap/main.tfplan" 2>/dev/null || true
 }
 
 trap 'error "Backend bootstrap failed at line $LINENO"' ERR
