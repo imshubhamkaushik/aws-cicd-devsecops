@@ -84,6 +84,44 @@
     group: jenkins
     recurse: yes
 
+# Set Jenkins environment variables
+- name: Write /etc/default/jenkins — Java opts + JCasC env vars + credentials
+  blockinfile:
+    path: /etc/default/jenkins
+    owner: root
+    group: root
+    mode: '0600'
+    content: |
+      # Jenkins startup configruation
+      # ANSIBLE MANAGED — do not edit manually
+
+      # JVM options
+      JAVA_ARGS="-Djenkins.install.runSetupWizard=false"
+      JENKINS_JAVA_OPTIONS="-Djava.awt.headless=true"
+
+      # JCasC — points Jenkins at its configuration-as-code file on startup
+      CASC_JENKINS_CONFIG=/var/lib/jenkins/casc_configs/jcasc.yaml
+
+      # Jenkins admin identity (read by JCasC securityRealm block)
+      JENKINS_ADMIN_USER={{ jenkins_admin_user }}
+      JENKINS_ADMIN_PASSWORD={{ vault_jenkins_admin_password }}
+
+      # Jenkins and SonarQube URLs for Jenkins pipeline configuration
+      JENKINS_URL={{ ansible_host }}
+      SONARQUBE_HOST={{ hostvars[groups['sonarqube'][0]]['ansible_host'] }}
+
+      # Source control for Jenkins pipeline configuration
+      GIT_REPO_URL={{ git_repo_url }}
+      GITHUB_TOKEN={{ vault_github_token }}
+
+      # SonarQube token for Jenkins pipeline configuration
+      SONARQUBE_TOKEN={{ vault_sonar_token }}
+      
+      # AWS credentials for Jenkins pipeline configuration and Terraform AWS provider
+      AWS_ACCESS_KEY_ID={{ vault_aws_access_key_id }}
+      AWS_SECRET_ACCESS_KEY={{ vault_aws_secret_access_key }}
+  notify: restart jenkins
+
 # Enables and starts the Jenkins service.
 - name: Enable and start Jenkins
   service:
@@ -97,36 +135,3 @@
     port: 8080
     delay: 10
     timeout: 120
-
-# Set Jenkins environment variables
-- name: Set Jenkins environment variables
-  blockinfile:
-    path: /etc/default/jenkins
-    marker: "# {mark} ANSIBLE MANAGED — JCasC and credentials"
-    block: |
-      CASC_JENKINS_CONFIG=/var/lib/jenkins/casc_configs/jcasc.yaml
-
-      JENKINS_ADMIN_USER={{ jenkins_admin_user }}
-      JENKINS_ADMIN_PASSWORD={{ vault_jenkins_admin_password }}
-
-      JENKINS_URL={{ ansible_host }}
-      SONARQUBE_HOST={{ hostvars[groups['sonarqube'][0]]['ansible_host'] }}
-
-      GIT_REPO_URL={{ git_repo_url }}
-      GITHUB_TOKEN={{ vault_github_token }}
-      SONARQUBE_TOKEN={{ vault_sonar_token }}
-      
-      AWS_ACCESS_KEY_ID={{ vault_aws_access_key_id }}
-      AWS_SECRET_ACCESS_KEY={{ vault_aws_secret_access_key }}
-  notify: restart jenkins
-
-- name: Configure Jenkins Java opts safely
-  copy:
-    dest: /etc/default/jenkins
-    content: |
-      JAVA_ARGS="-Djenkins.install.runSetupWizard=false"
-      JENKINS_JAVA_OPTIONS="-Djava.awt.headless=true"
-    owner: root
-    group: root
-    mode: '0644'
-  notify: Restart Jenkins
