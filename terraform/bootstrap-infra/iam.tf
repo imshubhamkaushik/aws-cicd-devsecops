@@ -152,11 +152,6 @@ resource "aws_iam_role_policy_attachment" "jenkins_rds" {
   policy_arn = aws_iam_policy.jenkins_rds.arn
 }
 
-resource "aws_iam_role_policy_attachment" "jenkins_autoscaling" {
-  role       = aws_iam_role.jenkins_ec2_role.name
-  policy_arn = "arn:aws:iam::aws:policy/AutoScalingFullAccess"
-}
-
 # Custom policy for Jenkins to manage Auto Scaling Groups for EKS node groups
 resource "aws_iam_policy" "jenkins_asg" {
   name        = "${var.ec2_name}-jenkins-asg-policy"
