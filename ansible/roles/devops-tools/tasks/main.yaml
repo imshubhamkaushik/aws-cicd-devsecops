@@ -37,7 +37,7 @@
 
 - name: Install kubectl {{ kubectl_version }}
   get_url:
-    url: https://dl.k8s.io/release/{{ kubectl_version }}/bin/linux/amd64/kubectl
+    url: https://dl.k8s.io/release/{{ kubectl_version }}/bin/linux/{{ 'arm64' if ansible_architecture == 'aarch64' else 'amd64' }}/kubectl
     dest: /usr/local/bin/kubectl
     mode: '0755'
     force: true
@@ -52,7 +52,7 @@
 
 - name: Download Helm
   get_url:
-    url: https://get.helm.sh/helm-{{ helm_version }}-linux-amd64.tar.gz
+    url: https://get.helm.sh/helm-{{ helm_version }}-linux-{{ 'arm64' if ansible_architecture == 'aarch64' else 'amd64' }}.tar.gz
     dest: /tmp/helm.tar.gz
     force: true
   when: helm_version not in (helm_check.stdout | default(''))
