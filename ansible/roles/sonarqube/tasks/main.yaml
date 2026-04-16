@@ -41,3 +41,15 @@
       - /opt/sonarqube/data:/opt/sonarqube/data
       - /opt/sonarqube/logs:/opt/sonarqube/logs
       - /opt/sonarqube/extensions:/opt/sonarqube/extensions
+
+# Wait for SonarQube to be up and running before finishing the playbook
+- name: Wait for SonarQube to be healthy
+  uri:
+    url: "http://localhost:9000/api/system/status"
+    method: GET
+    status_code: 200
+    return_content: yes
+  register: sq_status
+  until: sq_status.json is defined and sq_status.json.status == "UP"
+  retries: 30
+  delay: 10
