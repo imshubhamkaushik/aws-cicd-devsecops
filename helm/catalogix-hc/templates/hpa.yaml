@@ -55,5 +55,5 @@ spec:
         name: memory
         target:
           type: Utilization
-          averageUtilization: {{ .Values.hpa.memoryUtilization }}
+          averageUtilization: {{ .Values.frontendSvc.hpa.memoryUtilization }}
 {{- end }}
