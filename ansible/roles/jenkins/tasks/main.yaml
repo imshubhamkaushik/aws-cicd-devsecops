@@ -54,11 +54,12 @@
 
 - name: Install Jenkins plugins
   shell: |
-    jenkins-plugin-cli --plugin-file /tmp/plugins.yaml
+    jenkins-plugin-cli --plugin-file /tmp/plugins.yaml \
+      && touch /var/lib/jenkins/.plugins-installed
   args:
-    creates: /var/lib/jenkins/plugins
+    creates: /var/lib/jenkins/.plugins-installed
 
-# Add JSasC config
+# Add JCasC config
 - name: Create JCasC configs directory # Create the casc_configs directory
   file:
     path: /var/lib/jenkins/casc_configs
