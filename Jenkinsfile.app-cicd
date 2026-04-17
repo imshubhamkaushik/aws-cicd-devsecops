@@ -127,54 +127,24 @@ pipeline {
         }
 
         stage('SonarQube Analysis') {
-            parallel {
-                stage('Backend Service(s)') {
-                    steps {
-                        // Run from the repo root — Maven aggregator covers user-svc and product-svc in a single scan. 
-                        // Both modules report under the same project key: catalogix. 
-                        // JARs must exist before this runs (Build Artifacts stage produces them).
-                        withSonarQubeEnv('sonarqube') {
-                            sh """
-                            set -e
-
-                            docker run --rm \
-                                -v \$(pwd):/usr/src \
-                                -w /usr/src \
-                                -e SONAR_HOST_URL=\${SONAR_HOST_URL} \
-                                -e SONAR_TOKEN=\${SONAR_AUTH_TOKEN} \
-                                maven:3.9.10-eclipse-temurin-21-alpine \
-                                mvn -B sonar:sonar
-                            """
-                        }
-                        // Block the pipeline until SonarQube finishes analysis and reports the gate result. 
-                        // If the quality gate fails, the pipeline stops here — no images are built.
-                        timeout(time: 5, unit: 'MINUTES') {
-                            waitForQualityGate abortPipeline: true
-                        }
-                    }
+            steps {
+                withSonarQubeEnv('sonarqube') {
+                    sh """
+                    set -e
+ 
+                    docker run --rm \\
+                        -v \\$(pwd):/usr/src \\
+                        -e SONAR_HOST_URL=\\${SONAR_HOST_URL} \\
+                        -e SONAR_TOKEN=\\${SONAR_AUTH_TOKEN} \\
+                        sonarsource/sonar-scanner-cli:11 \\
+                        -Dsonar.projectBaseDir=/usr/src
+                    """
                 }
-                stage('Frontend Service(s)') {
-                    steps {
-                        withSonarQubeEnv('sonarqube') {
-                            sh """
-                            set -e
-        
-                            docker run --rm \
-                                -e SONAR_HOST_URL=\${SONAR_HOST_URL} \
-                                -e SONAR_TOKEN=\${SONAR_AUTH_TOKEN} \
-                                -v \$(pwd)/frontend-svc:/usr/src \
-                                sonarsource/sonar-scanner-cli:11 \
-                                -Dsonar.projectKey=catalogix-frontend \
-                                -Dsonar.projectName='Catalogix Frontend' \
-                                -Dsonar.sources=/usr/src/src \
-                                -Dsonar.javascript.file.suffixes=.js,.jsx \
-                                -Dsonar.scm.disabled=true
-                            """
-                        }
-                        timeout(time: 5, unit: 'MINUTES') {
-                            waitForQualityGate abortPipeline: true
-                        }
-                    }
+                // Block the pipeline until SonarQube finishes analysis and reports the gate result. 
+                // If the quality gate fails, the pipeline stops here — no images are built.
+                // Covers all three services — one gate fails the whole pipeline.
+                timeout(time: 5, unit: 'MINUTES') {
+                    waitForQualityGate abortPipeline: true
                 }
             }
         }
