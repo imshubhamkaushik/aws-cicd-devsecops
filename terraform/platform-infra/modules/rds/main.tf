@@ -33,3 +33,9 @@ resource "aws_db_instance" "postgres" {
   #   prevent_destroy = true
   # }
 }
+
+resource "aws_ssm_parameter" "rds_endpoint" {
+  name  = "/catalogix/dev/rds-endpoint"
+  type  = "String"
+  value = aws_db_instance.postgres.address
+}

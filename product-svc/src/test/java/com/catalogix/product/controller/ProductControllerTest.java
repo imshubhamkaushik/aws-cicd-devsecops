@@ -2,7 +2,7 @@ package com.catalogix.product.controller;
 
 import com.catalogix.product.dto.CreateProductRequest;
 import com.catalogix.product.dto.ProductResponse;
-import com.catalogix.product.service.ProductService;
+import com.catalogix.product.svc.ProductSvc;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import org.junit.jupiter.api.Test;
@@ -30,7 +30,7 @@ class ProductControllerTest {
     @Autowired ObjectMapper mapper;
 
     @MockitoBean
-    ProductService svc;
+    ProductSvc svc;
 
     @Test
     void listReturnsOk() throws Exception {

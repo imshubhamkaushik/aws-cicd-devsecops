@@ -1,4 +1,4 @@
-package com.catalogix.product.service;
+package com.catalogix.product.svc;
 
 import com.catalogix.product.dto.CreateProductRequest;
 import com.catalogix.product.dto.ProductResponse;
@@ -18,11 +18,11 @@ from a plain header.
 */
 
 @Service
-public class ProductService {
+public class ProductSvc {
 
     private final ProductRepository repo;
 
-    public ProductService(ProductRepository repo) {
+    public ProductSvc(ProductRepository repo) {
         this.repo = repo;
     }
 
