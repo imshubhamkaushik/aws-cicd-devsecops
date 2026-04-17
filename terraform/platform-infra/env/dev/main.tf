@@ -92,6 +92,8 @@ module "rds" {
   password          = random_password.db.result
   private_subnets   = local.private_subnets
   security_group_id = module.sg.rds_sg
+
+  ssm_parameter_path = "/${local.env_prefix}/rds-endpoint"
 }
 
 # Secrets Manager
