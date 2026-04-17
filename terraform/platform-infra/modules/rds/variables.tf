@@ -24,3 +24,8 @@ variable "security_group_id" {
   description = "ID of the security group for the RDS instance"
   type        = string
 }
+
+variable "ssm_parameter_path" {
+  description = "SSM Parameter Store path for the RDS endpoint"
+  type        = string
+}

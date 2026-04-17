@@ -35,7 +35,12 @@ resource "aws_db_instance" "postgres" {
 }
 
 resource "aws_ssm_parameter" "rds_endpoint" {
-  name  = "/catalogix/dev/rds-endpoint"
+  name  = var.ssm_parameter_path
   type  = "String"
   value = aws_db_instance.postgres.address
+  description = "RDS endpoint for ${var.name} — written by Terraform, consumed by Jenkins"
+
+  tags = {
+    Name = "${var.name}-rds-endpoint"
+  }
 }
