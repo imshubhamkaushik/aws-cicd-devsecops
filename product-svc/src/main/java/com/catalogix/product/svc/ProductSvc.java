@@ -5,6 +5,7 @@ import com.catalogix.product.dto.ProductResponse;
 import com.catalogix.product.model.Product;
 import com.catalogix.product.repository.ProductRepository;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Optional;
@@ -26,10 +27,14 @@ public class ProductSvc {
         this.repo = repo;
     }
 
+    // Read-only transaction — keeps a consistent snapshot for the full list fetch.
+    @Transactional(readOnly = true)
     public List<ProductResponse> listAll() {
         return repo.findAll().stream().map(this::toResponse).toList();
     }
 
+    // @Transactional ensures the save and any constraint checks are atomic.
+    @Transactional
     public ProductResponse create(CreateProductRequest req) {
         Product p = new Product();
         p.setName(req.getName());
@@ -38,10 +43,13 @@ public class ProductSvc {
         return toResponse(repo.save(p));
     }
 
+    @Transactional(readOnly = true)
     public Optional<ProductResponse> findById(long id) {
         return repo.findById(id).map(this::toResponse);
     }
 
+    // @Transactional wraps existsById + deleteById atomically so a concurrent delete between the two calls can't produce a spurious EntityNotFoundException.
+    @Transactional
     public boolean deleteById(long id) {
         if (!repo.existsById(id)) return false;
         repo.deleteById(id);
