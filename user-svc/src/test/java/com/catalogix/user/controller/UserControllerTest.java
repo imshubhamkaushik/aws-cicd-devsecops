@@ -14,9 +14,12 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.util.List;
+
+import static org.hamcrest.Matchers.*;
 import static org.mockito.ArgumentMatchers.any;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultHandlers.print;
 import static org.mockito.Mockito.when;
 
@@ -31,6 +34,7 @@ class UserControllerTest {
     @MockitoBean
     UserSvc svc;
 
+    // POST /users/register tests
     @Test
     @SuppressWarnings("null")
     void registerReturnsCreated() throws Exception {
@@ -46,7 +50,43 @@ class UserControllerTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(mapper.writeValueAsString(req)))
                 .andDo(print())
-                .andExpect(status().isCreated());
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.id").value(1L))
+                .andExpect(jsonPath("$.name").value("John"))
+                .andExpect(jsonPath("$.email").value("john@example.com"));
+    }
+
+    @Test
+    void registerDuplicateEmailReturns400() throws Exception {
+        CreateUserRequest req = new CreateUserRequest();
+        req.setName("John");
+        req.setEmail("john@example.com");
+        req.setPassword("Password1");
+
+        when(svc.register(any())).thenThrow(new IllegalArgumentException("Email already registered"));
+
+        mvc.perform(post("/users/register")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(mapper.writeValueAsString(req)))
+                .andExpect(status().isBadRequest());
+    }
+
+    // POST /users/login tests
+    @Test
+    void loginReturnsOkWithUserData() throws Exception {
+        LoginRequest req = new LoginRequest();
+        req.setEmail("john@example.com");
+        req.setPassword("Password1");
+
+        when(svc.login(any()))
+                .thenReturn(new UserResponse(1L, "John", "john@example.com"));
+
+        mvc.perform(post("/users/login")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(mapper.writeValueAsString(req)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(1L))
+                .andExpect(jsonPath("$.email").value("john@example.com"));
     }
 
     @Test
@@ -61,5 +101,48 @@ class UserControllerTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(mapper.writeValueAsString(req)))
                 .andExpect(status().isUnauthorized());
+    }
+
+    // GET /users tests
+
+    @Test
+    void getAllReturnsListOfUsers() throws Exception {
+        when(svc.listAll()).thenReturn(List.of(
+                new UserResponse(1L, "Alice", "alice@example.com"),
+                new UserResponse(2L, "Bob",   "bob@example.com")
+        ));
+
+        mvc.perform(get("/users"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(2)))
+                .andExpect(jsonPath("$[0].name").value("Alice"))
+                .andExpect(jsonPath("$[1].name").value("Bob"));
+    }
+
+    @Test
+    void getAllReturnsEmptyListWhenNoUsers() throws Exception {
+        when(svc.listAll()).thenReturn(List.of());
+
+        mvc.perform(get("/users"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(0)));
+    }
+
+    // DELETE /users/{id} tests
+
+    @Test
+    void deleteReturnsNoContent() throws Exception {
+        when(svc.deleteById(1L)).thenReturn(true);
+
+        mvc.perform(delete("/users/1"))
+                .andExpect(status().isNoContent());
+    }
+
+    @Test
+    void deleteReturnsNotFoundWhenUserMissing() throws Exception {
+        when(svc.deleteById(99L)).thenReturn(false);
+
+        mvc.perform(delete("/users/99"))
+                .andExpect(status().isNotFound());
     }
 }
