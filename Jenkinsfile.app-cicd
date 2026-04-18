@@ -271,7 +271,7 @@ pipeline {
                 ]]) {
                     script {
                         env.RDS_ENDPOINT = sh(
-                            script: "aws ssm get-parameter --name /catalogix/dev/rds-endpoint --query Parameter.Value --output text --region ${AWS_REGION}",
+                            script: "aws ssm get-parameter --name /catalogix-dev/rds-endpoint --query Parameter.Value --output text --region ${AWS_REGION}",
                             returnStdout: true
                         ).trim()
                     }
