@@ -8,6 +8,7 @@ import com.catalogix.user.repository.UserRepository;
 import com.catalogix.user.exception.UnauthorizedException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 
 import java.util.List;
@@ -33,7 +34,8 @@ public class UserSvc {
     }
 
     // Register a new user, Throws Exception if email already exists
-
+    // @Transactional ensures the findByEmail check and save() are in the same DB transaction, preventing a race where two concurrent requests register the same email.
+    @Transactional
     public UserResponse register(CreateUserRequest req) {
         // Check existing email
         if (repo.findByEmail(req.getEmail()).isPresent()) {
@@ -50,6 +52,7 @@ public class UserSvc {
     }
 
     // Login user: return UserResponse if successful, null if failed
+    @Transactional(readOnly = true)
     public UserResponse login(LoginRequest req) {
         return repo.findByEmail(req.getEmail())
                 .filter(u -> passwordEncoder.matches(req.getPassword(), u.getPassword()))
@@ -58,6 +61,7 @@ public class UserSvc {
     }
 
     // List all users as DTOs (no passwords)
+    @Transactional(readOnly = true)
     public List<UserResponse> listAll() {
         return Collections.unmodifiableList(repo.findAll()
                 .stream()
@@ -66,6 +70,8 @@ public class UserSvc {
     }
 
     // Delete user by id, return true if deleted, false if not found
+    // @Transactional ensures the check and delete are in the same DB transaction, preventing a race where the user is deleted between the existsById check and deleteById call.
+    @Transactional
     public boolean deleteById(Long id) {
         if (id == null) {
             return false;
