@@ -55,6 +55,7 @@ product-svc/target/
 /jenkinsfiles
 .github/
 Notes.txt
+kubeconfig
 
 # ====== Terraform ======
 *.tfstate
