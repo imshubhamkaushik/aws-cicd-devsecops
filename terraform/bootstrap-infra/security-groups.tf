@@ -53,7 +53,7 @@ resource "aws_security_group" "sonar" {
   }
 
   ingress {
-    description = "SonarQube UI — admin browser access via SSH tunnel"
+    description = "SonarQube UI - admin browser access via SSH tunnel"
     from_port   = 9000
     to_port     = 9000
     protocol    = "tcp"
