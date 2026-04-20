@@ -25,6 +25,7 @@ def run_command(cmd, cwd=None):
 
 
 def backend_bootstrap():
+    print("")
     info("Running Terraform Backend Bootstrap...")
     
     tfplan = BACKEND_BOOTSTRAP_DIR / "main.tfplan"
@@ -36,7 +37,8 @@ def backend_bootstrap():
         run_command("terraform plan -out main.tfplan", cwd=BACKEND_BOOTSTRAP_DIR)
     
         run_command("terraform show main.tfplan", cwd=BACKEND_BOOTSTRAP_DIR)
-    
+        
+        print("")    
         confirm = input("Proceed with Terraform apply? (yes/no): ").strip().lower()
     
         if confirm not in ["yes", "y"]:
@@ -45,6 +47,7 @@ def backend_bootstrap():
 
         run_command("terraform apply main.tfplan", cwd=BACKEND_BOOTSTRAP_DIR)
         
+        print("")
         info("Backend Bootstrap Complete.")
 
     finally:
