@@ -35,6 +35,7 @@ def run_command(cmd, cwd=None, capture_output=False):
 
 
 def bootstrap_infra():
+    print("")
     info("Running Bootstrap Infrastructure Terraform...")
     
     tfplan = BOOTSTRAP_INFRA_DIR / "main.tfplan"
@@ -46,7 +47,8 @@ def bootstrap_infra():
         run_command("terraform plan -out main.tfplan", cwd=BOOTSTRAP_INFRA_DIR)
 
         run_command("terraform show main.tfplan", cwd=BOOTSTRAP_INFRA_DIR)
-
+        
+        print("")
         confirm = input("Proceed with Terraform apply? (yes/no): ").strip().lower()
 
         if confirm not in ["yes", "y"]:
@@ -54,7 +56,8 @@ def bootstrap_infra():
             sys.exit(0)
 
         run_command("terraform apply main.tfplan", cwd=BOOTSTRAP_INFRA_DIR)
-
+        
+        print("")
         info("Infrastructure Bootstrap Complete.")
 
     finally:
@@ -63,6 +66,7 @@ def bootstrap_infra():
 
 
 def wait_for_ec2():
+    print("")
     info("Waiting for EC2 instances to become healthy...")
 
     instance_ids = run_command(
@@ -74,17 +78,21 @@ def wait_for_ec2():
     ).strip()
 
     if not instance_ids:
+        print("")
         error("No EC2 instances found.")
 
     run_command(f"aws ec2 wait instance-status-ok --instance-ids {instance_ids}")
-
+    
+    print("")
     info("EC2 instances healthy.")
 
 
 def run_ansible():
+    print("")
     info("Running Ansible Configuration...")
 
     run_command("ansible-galaxy collection install -r requirements.yaml", cwd=ANSIBLE_DIR)
     run_command("ansible-playbook playbook.yaml", cwd=ANSIBLE_DIR)
-
+    
+    print("")
     info("Ansible Configuration Complete.")

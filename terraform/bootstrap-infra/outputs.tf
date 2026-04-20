@@ -1,3 +1,13 @@
+output "instance_id_jenkins" {
+  description = "Instance ID of the Jenkins Server — used by bootstrap script to wait for healthy status"
+  value       = aws_instance.jenkins_catalogix.id
+}
+
+output "instance_id_sonarqube" {
+  description = "Instance ID of the SonarQube Server — used by bootstrap script to wait for healthy status"
+  value       = aws_instance.sonarqube_catalogix.id
+}
+
 output "public_ip_jenkins" {
   description = "Public IP of the Jenkins Server — open http://<ip>:8080 in browser"
   value       = aws_instance.jenkins_catalogix.public_ip
