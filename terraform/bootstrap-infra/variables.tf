@@ -27,15 +27,6 @@ variable "vpc_cidr" {
   type        = string
 }
 
-variable "admin_cidr" {
-  description = "Your IP in CIDR notation for SSH/UI access"
-  type        = string
-  validation {
-    condition     = var.admin_cidr != "0.0.0.0/0" && can(cidrhost(var.admin_cidr, 0))
-    error_message = "admin_cidr must be your specific IP in CIDR notation (e.g. 203.0.113.42/32). Never use 0.0.0.0/0."
-  }
-}
-
 variable "key_name" {
   description = "Name of the EC2 key pair to use for SSH access"
   type        = string

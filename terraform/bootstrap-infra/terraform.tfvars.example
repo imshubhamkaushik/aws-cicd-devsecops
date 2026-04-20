@@ -10,10 +10,11 @@ aws_region = "ap-south-1"
 ami           = "ami-07216ac99dc46a187"
 instance_type = "c7i-flex.large"
 
-# admin_cidr: your IP in CIDR notation. Used for SSH and Jenkins/SonarQube UI access.
-# Get your IP: curl -s https://checkip.amazonaws.com
-# NEVER use 0.0.0.0/0 — the variable has a validation block that rejects it.
-admin_cidr = "YOUR_IP/32"
+# NOTE: admin_cidr is no longer required.
+# The security groups auto-detect your public IP at apply time via
+# https://checkip.amazonaws.com (same as AWS Console "My IP").
+# If you run terraform apply from a CI/CD pipeline, that runner's IP will be used —
+# make sure the runner's egress IP is stable or whitelist it separately.
 
 # key_name: name of an existing EC2 key pair in your account.
 # Create one: aws ec2 create-key-pair --key-name catalogix-key --query 'KeyMaterial' --output text > ~/.ssh/catalogix-key.pem

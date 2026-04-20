@@ -1,4 +1,13 @@
 # Jenkins security group
+data "http" "my_ip" {
+  url = "https://checkip.amazonaws.com"   # same service AWS Console uses
+}
+
+locals {
+  my_ip_cidr = "${chomp(data.http.my_ip.response_body)}/32"
+  #                      ↑ strips trailing newline    ↑ /32 = single host
+}
+
 resource "aws_security_group" "jenkins" {
   name        = "jenkins-sg"
   description = "Security group for Jenkins"
@@ -9,7 +18,7 @@ resource "aws_security_group" "jenkins" {
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
-    cidr_blocks = [var.admin_cidr] # need to set this to My IP only
+    cidr_blocks = [local.my_ip_cidr] # need to set this to My IP only
   }
 
   ingress {
@@ -17,7 +26,7 @@ resource "aws_security_group" "jenkins" {
     from_port   = 8080
     to_port     = 8080
     protocol    = "tcp"
-    cidr_blocks = [var.admin_cidr] # need to set this to My IP only
+    cidr_blocks = [local.my_ip_cidr] # need to set this to My IP only
   }
 
   egress {
@@ -40,7 +49,7 @@ resource "aws_security_group" "sonar" {
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
-    cidr_blocks = [var.admin_cidr] # need to set this to My IP only
+    cidr_blocks = [local.my_ip_cidr] # need to set this to My IP only
   }
 
   ingress {
@@ -48,7 +57,7 @@ resource "aws_security_group" "sonar" {
     from_port   = 9000
     to_port     = 9000
     protocol    = "tcp"
-    cidr_blocks = [var.admin_cidr] # need to set this to My IP only
+    cidr_blocks = [local.my_ip_cidr] # need to set this to My IP only
   }
 
   ingress {
