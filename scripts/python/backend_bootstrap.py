@@ -3,7 +3,7 @@ import sys
 from pathlib import Path
 
 
-ROOT_DIR = Path(__file__).resolve().parent.parent
+ROOT_DIR = Path(__file__).resolve().parents[2]
 
 BACKEND_BOOTSTRAP_DIR = ROOT_DIR / "terraform" / "backend-bootstrap"
 
