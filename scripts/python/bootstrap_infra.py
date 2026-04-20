@@ -2,7 +2,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-ROOT_DIR = Path(__file__).resolve().parent[2]
+ROOT_DIR = Path(__file__).resolve().parents[2]
 
 BOOTSTRAP_INFRA_DIR = ROOT_DIR / "terraform" / "bootstrap-infra"
 ANSIBLE_DIR = ROOT_DIR / "ansible"
