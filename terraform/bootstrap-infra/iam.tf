@@ -440,11 +440,10 @@ resource "aws_iam_role_policy_attachment" "jenkins_secrets" {
   policy_arn = aws_iam_policy.jenkins_secrets.arn
 }
 
-# SSM Parameter Store — Jenkins reads the RDS endpoint written by Terraform
-# instead of running `terraform init + terraform output` on every pipeline run
-resource "aws_iam_policy" "jenkins_ssm" {
-  name        = "${var.ec2_name}-jenkins-ssm-policy"
-  description = "SSM Parameter Store access for CI/CD pipeline runtime lookups"
+# Custom policy for Jenkins to manage CloudWatch Logs, SSM Parameter Store, and STS for Jenkins operations and monitoring
+resource "aws_iam_policy" "jenkins_ops" {
+  name        = "${var.ec2_name}-jenkins-ops-policy"
+  description = "SSM Parameter Store, STS caller identity, and CloudWatch Logs for Jenkins CI/CD"
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -460,24 +459,7 @@ resource "aws_iam_policy" "jenkins_ssm" {
         ]
         # Scoped to /${var.ec2_name}/ prefix — covers /catalogix/dev/rds-endpoint etc.
         Resource = "arn:aws:ssm:${var.aws_region}:*:parameter/${var.ec2_name}/*"
-      }
-    ]
-  })
-}
-
-resource "aws_iam_role_policy_attachment" "jenkins_ssm" {
-  role       = aws_iam_role.jenkins_ec2_role.name
-  policy_arn = aws_iam_policy.jenkins_ssm.arn
-}
-
-# Custom policy for Jenkins to manage CloudWatch Logs
-resource "aws_iam_policy" "jenkins_misc" {
-  name        = "${var.ec2_name}-jenkins-misc-policy"
-  description = "STS caller identity and CloudWatch Logs for EKS control-plane logging"
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
+      },
       {
         Sid      = "STSCallerIdentity"
         Effect   = "Allow"
@@ -504,9 +486,9 @@ resource "aws_iam_policy" "jenkins_misc" {
   })
 }
 
-resource "aws_iam_role_policy_attachment" "jenkins_misc" {
+resource "aws_iam_role_policy_attachment" "jenkins_ops" {
   role       = aws_iam_role.jenkins_ec2_role.name
-  policy_arn = aws_iam_policy.jenkins_misc.arn
+  policy_arn = aws_iam_policy.jenkins_ops.arn
 }
 
 resource "aws_iam_instance_profile" "jenkins_profile" {
