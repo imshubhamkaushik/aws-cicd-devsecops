@@ -66,13 +66,15 @@ def bootstrap_infra():
 def wait_for_ec2():
     print("")
     info("Waiting for EC2 instances to become healthy...")
-
+    
+    print("")
     jenkins_id = run_command(
         "terraform output -raw instance_id_jenkins",
         cwd=BOOTSTRAP_INFRA_DIR,
         capture_output=True
     ).strip()
-
+    
+    print("")
     sonarqube_id = run_command(
         "terraform output -raw instance_id_sonarqube",
         cwd=BOOTSTRAP_INFRA_DIR,
@@ -94,10 +96,7 @@ def run_ansible():
     print("")
     info("Running Ansible Configuration...")
     
-    # boto3/botocore are required by the amazon.aws.aws_ec2 dynamic inventory
-    # plugin to query AWS at playbook runtime. Install them before collections.
-    run_command("python3 -m pip install --quiet boto3 botocore", cwd=ANSIBLE_DIR)
-
+    print("")
     run_command("ansible-galaxy collection install -r requirements.yaml", cwd=ANSIBLE_DIR)
     run_command("ansible-playbook playbook.yaml", cwd=ANSIBLE_DIR)
     
