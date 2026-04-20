@@ -35,9 +35,9 @@ resource "aws_db_instance" "postgres" {
 }
 
 resource "aws_ssm_parameter" "rds_endpoint" {
-  name  = var.ssm_parameter_path
-  type  = "String"
-  value = aws_db_instance.postgres.address
+  name        = var.ssm_parameter_path
+  type        = "String"
+  value       = aws_db_instance.postgres.address
   description = "RDS endpoint for ${var.name} — written by Terraform, consumed by Jenkins"
 
   tags = {

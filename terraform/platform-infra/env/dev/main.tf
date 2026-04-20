@@ -21,7 +21,7 @@ resource "random_password" "db" {
   # Password only changes if the RDS name changes — which is always intentional.
   keepers = {
     rds_name = "${local.env_prefix}-db"
-  } 
+  }
 }
 
 locals {

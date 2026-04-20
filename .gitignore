@@ -71,3 +71,7 @@ terraform.tfvars
 *.auto.tfvars
 *.tfvars.json
 *.tfplan
+
+# ====== Python ======
+__pycache__/
+*.pyc
