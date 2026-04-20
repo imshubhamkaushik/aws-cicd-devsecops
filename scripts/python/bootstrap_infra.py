@@ -7,8 +7,6 @@ ROOT_DIR = Path(__file__).resolve().parents[2]
 BOOTSTRAP_INFRA_DIR = ROOT_DIR / "terraform" / "bootstrap-infra"
 ANSIBLE_DIR = ROOT_DIR / "ansible"
 
-PROJECT_TAG = "catalogix"
-
 
 def info(msg):
     print(f"[INFO] {msg}")
@@ -69,20 +67,25 @@ def wait_for_ec2():
     print("")
     info("Waiting for EC2 instances to become healthy...")
 
-    instance_ids = run_command(
-        f'aws ec2 describe-instances '
-        f'--filters "Name=tag:Project,Values={PROJECT_TAG}" '
-        f'--query "Reservations[*].Instances[*].InstanceId" '
-        f'--output text',
+    jenkins_id = run_command(
+        "terraform output -raw instance_id_jenkins",
+        cwd=BOOTSTRAP_INFRA_DIR,
         capture_output=True
     ).strip()
 
-    if not instance_ids:
-        print("")
-        error("No EC2 instances found.")
+    sonarqube_id = run_command(
+        "terraform output -raw instance_id_sonarqube",
+        cwd=BOOTSTRAP_INFRA_DIR,
+        capture_output=True
+    ).strip()
+
+    if not jenkins_id or not sonarqube_id:
+        error("Could not read instance IDs from Terraform outputs.")
+
+    instance_ids = f"{jenkins_id} {sonarqube_id}"
 
     run_command(f"aws ec2 wait instance-status-ok --instance-ids {instance_ids}")
-    
+
     print("")
     info("EC2 instances healthy.")
 
