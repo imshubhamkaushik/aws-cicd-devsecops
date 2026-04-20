@@ -96,7 +96,7 @@ def run_ansible():
     
     # boto3/botocore are required by the amazon.aws.aws_ec2 dynamic inventory
     # plugin to query AWS at playbook runtime. Install them before collections.
-    run_command("pip3 install --quiet boto3 botocore", cwd=ANSIBLE_DIR)
+    run_command("python3 -m pip install --quiet boto3 botocore", cwd=ANSIBLE_DIR)
 
     run_command("ansible-galaxy collection install -r requirements.yaml", cwd=ANSIBLE_DIR)
     run_command("ansible-playbook playbook.yaml", cwd=ANSIBLE_DIR)
