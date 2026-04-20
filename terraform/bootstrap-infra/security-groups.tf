@@ -1,6 +1,6 @@
 # Jenkins security group
 data "http" "my_ip" {
-  url = "https://checkip.amazonaws.com"   # same service AWS Console uses
+  url = "https://checkip.amazonaws.com" # same service AWS Console uses
 }
 
 locals {
