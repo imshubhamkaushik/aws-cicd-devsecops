@@ -16,8 +16,8 @@ keyed_groups:
     # Setting prefix to "" and separator to "" means the group name is exactly the tag value: "jenkins" and "sonarqube".
 
 groups:
-  jenkins: "'{{ tags.Role }}' == 'jenkins'"
-  sonarqube: "'{{ tags.Role }}' == 'sonarqube'"
+  jenkins: "tags.Role == 'jenkins'"
+  sonarqube: "tags.Role == 'sonarqube'"
 
 compose:
   # Jenkins is in a public subnet — use its public IP for direct SSH from your machine.
