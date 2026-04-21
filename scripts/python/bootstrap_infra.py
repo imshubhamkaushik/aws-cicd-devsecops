@@ -43,7 +43,8 @@ def bootstrap_infra():
         run_command("terraform fmt -check", cwd=BOOTSTRAP_INFRA_DIR)
         run_command("terraform validate", cwd=BOOTSTRAP_INFRA_DIR)
         run_command("terraform plan -out main.tfplan", cwd=BOOTSTRAP_INFRA_DIR)
-
+        
+        print("Performing Terraform plan review...")
         run_command("terraform show main.tfplan", cwd=BOOTSTRAP_INFRA_DIR)
         
         print("")
@@ -90,11 +91,31 @@ def wait_for_ec2():
 
     print("")
     info("EC2 instances healthy.")
+    
+    
+VAULT_PASSWORD_FILE = Path.home() / ".vault_pass"
+
+
+def _check_vault():
+    """Ensure the vault password file exists before running Ansible."""
+    if not VAULT_PASSWORD_FILE.exists():
+        print("")
+        print(f"[WARN] Vault password file not found at {VAULT_PASSWORD_FILE}")
+        print("[WARN] Ansible Vault stores encrypted secrets (Jenkins password, tokens, etc.)")
+        print("[WARN] Create it with:")
+        print(f"         echo 'your-vault-password' > {VAULT_PASSWORD_FILE}")
+        print(f"         chmod 600 {VAULT_PASSWORD_FILE}")
+        print("")
+        print("[WARN] And create the vault variable file if you haven't already:")
+        print("         ansible-vault create ansible/group_vars/jenkins_vault.yaml")
+        error("Vault password file missing. See instructions above.")
 
 
 def run_ansible():
     print("")
     info("Running Ansible Configuration...")
+    
+    _check_vault()
     
     print("")
     run_command("ansible-galaxy collection install -r requirements.yaml", cwd=ANSIBLE_DIR)
