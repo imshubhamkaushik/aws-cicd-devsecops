@@ -12,6 +12,17 @@
 - name: Configure Jenkins server
   hosts: jenkins
   become: true
+
+  pre_tasks:
+    - name: Remove stale Jenkins repo and key files from previous runs
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /etc/apt/sources.list.d/jenkins.list
+        - /usr/share/keyrings/jenkins-keyring.gpg
+        - /usr/share/keyrings/jenkins-keyring.asc
+        - /usr/share/keyrings/jenkins.asc
   
   roles:
     - devops-tools
