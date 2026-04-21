@@ -1,63 +1,4 @@
 ---
-# Wait for SonarQube to be up
-- name: Wait for SonarQube to be reachable
-  uri:
-    url: "http://localhost:9000"
-    status_code: 200
-  register: sonar_status
-  retries: 30
-  delay: 10
-  until: sonar_status.status == 200
-
-# Wait until Sonar API is ready
-- name: Wait for SonarQube API to be ready
-  uri:
-    url: "http://localhost:9000/api/system/status"
-    return_content: yes
-  register: sonar_api
-  retries: 30
-  delay: 10
-  until: sonar_api.json.status == "UP"
-
-# Change default admin password
-- name: Change SonarQube admin password
-  uri:
-    url: "http://localhost:9000/api/users/change_password"
-    method: POST
-    user: admin
-    password: admin
-    force_basic_auth: yes
-    body_format: form-urlencoded
-    body:
-      login: admin
-      previousPassword: admin
-      password: "{{ sonar_admin_password }}"
-  register: change_password
-  failed_when: false
-
-# Generate Sonar token
-- name: Generate SonarQube token
-  uri:
-    url: "http://localhost:9000/api/user_tokens/generate"
-    method: POST
-    user: admin
-    password: "{{ sonar_admin_password }}"
-    force_basic_auth: yes
-    body_format: form-urlencoded
-    body:
-      name: "jenkins-token"
-  register: sonar_token_response
-
-# Store token as fact for later use (e.g. Jenkins configuration)
-- name: Set Sonar token fact
-  set_fact:
-    sonar_token: "{{ sonar_token_response.json.token }}"
-
-# Debug (optional - remove later)
-- name: Show Sonar token
-  debug:
-    msg: "Sonar Token: {{ sonar_token }}"
-
 # SonarQube's embedded Elasticsearch requires vm.max_map_count >= 524288.
 - name: Set vm.max_map_count for Elasticsearch (required by SonarQube)
   sysctl:
@@ -112,3 +53,51 @@
   until: sq_status.json is defined and sq_status.json.status == "UP"
   retries: 30
   delay: 10
+
+- name: Wait for SonarQube to be reachable
+  uri:
+    url: "http://localhost:9000"
+    status_code: 200
+  register: sonar_status
+  retries: 30
+  delay: 10
+  until: sonar_status.status == 200
+
+# Change default admin password
+- name: Change SonarQube admin password
+  uri:
+    url: "http://localhost:9000/api/users/change_password"
+    method: POST
+    user: admin
+    password: admin
+    force_basic_auth: yes
+    body_format: form-urlencoded
+    body:
+      login: admin
+      previousPassword: admin
+      password: "{{ sonar_admin_password }}"
+  register: change_password
+  failed_when: false
+
+# Generate Sonar token
+- name: Generate SonarQube token
+  uri:
+    url: "http://localhost:9000/api/user_tokens/generate"
+    method: POST
+    user: admin
+    password: "{{ sonar_admin_password }}"
+    force_basic_auth: yes
+    body_format: form-urlencoded
+    body:
+      name: "jenkins-token"
+  register: sonar_token_response
+
+# Store token as fact for later use (e.g. Jenkins configuration)
+- name: Set Sonar token fact
+  set_fact:
+    sonar_token: "{{ sonar_token_response.json.token }}"
+
+# Debug (optional - remove later)
+- name: Show Sonar token
+  debug:
+    msg: "Sonar Token: {{ sonar_token }}"
