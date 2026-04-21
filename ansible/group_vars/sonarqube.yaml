@@ -1,10 +1,13 @@
 # SonarQube EC2 is in a private subnet with no public IP.
 # Ansible reaches it by jumping through the Jenkins EC2 (which is in a public subnet).
-# This is equivalent to: ssh -J ubuntu@<jenkins-public-ip> ubuntu@<sonarqube-private-ip>
+# We use ProxyCommand instead of ProxyJump (-J) because ProxyJump does not
+# accept per-hop options like -i. Without -i on the jump leg, SSH falls back
+# to ssh-askpass which does not exist in headless environments.
 #
-# -i is passed explicitly to the ProxyJump so the same key is used for both
-# the jump-host hop (Jenkins) and the final connection (SonarQube).
-# Without it, SSH falls back to ssh-askpass which is not installed in headless envs.
+# Equivalent manual command:
+#   ssh -i catalogix-key.pem \
+#       -o ProxyCommand="ssh -W %h:%p -i catalogix-key.pem ubuntu@<jenkins-public-ip>" \
+#       ubuntu@<sonarqube-private-ip>
 ansible_ssh_private_key_file: "{{ inventory_dir }}/../terraform/bootstrap-infra/catalogix-key.pem"
 ansible_ssh_common_args: >-
   -o StrictHostKeyChecking=no
