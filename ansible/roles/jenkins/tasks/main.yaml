@@ -25,12 +25,17 @@
 
 # Install Jenkins
 # Download key and dearmor in one shot — avoids intermediate file trust issues
+# Use isolated GNUPGHOME to prevent gpg homedir permission issues when run as root
 - name: Download and dearmor Jenkins GPG key
   shell: |
+    set -e
+    GNUPGHOME="$(mktemp -d)"
+    trap "rm -rf $GNUPGHOME" EXIT
     curl -fsSL https://pkg.jenkins.io/debian-stable/jenkins.io-2023.key \
-      | gpg --dearmor -o /usr/share/keyrings/jenkins-keyring.gpg
-  args:
-    creates: /usr/share/keyrings/jenkins-keyring.gpg
+      | gpg --homedir "$GNUPGHOME" --batch --dearmor \
+      | tee /usr/share/keyrings/jenkins-keyring.gpg > /dev/null
+    test -s /usr/share/keyrings/jenkins-keyring.gpg  # fail loudly if file is empty
+  changed_when: true  # always re-run since stale cleanup removed the file above
 
 - name: Fix Jenkins key permissions
   file:
