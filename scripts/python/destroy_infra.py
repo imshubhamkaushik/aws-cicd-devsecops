@@ -33,9 +33,7 @@ def run_command(cmd, cwd=None, capture_output=False):
         error(f"Command failed: {cmd}")
 
 
-# ==============================
 # Destroy Infrastructure
-# ==============================
 def destroy_infra():
     print("")
     info("Destroying Terraform Infrastructure...")
@@ -54,7 +52,7 @@ def destroy_infra():
         run_command("terraform show destroy.tfplan", cwd=BOOTSTRAP_INFRA_DIR)
 
         print("")
-        confirm = input("⚠️  This will DELETE all infrastructure. Proceed? (yes/no): ").strip().lower()
+        confirm = input("This will DELETE all infrastructure. Proceed? (yes/no): ").strip().lower()
 
         if confirm not in ["yes", "y"]:
             info("Destroy aborted by user.")
