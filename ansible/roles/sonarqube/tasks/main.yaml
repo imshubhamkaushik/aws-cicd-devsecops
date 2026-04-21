@@ -109,10 +109,12 @@
 
     - name: Append token to vault file
       shell: |
-        grep -q "sonar_token:" {{ vault_file }} || \
+        grep -q "^sonar_token:" {{ vault_file }} || \
         echo "sonar_token: {{ sonar_token }}" >> {{ vault_file }}
 
-    - name: Re-encrypt vault file
+  always:
+    - name: Re-encrypt vault file (always)
       command: >
         ansible-vault encrypt {{ vault_file }}
         --vault-password-file {{ vault_pass }}
+      ignore_errors: true

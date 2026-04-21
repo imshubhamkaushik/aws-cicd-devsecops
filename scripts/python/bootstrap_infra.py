@@ -7,6 +7,9 @@ ROOT_DIR = Path(__file__).resolve().parents[2]
 BOOTSTRAP_INFRA_DIR = ROOT_DIR / "terraform" / "bootstrap-infra"
 ANSIBLE_DIR = ROOT_DIR / "ansible"
 
+VAULT_PASSWORD_FILE = Path.home() / ".vault_pass"
+VAULT_FILE = ANSIBLE_DIR / "group_vars" / "vault.yaml"
+
 
 def info(msg):
     print(f"[INFO] {msg}")
@@ -91,9 +94,6 @@ def wait_for_ec2():
 
     print("")
     info("EC2 instances healthy.")
-    
-    
-VAULT_PASSWORD_FILE = Path.home() / ".vault_pass"
 
 
 def _check_vault():
@@ -109,6 +109,17 @@ def _check_vault():
         print("[WARN] And create the vault variable file if you haven't already:")
         print("         ansible-vault create ansible/group_vars/vault.yaml")
         error("Vault password file missing. See instructions above.")
+        
+    print("")
+    info("Vault password file found.")
+    
+    print("")    
+    if not VAULT_FILE.exists():
+        print("")
+        print(f"[WARN] Vault file not found at {VAULT_FILE}")
+        print("[WARN] Create it with:")
+        print("       ansible-vault create ansible/group_vars/vault.yaml")
+        error("Vault file missing.")
 
 
 def run_ansible():
