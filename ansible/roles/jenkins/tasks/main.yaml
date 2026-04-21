@@ -12,6 +12,16 @@
     state: directory
     mode: '0755'
 
+# Remove any old Jenkins keyring files to prevent conflicts with the new GPG key import and repository setup.
+- name: Remove stale Jenkins key and repo files if present
+  file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /usr/share/keyrings/jenkins.asc
+    - /usr/share/keyrings/jenkins-keyring.gpg
+    - /etc/apt/sources.list.d/jenkins.list
+
 # Install Jenkins
 - name: Import Jenkins GPG key to the system
   shell: |
