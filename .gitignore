@@ -75,3 +75,8 @@ terraform.tfvars
 # ====== Python ======
 __pycache__/
 *.pyc
+
+# ====== Ansible ======
+ansible/collections/
+collections/
+~/.ansible/collections/
