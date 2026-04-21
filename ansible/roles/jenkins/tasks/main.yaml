@@ -26,47 +26,22 @@
 # Install Jenkins
 # Download key and dearmor in one shot — avoids intermediate file trust issues
 # Use isolated GNUPGHOME to prevent gpg homedir permission issues when run as root
-- name: Download and dearmor Jenkins GPG key
-  shell: |
-    set -e
-    GNUPGHOME="$(mktemp -d)"
-    TMPKEY="$(mktemp)"
-    trap "rm -rf $GNUPGHOME $TMPKEY" EXIT
-
-    # Step 1: download the raw armored key to a temp file
-    curl -fsSL https://pkg.jenkins.io/debian-stable/jenkins.io-2023.key -o "$TMPKEY"
-
-    # Step 2: dearmor directly to destination with -o (no pipe, no tee)
-    gpg --homedir "$GNUPGHOME" --batch --dearmor \
-        --output /usr/share/keyrings/jenkins-keyring.gpg "$TMPKEY"
-
-    # Step 3: confirm file is non-empty
-    test -s /usr/share/keyrings/jenkins-keyring.gpg
-
-    # Step 4: confirm the expected key ID is actually present
-    gpg --homedir "$GNUPGHOME" --no-default-keyring \
-        --keyring /usr/share/keyrings/jenkins-keyring.gpg \
-        --list-keys 2>/dev/null | grep -qi "7198F4B7" \
-      || { echo "ERROR: Expected key 7198F4B714ABFC68 not found in keyring"; exit 1; }
-  changed_when: true
-  register: gpg_result
-
-- name: Show GPG key import result
-  debug:
-    var: gpg_result.stdout_lines
-
-- name: Import Jenkins key directly from keyserver (fallback)
+- name: Fetch Jenkins GPG key by fingerprint from keyserver
   shell: |
     set -e
     GNUPGHOME="$(mktemp -d)"
     trap "rm -rf $GNUPGHOME" EXIT
+
     gpg --homedir "$GNUPGHOME" --batch \
         --keyserver hkps://keyserver.ubuntu.com \
         --recv-keys 7198F4B714ABFC68
-    gpg --homedir "$GNUPGHOME" --batch --export 7198F4B714ABFC68 \
+
+    gpg --homedir "$GNUPGHOME" --batch \
+        --export 7198F4B714ABFC68 \
         > /usr/share/keyrings/jenkins-keyring.gpg
-    test -s /usr/share/keyrings/jenkins-keyring.gpg
-  when: gpg_result.failed is defined and gpg_result.failed
+
+    test -s /usr/share/keyrings/jenkins-keyring.gpg \
+      || { echo "ERROR: exported keyring is empty"; exit 1; }
   changed_when: true
 
 - name: Fix Jenkins key permissions
