@@ -107,7 +107,7 @@ def _check_vault():
         print(f"         chmod 600 {VAULT_PASSWORD_FILE}")
         print("")
         print("[WARN] And create the vault variable file if you haven't already:")
-        print("         ansible-vault create ansible/group_vars/jenkins_vault.yaml")
+        print("         ansible-vault create ansible/group_vars/vault.yaml")
         error("Vault password file missing. See instructions above.")
 
 
@@ -119,7 +119,13 @@ def run_ansible():
     
     print("")
     run_command("ansible-galaxy collection install -r requirements.yaml", cwd=ANSIBLE_DIR)
-    run_command("ansible-playbook playbook.yaml", cwd=ANSIBLE_DIR)
+    
+    print("")
+    run_command(
+        f"ansible-playbook playbook.yaml "
+        f"--vault-password-file {VAULT_PASSWORD_FILE}",
+        cwd=ANSIBLE_DIR
+    )
     
     print("")
     info("Ansible Configuration Complete.")

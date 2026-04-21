@@ -91,13 +91,43 @@
     body:
       name: "jenkins-token"
   register: sonar_token_response
+  when: sonar_token is not defined
 
 # Store token as fact for later use (e.g. Jenkins configuration)
 - name: Set Sonar token fact
   set_fact:
     sonar_token: "{{ sonar_token_response.json.token }}"
+  when: sonar_token is not defined
 
 # Debug (optional - remove later)
 - name: Show Sonar token
   debug:
     msg: "Sonar Token: {{ sonar_token }}"
+
+# Persist Sonar token to Vault
+- name: Save Sonar token to vault file (first run only)
+  delegate_to: localhost
+  run_once: true
+  when: sonar_token is defined
+  block:
+
+    - name: Write token to temp file
+      copy:
+        dest: /tmp/sonar_token.yml
+        content: |
+          sonar_token: "{{ sonar_token }}"
+
+    - name: Decrypt vault file
+      command: >
+        ansible-vault decrypt ansible/group_vars/vault.yaml
+        --vault-password-file {{ lookup('env','HOME') }}/.vault_pass
+
+    - name: Append token to vault file
+      shell: |
+        grep -q "sonar_token:" ansible/group_vars/vault.yaml || \
+        cat /tmp/sonar_token.yml >> ansible/group_vars/vault.yaml
+
+    - name: Re-encrypt vault file
+      command: >
+        ansible-vault encrypt ansible/group_vars/vault.yaml
+        --vault-password-file {{ lookup('env','HOME') }}/.vault_pass
