@@ -24,12 +24,15 @@
 
 # Install Jenkins
 - name: Import Jenkins GPG key to the system
-  shell: |
-    curl -fsSL https://pkg.jenkins.io/debian-stable/jenkins.io-2023.key \
-      | gpg --dearmor -o /usr/share/keyrings/jenkins-keyring.gpg
-    args:
+  get_url:
+    url: https://pkg.jenkins.io/debian-stable/jenkins.io-2023.key
+    dest: /tmp/jenkins.asc
+
+- name: Convert Jenkins key to gpg
+  command: >
+    gpg --dearmor -o /usr/share/keyrings/jenkins-keyring.gpg /tmp/jenkins.asc
+  args:
     creates: /usr/share/keyrings/jenkins-keyring.gpg
-  # get_url saves the raw ASCII-armored .asc file — apt signed-by requires a dearmored binary .gpg. Using shell+gpg --dearmor produces the correct format.
 
 - name: Add Jenkins apt repository
   apt_repository:
