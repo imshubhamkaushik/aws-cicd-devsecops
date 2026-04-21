@@ -40,7 +40,7 @@
 # Add the Jenkins apt repository to the system's sources list, referencing the imported GPG key for package verification.
 - name: Add Jenkins apt repository
   apt_repository:
-    repo: "deb [signed-by=/usr/share/keyrings/jenkins-keyring.asc] https://pkg.jenkins.io/debian-stable binary/"
+    repo: "deb [signed-by=/usr/share/keyrings/jenkins-keyring.gpg] https://pkg.jenkins.io/debian-stable binary/"
     state: present
     filename: jenkins
     update_cache: no
