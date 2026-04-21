@@ -20,15 +20,22 @@
   loop:
     - /usr/share/keyrings/jenkins.asc
     - /usr/share/keyrings/jenkins-keyring.asc
+    - /usr/share/keyrings/jenkins-keyring.gpg
     - /etc/apt/sources.list.d/jenkins.list
 
 # Install Jenkins
-- name: Download Jenkins GPG key
-  get_url:
-    url: https://pkg.jenkins.io/debian-stable/jenkins.io-2023.key
-    dest: /usr/share/keyrings/jenkins-keyring.asc
+# Download key and dearmor in one shot — avoids intermediate file trust issues
+- name: Download and dearmor Jenkins GPG key
+  shell: |
+    curl -fsSL https://pkg.jenkins.io/debian-stable/jenkins.io-2023.key \
+      | gpg --dearmor -o /usr/share/keyrings/jenkins-keyring.gpg
+  args:
+    creates: /usr/share/keyrings/jenkins-keyring.gpg
+
+- name: Fix Jenkins key permissions
+  file:
+    path: /usr/share/keyrings/jenkins-keyring.gpg
     mode: '0644'
-    force: true
 
 # Add the Jenkins apt repository to the system's sources list, referencing the imported GPG key for package verification.
 - name: Add Jenkins apt repository
@@ -36,6 +43,7 @@
     repo: "deb [signed-by=/usr/share/keyrings/jenkins-keyring.asc] https://pkg.jenkins.io/debian-stable binary/"
     state: present
     filename: jenkins
+    update_cache: no
 
 # Update the apt cache to recognize the new Jenkins repository and its packages.
 - name: Update apt cache
