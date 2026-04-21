@@ -80,3 +80,20 @@ __pycache__/
 ansible/collections/
 collections/
 ~/.ansible/collections/
+
+# ====== Inventory & secrets ======
+inventory.ini
+hosts
+*.retry
+
+# ====== Vault / secrets (VERY IMPORTANT) ======
+*.vault.yml
+*.vault.yaml
+group_vars/*vault*
+host_vars/*vault*
+
+# ====== SSH / private keys ======
+*.pem
+*.key
+*.crt
+*.ppk
