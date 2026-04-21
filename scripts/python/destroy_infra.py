@@ -71,31 +71,5 @@ def destroy_infra():
         if tfplan.exists():
             tfplan.unlink()
 
-
-# ==============================
-# Optional: Wait for termination
-# ==============================
-def wait_for_termination():
-    print("")
-    info("Checking for remaining EC2 instances...")
-
-    try:
-        instance_ids = run_command(
-            "terraform output -raw instance_id_jenkins",
-            cwd=BOOTSTRAP_INFRA_DIR,
-            capture_output=True
-        ).strip()
-
-        if instance_ids:
-            run_command(f"aws ec2 wait instance-terminated --instance-ids {instance_ids}")
-
-    except Exception:
-        # Outputs may not exist after destroy → ignore
-        pass
-
-    info("All resources cleaned up.")
-
-
 if __name__ == "__main__":
     destroy_infra()
-    wait_for_termination()
