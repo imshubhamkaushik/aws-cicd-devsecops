@@ -31,7 +31,9 @@ def run_command(cmd, cwd=None, capture_output=False):
             capture_output=capture_output
         )
         return result.stdout if capture_output else None
-    except subprocess.CalledProcessError:
+    except subprocess.CalledProcessError as e:
+        print(e.stdout)
+        print(e.stderr)
         error(f"Command failed: {cmd}")
 
 
