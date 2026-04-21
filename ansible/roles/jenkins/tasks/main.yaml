@@ -28,6 +28,7 @@
   get_url:
     url: https://pkg.jenkins.io/debian-stable/jenkins.io-2023.key
     dest: /tmp/jenkins.asc
+    mode: '0644'
 
 # Convert the downloaded Jenkins GPG key to a format suitable for apt and store it in the keyrings directory.
 - name: Convert Jenkins key to gpg
@@ -35,6 +36,12 @@
     gpg --dearmor -o /usr/share/keyrings/jenkins-keyring.gpg /tmp/jenkins.asc
   args:
     creates: /usr/share/keyrings/jenkins-keyring.gpg
+
+# Ensure the Jenkins GPG key has the correct permissions so that apt can read it when verifying packages from the Jenkins repository.
+- name: Fix Jenkins key permissions
+  file:
+    path: /usr/share/keyrings/jenkins-keyring.gpg
+    mode: '0644'
 
 # Add the Jenkins apt repository to the system's sources list, referencing the imported GPG key for package verification.
 - name: Add Jenkins apt repository
