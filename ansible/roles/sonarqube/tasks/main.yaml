@@ -94,11 +94,9 @@
 - name: Persist/Save Sonar token to vault file (first run only)
   delegate_to: localhost
   run_once: true
-  when: 
-    - sonar_token is defined
-    - sonar_token_response is defined
+  when: sonar_token_response is defined
   vars:
-    vault_file: "{{ lookup('env','PWD') }}/ansible/group_vars/vault.yaml"
+    vault_file: "{{ playbook_dir }}/group_vars/vault.yaml"
     vault_pass: "{{ lookup('env','HOME') }}/.vault_pass"
   block:
 
@@ -107,10 +105,11 @@
         ansible-vault decrypt {{ vault_file }}
         --vault-password-file {{ vault_pass }}
 
-    - name: Append token to vault file
+    - name: Append token to vault file if not already present
       shell: |
         grep -q "^sonar_token:" {{ vault_file }} || \
         echo "sonar_token: {{ sonar_token }}" >> {{ vault_file }}
+      changed_when: "'sonar_token:' not in lookup('file', vault_file)"
 
   always:
     - name: Re-encrypt vault file (always)
