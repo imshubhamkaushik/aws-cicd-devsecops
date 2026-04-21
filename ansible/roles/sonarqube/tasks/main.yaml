@@ -54,15 +54,6 @@
   retries: 30
   delay: 10
 
-- name: Wait for SonarQube to be reachable
-  uri:
-    url: "http://localhost:9000"
-    status_code: 200
-  register: sonar_status
-  retries: 30
-  delay: 10
-  until: sonar_status.status == 200
-
 # Change default admin password
 - name: Change SonarQube admin password
   uri:
@@ -79,7 +70,7 @@
   register: change_password
   failed_when: false
 
-# Generate Sonar token
+# Generate Sonar token (idempotent - only generates if token doesn't already exist)
 - name: Generate SonarQube token
   uri:
     url: "http://localhost:9000/api/user_tokens/generate"
@@ -99,11 +90,6 @@
     sonar_token: "{{ sonar_token_response.json.token }}"
   when: sonar_token is not defined
 
-# Debug (optional - remove later)
-- name: Show Sonar token
-  debug:
-    msg: "Sonar Token: {{ sonar_token }}"
-
 # Persist Sonar token to Vault
 - name: Persist/Save Sonar token to vault file (first run only)
   delegate_to: localhost
@@ -115,12 +101,6 @@
     vault_file: "{{ lookup('env','PWD') }}/ansible/group_vars/vault.yaml"
     vault_pass: "{{ lookup('env','HOME') }}/.vault_pass"
   block:
-
-    - name: Write token to temp file
-      copy:
-        dest: /tmp/sonar_token.yml
-        content: |
-          sonar_token: "{{ sonar_token }}"
 
     - name: Decrypt vault file
       command: >
