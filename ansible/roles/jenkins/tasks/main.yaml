@@ -23,27 +23,32 @@
     - /etc/apt/sources.list.d/jenkins.list
 
 # Install Jenkins
-- name: Import Jenkins GPG key to the system
+# Add/Imports Jenkins GPG key to the system
+- name: Import Jenkins GPG key
   get_url:
     url: https://pkg.jenkins.io/debian-stable/jenkins.io-2023.key
     dest: /tmp/jenkins.asc
 
+# Convert the downloaded Jenkins GPG key to a format suitable for apt and store it in the keyrings directory.
 - name: Convert Jenkins key to gpg
   command: >
     gpg --dearmor -o /usr/share/keyrings/jenkins-keyring.gpg /tmp/jenkins.asc
   args:
     creates: /usr/share/keyrings/jenkins-keyring.gpg
 
+# Add the Jenkins apt repository to the system's sources list, referencing the imported GPG key for package verification.
 - name: Add Jenkins apt repository
   apt_repository:
     repo: "deb [signed-by=/usr/share/keyrings/jenkins-keyring.gpg] https://pkg.jenkins.io/debian-stable binary/"
     state: present
     filename: jenkins
 
+# Update the apt cache to recognize the new Jenkins repository and its packages.
 - name: Update apt cache
   apt:
     update_cache: yes
 
+# Install the Jenkins package from the newly added repository, ensuring that the latest version is installed and the apt cache is updated beforehand.
 - name: Install Jenkins
   apt:
     name: jenkins
