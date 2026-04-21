@@ -61,6 +61,14 @@ resource "aws_security_group" "sonar" {
   }
 
   ingress {
+    description     = "Ansible ProxyJump - SSH from Jenkins to reach SonarQube private subnet"
+    from_port       = 22
+    to_port         = 22
+    protocol        = "tcp"
+    security_groups = [aws_security_group.jenkins.id]
+  }
+
+  ingress {
     description     = "Jenkins pipeline - SonarQube analysis and Quality gate webhook"
     from_port       = 9000
     to_port         = 9000
