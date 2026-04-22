@@ -74,7 +74,7 @@ def _is_missing(dep):
     if dep["cli_tool"] and shutil.which(dep["cli_tool"]) is None:
         return True
     if dep["py_module"]:
-        result = run_command(
+        result = subprocess.run(
             f"python3 -c 'import {dep['py_module']}'",
             shell=True,
             stdout=subprocess.DEVNULL,
