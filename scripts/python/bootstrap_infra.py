@@ -131,7 +131,7 @@ def run_ansible():
     _check_vault()
     
     print("")
-    run_command("ansible-galaxy collection install -r requirements.yaml", cwd=ANSIBLE_DIR)
+    run_command("ansible-galaxy collection install -r requirements.yaml --force", cwd=ANSIBLE_DIR)
     
     print("")
     run_command(
