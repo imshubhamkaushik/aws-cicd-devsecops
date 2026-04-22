@@ -13,21 +13,19 @@ def backend_bootstrap():
     
     tfplan = BACKEND_BOOTSTRAP_DIR / "main.tfplan"
     
-    env_prefix = "AWS_MAX_ATTEMPTS=10 AWS_RETRY_MODE=adaptive"
-    
     env={
         "AWS_MAX_ATTEMPTS": "10",
         "AWS_RETRY_MODE": "adaptive"
     }
 
     try:
-        run_command(f"{env_prefix} terraform init", cwd=BACKEND_BOOTSTRAP_DIR, env=env)
-        run_command(f"{env_prefix} terraform fmt -check", cwd=BACKEND_BOOTSTRAP_DIR, env=env)
-        run_command(f"{env_prefix} terraform validate", cwd=BACKEND_BOOTSTRAP_DIR, env=env)
-        run_command(f"{env_prefix} terraform plan -out main.tfplan", cwd=BACKEND_BOOTSTRAP_DIR, env=env)
+        run_command("terraform init", cwd=BACKEND_BOOTSTRAP_DIR, env=env)
+        run_command("terraform fmt -check", cwd=BACKEND_BOOTSTRAP_DIR, env=env)
+        run_command("terraform validate", cwd=BACKEND_BOOTSTRAP_DIR, env=env)
+        run_command("terraform plan -out main.tfplan", cwd=BACKEND_BOOTSTRAP_DIR, env=env)
         
         print("\nPerforming Terraform plan review...")    
-        run_command("terraform show main.tfplan", cwd=BACKEND_BOOTSTRAP_DIR)
+        run_command("terraform show main.tfplan", cwd=BACKEND_BOOTSTRAP_DIR, env=env)
            
         confirm = input("\nProceed with Terraform apply? (yes/no): ").strip().lower()
     
@@ -35,7 +33,7 @@ def backend_bootstrap():
             info("\nBackend bootstrap aborted.")
             sys.exit(0)
 
-        run_command("terraform apply main.tfplan", cwd=BACKEND_BOOTSTRAP_DIR)
+        run_command("terraform apply main.tfplan", cwd=BACKEND_BOOTSTRAP_DIR, env=env)
         
         print("")
         info("Backend Bootstrap Complete.")

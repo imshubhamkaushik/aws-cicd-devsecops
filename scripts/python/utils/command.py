@@ -1,6 +1,7 @@
 import subprocess
 import time
 import sys
+import os
 
 def info(msg):
     print(f"[INFO] {msg}")
@@ -20,7 +21,7 @@ def _print_error_output(e, capture_output):
         print(e.stderr)
 
 
-def run_command(cmd, cwd=None, capture_output=False, retries=3, delay=5):
+def run_command(cmd, cwd=None, capture_output=False, retries=3, delay=5, env=None):
     """
     Run shell command with retry logic (for network issues like S3 backend).
     """
@@ -32,7 +33,8 @@ def run_command(cmd, cwd=None, capture_output=False, retries=3, delay=5):
                 shell=True,
                 check=True,
                 text=True,
-                capture_output=capture_output
+                capture_output=capture_output,
+                env={**os.environ, **(env or {})}
             )
             return result.stdout if capture_output else None
         except subprocess.CalledProcessError as e:

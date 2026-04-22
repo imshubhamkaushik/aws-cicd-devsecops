@@ -13,16 +13,19 @@ def bootstrap_infra():
     
     tfplan = BOOTSTRAP_INFRA_DIR / "main.tfplan"
     
-    env_prefix = "AWS_MAX_ATTEMPTS=10 AWS_RETRY_MODE=adaptive"
+    env = {
+        "AWS_MAX_ATTEMPTS": "10",
+        "AWS_RETRY_MODE": "adaptive"
+    }
     
     try:
-        run_command(f"{env_prefix} terraform init", cwd=BOOTSTRAP_INFRA_DIR)
-        run_command(f"{env_prefix} terraform fmt -check", cwd=BOOTSTRAP_INFRA_DIR)
-        run_command(f"{env_prefix} terraform validate", cwd=BOOTSTRAP_INFRA_DIR)
-        run_command(f"{env_prefix} terraform plan -out main.tfplan", cwd=BOOTSTRAP_INFRA_DIR)
+        run_command("terraform init", cwd=BOOTSTRAP_INFRA_DIR, env=env)
+        run_command("terraform fmt -check", cwd=BOOTSTRAP_INFRA_DIR, env=env)
+        run_command("terraform validate", cwd=BOOTSTRAP_INFRA_DIR, env=env)
+        run_command("terraform plan -out main.tfplan", cwd=BOOTSTRAP_INFRA_DIR, env=env)
                
         print("\nPerforming Terraform plan review...")
-        run_command("terraform show main.tfplan", cwd=BOOTSTRAP_INFRA_DIR)
+        run_command("terraform show main.tfplan", cwd=BOOTSTRAP_INFRA_DIR, env=env)
         
   
         confirm = input("Proceed with Terraform apply? (yes/no): ").strip().lower()
@@ -32,7 +35,7 @@ def bootstrap_infra():
             sys.exit(0)
             
         print("\nPerforming Terraform apply...")
-        run_command("terraform apply main.tfplan", cwd=BOOTSTRAP_INFRA_DIR)
+        run_command("terraform apply main.tfplan", cwd=BOOTSTRAP_INFRA_DIR, env=env)
         
         info("\nInfrastructure Bootstrap Complete.")
 
