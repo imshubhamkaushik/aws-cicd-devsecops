@@ -8,7 +8,7 @@ BOOTSTRAP_INFRA_DIR = ROOT_DIR / "terraform" / "bootstrap-infra"
 ANSIBLE_DIR = ROOT_DIR / "ansible"
 
 VAULT_PASSWORD_FILE = Path.home() / ".vault_pass"
-VAULT_FILE = ANSIBLE_DIR / "group_vars" / "vault.yaml"
+VAULT_FILE = ANSIBLE_DIR / "group_vars" / "all" / "vault.yaml"
 
 
 def info(msg):
@@ -109,7 +109,7 @@ def _check_vault():
         print(f"         chmod 600 {VAULT_PASSWORD_FILE}")
         print("")
         print("[WARN] And create the vault variable file if you haven't already:")
-        print("         ansible-vault create ansible/group_vars/vault.yaml")
+        print("         ansible-vault create ansible/group_vars/all/vault.yaml")
         error("Vault password file missing. See instructions above.")
         
     print("")
@@ -120,7 +120,7 @@ def _check_vault():
         print("")
         print(f"[WARN] Vault file not found at {VAULT_FILE}")
         print("[WARN] Create it with:")
-        print("       ansible-vault create ansible/group_vars/vault.yaml")
+        print("       ansible-vault create ansible/group_vars/all/vault.yaml")
         error("Vault file missing.")
 
 
