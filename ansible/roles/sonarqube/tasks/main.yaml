@@ -96,7 +96,7 @@
   run_once: true
   when: sonar_token_response is defined
   vars:
-    vault_file: "{{ playbook_dir }}/group_vars/vault.yaml"
+    vault_file: "{{ playbook_dir }}/group_vars/all/vault.yaml"
     vault_pass: "{{ lookup('env','HOME') }}/.vault_pass"
   block:
 
