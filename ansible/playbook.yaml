@@ -32,6 +32,9 @@
 - name: Configure SonarQube server
   hosts: sonarqube
   become: true
+
+  collections:
+    - community.docker
   
   roles:
     - sonarqube
