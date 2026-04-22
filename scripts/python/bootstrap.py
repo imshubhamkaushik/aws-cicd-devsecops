@@ -3,17 +3,11 @@ import shutil
 import subprocess
 import sys
 
+from utils.command import info, error, warn, run_command
 from backend_bootstrap import backend_bootstrap
-from bootstrap_infra import bootstrap_infra, wait_for_ec2, run_ansible
+from bootstrap_infra import bootstrap_infra, wait_for_ec2
+from ansible import run_ansible
 
-
-def error(msg):
-    print(f"[ERROR] {msg}")
-    sys.exit(1)
-    
-
-def info(msg):
-    print(f"[INFO] {msg}")
 
 DEPENDENCIES = [
     {
@@ -98,26 +92,24 @@ def check_dependencies():
         info("All dependencies satisfied.")
         return
  
-    print("")
-    print("[WARN] The following dependencies are missing:")
+    warn("\nThe following dependencies are missing:")
     for dep in missing:
         print(f"       - {dep['name']}")
  
     print("")
-    confirm = input("Auto-install all missing dependencies? (yes/no): ").strip().lower()
+    confirm = input("\nAuto-install all missing dependencies? (yes/no): ").strip().lower()
  
     if confirm not in ["yes", "y"]:
         print("")
-        print("[INFO] Manual install commands:")
+        info("Manual install commands:")
         for dep in missing:
             print(f"       {dep['name']}: {dep['help']}")
         error("Please install missing dependencies and re-run.")
  
-    print("")
     # apt-get based installs benefit from a single update pass first
     apt_needed = any("apt-get" in dep["install"] for dep in missing)
     if apt_needed:
-        info("Updating apt package index...")
+        info("\nUpdating apt package index...")
         result = subprocess.run(
             "sudo apt-get update -qq",
             shell=True
@@ -127,7 +119,7 @@ def check_dependencies():
  
     for dep in missing:
         info(f"Installing {dep['name']}...")
-        result = subprocess.run(dep["install"], shell=True)
+        run_command(dep["install"])
         if result.returncode != 0:
             error(
                 f"Failed to install {dep['name']}.\n"
@@ -140,12 +132,11 @@ def check_dependencies():
         names = ", ".join(d["name"] for d in still_missing)
         error(f"Installation appeared to succeed but {names} still not found. Check the output above.")
  
-    print("")
-    info("All dependencies installed successfully.")
+    info("\nAll dependencies installed successfully.")
 
 
 def check_aws_auth():
-    result = subprocess.run(
+    result = run_command(
         "aws sts get-caller-identity",
         shell=True,
         stdout=subprocess.DEVNULL,
@@ -200,6 +191,8 @@ def main():
     elif args.command == "infra":
         bootstrap_infra()
         wait_for_ec2()
+        
+    elif args.command == "ansible":
         run_ansible()
 
     elif args.command == "full":
