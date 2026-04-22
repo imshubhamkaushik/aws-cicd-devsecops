@@ -1,0 +1,19 @@
+# SHARED VAULT — loaded for ALL hosts.
+# Copy to vault.yaml and encrypt:
+#   cp vault.yaml.example vault.yaml
+#   ansible-vault encrypt group_vars/all/vault.yaml
+#
+# Edit later with:
+#   ansible-vault edit group_vars/all/vault.yaml
+
+# Jenkins
+vault_jenkins_admin_password: "adminadmin"
+vault_github_token:           ""
+vault_aws_access_key_id:      ""
+vault_aws_secret_access_key:  ""
+
+# SonarQube
+vault_sonar_admin_password:   "adminadmin"
+
+# Populated automatically by the sonarqube role on first run — leave blank initially
+vault_sonar_token:            ""

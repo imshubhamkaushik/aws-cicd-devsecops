@@ -13,4 +13,4 @@
 # Reference vault vars in tasks via: "{{ vault_jenkins_admin_password }}"
 
 jenkins_admin_user: "admin"
-git_repo_url: "https://github.com/YOUR_ORG/aws-cicd-devsecops.git"  # UPDATE THIS
+git_repo_url: "https://github.com/imshubhamkaushik/aws-cicd-devsecops.git"  # UPDATE THIS

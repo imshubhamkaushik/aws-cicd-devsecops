@@ -66,7 +66,7 @@
     body:
       login: admin
       previousPassword: admin
-      password: "{{ sonar_admin_password }}"
+      password: "{{ vault_sonar_admin_password }}"
   register: change_password
   failed_when: false
 
@@ -76,7 +76,7 @@
     url: "http://localhost:9000/api/user_tokens/generate"
     method: POST
     user: admin
-    password: "{{ sonar_admin_password }}"
+    password: "{{ vault_sonar_admin_password }}"
     force_basic_auth: yes
     body_format: form-urlencoded
     body:
