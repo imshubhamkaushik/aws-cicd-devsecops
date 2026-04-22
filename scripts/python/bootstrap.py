@@ -74,7 +74,7 @@ def _is_missing(dep):
     if dep["cli_tool"] and shutil.which(dep["cli_tool"]) is None:
         return True
     if dep["py_module"]:
-        result = subprocess.run(
+        result = run_command(
             f"python3 -c 'import {dep['py_module']}'",
             shell=True,
             stdout=subprocess.DEVNULL,
@@ -151,16 +151,23 @@ def run_full_bootstrap():
 
     backend_bootstrap()
     
-    print("")
-    confirm = input(
-        "Proceed to infrastructure bootstrap? (yes/no): "
+    confirm_infra = input(
+        "\nReady to bootstrap infrastructure. Proceed to infrastructure bootstrap? (yes/no): "
     ).strip().lower()
 
-    if confirm not in ["yes", "y"]:
+    if confirm_infra not in ["yes", "y"]:
         sys.exit(0)
 
     bootstrap_infra()
     wait_for_ec2()
+    
+    confirm_ansible = input(
+        "\nReady to run Ansible. Proceed to Ansible Configuration? (yes/no): "
+    ).strip().lower()
+    
+    if confirm_ansible not in ["yes", "y"]:
+        sys.exit(0)
+    
     run_ansible()
     
     print("")
