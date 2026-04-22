@@ -24,10 +24,12 @@ def backend_bootstrap():
         run_command("terraform validate", cwd=BACKEND_BOOTSTRAP_DIR, env=env)
         run_command("terraform plan -out main.tfplan", cwd=BACKEND_BOOTSTRAP_DIR, env=env)
         
-        print("\nPerforming Terraform plan review...")    
+        print("")
+        print("Performing Terraform plan review...")    
         run_command("terraform show main.tfplan", cwd=BACKEND_BOOTSTRAP_DIR, env=env)
            
-        confirm = input("\nProceed with Terraform apply? (yes/no): ").strip().lower()
+        print("")
+        confirm = input("Proceed with Terraform apply? (yes/no): ").strip().lower()
     
         if confirm not in ["yes", "y"]:
             info("\nBackend bootstrap aborted.")

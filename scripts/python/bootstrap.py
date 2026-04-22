@@ -74,12 +74,7 @@ def _is_missing(dep):
     if dep["cli_tool"] and shutil.which(dep["cli_tool"]) is None:
         return True
     if dep["py_module"]:
-        result = subprocess.run(
-            f"python3 -c 'import {dep['py_module']}'",
-            shell=True,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
+        result = run_command(f"python3 -c 'import {dep['py_module']}'")
         if result.returncode != 0:
             return True
     return False
@@ -110,16 +105,13 @@ def check_dependencies():
     apt_needed = any("apt-get" in dep["install"] for dep in missing)
     if apt_needed:
         info("\nUpdating apt package index...")
-        result = subprocess.run(
-            "sudo apt-get update -qq",
-            shell=True
-        )
+        result = run_command("sudo apt-get update -qq")
         if result.returncode != 0:
             error("apt-get update failed. Check your network or sudo permissions.")
  
     for dep in missing:
         info(f"Installing {dep['name']}...")
-        run_command(dep["install"])
+        result = run_command(dep["install"])
         if result.returncode != 0:
             error(
                 f"Failed to install {dep['name']}.\n"
@@ -131,14 +123,14 @@ def check_dependencies():
     if still_missing:
         names = ", ".join(d["name"] for d in still_missing)
         error(f"Installation appeared to succeed but {names} still not found. Check the output above.")
- 
-    info("\nAll dependencies installed successfully.")
+        
+    print("") 
+    info("All dependencies installed successfully.")
 
 
 def check_aws_auth():
     result = run_command(
         "aws sts get-caller-identity",
-        shell=True,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL
     )
@@ -151,8 +143,9 @@ def run_full_bootstrap():
 
     backend_bootstrap()
     
+    print("")
     confirm_infra = input(
-        "\nReady to bootstrap infrastructure. Proceed to infrastructure bootstrap? (yes/no): "
+        "Ready to bootstrap infrastructure. Proceed to infrastructure bootstrap? (yes/no): "
     ).strip().lower()
 
     if confirm_infra not in ["yes", "y"]:
@@ -191,17 +184,22 @@ def main():
 
     check_dependencies()
     check_aws_auth()
-
+    
+    # Run the appropriate command based on user input
+    # For backend bootstrap
     if args.command == "backend":
         backend_bootstrap()
-
+        
+    # For infra bootstrap
     elif args.command == "infra":
         bootstrap_infra()
         wait_for_ec2()
         
+    # For Ansible configuration        
     elif args.command == "ansible":
         run_ansible()
-
+        
+    # For full bootstrap (backend + infra + ansible)
     elif args.command == "full":
         run_full_bootstrap()
 

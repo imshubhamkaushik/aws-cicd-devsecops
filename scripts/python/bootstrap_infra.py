@@ -27,17 +27,18 @@ def bootstrap_infra():
         print("\nPerforming Terraform plan review...")
         run_command("terraform show main.tfplan", cwd=BOOTSTRAP_INFRA_DIR, env=env)
         
-  
         confirm = input("Proceed with Terraform apply? (yes/no): ").strip().lower()
 
         if confirm not in ["yes", "y"]:
             info("Infra bootstrap aborted by user.")
             sys.exit(0)
-            
-        print("\nPerforming Terraform apply...")
+        
+        print("")
+        print("Performing Terraform apply...")
         run_command("terraform apply main.tfplan", cwd=BOOTSTRAP_INFRA_DIR, env=env)
         
-        info("\nInfrastructure Bootstrap Complete.")
+        print("")
+        info("Infrastructure Bootstrap Complete.")
 
     finally:
         if tfplan.exists():
@@ -46,28 +47,28 @@ def bootstrap_infra():
 
 def wait_for_ec2():
 
-    info("\nWaiting for EC2 instances to become healthy...")
+    print("")
+    info("Waiting for EC2 instances to become healthy...")
     
-    print("\nChecking Terraform outputs for instance IDs...")
+    print("")
+    print("Checking Terraform outputs for instance IDs...")
 
-    print("\nTerraform outputs:")
+    print("")
+    print("Terraform outputs:")
     
-    print("\nJenkins:")
     jenkins_id = run_command(
         "terraform output -raw instance_id_jenkins",
         cwd=BOOTSTRAP_INFRA_DIR,
         capture_output=True
     ).strip()
-    print(jenkins_id)
+    print("Jenkins Instance ID: {jenkins_id}")
     
-
-    print("\nSonarQube:")
     sonarqube_id = run_command(
         "terraform output -raw instance_id_sonarqube",
         cwd=BOOTSTRAP_INFRA_DIR,
         capture_output=True
     ).strip()
-    print(sonarqube_id)
+    print("SonarQube Instance ID: {sonarqube_id}")
 
     if not jenkins_id or not sonarqube_id:
         error("Could not read instance IDs from Terraform outputs.")

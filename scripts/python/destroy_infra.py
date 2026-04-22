@@ -1,6 +1,7 @@
 import subprocess
 import sys
 from pathlib import Path
+from utils.command import info, error, run_command
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
 
@@ -35,21 +36,25 @@ def run_command(cmd, cwd=None, capture_output=False):
 
 # Destroy Infrastructure
 def destroy_infra():
-    print("")
-    info("Destroying Terraform Infrastructure...")
+    info("\nDestroying Terraform Infrastructure...")
 
     tfplan = BOOTSTRAP_INFRA_DIR / "destroy.tfplan"
+    
+    env = {
+        "AWS_MAX_ATTEMPTS": "10",
+        "AWS_RETRY_MODE": "adaptive"
+    }
 
     try:
         # Init (safe to run multiple times)
-        run_command("terraform init", cwd=BOOTSTRAP_INFRA_DIR)
+        run_command("terraform init", cwd=BOOTSTRAP_INFRA_DIR, env=env)
 
         # Create destroy plan
-        run_command("terraform plan -destroy -out destroy.tfplan", cwd=BOOTSTRAP_INFRA_DIR)
+        run_command("terraform plan -destroy -out destroy.tfplan", cwd=BOOTSTRAP_INFRA_DIR, env=env)
 
         print("")
         info("Destroy plan preview:")
-        run_command("terraform show destroy.tfplan", cwd=BOOTSTRAP_INFRA_DIR)
+        run_command("terraform show destroy.tfplan", cwd=BOOTSTRAP_INFRA_DIR, env=env)
 
         print("")
         confirm = input("This will DELETE all infrastructure. Proceed? (yes/no): ").strip().lower()
@@ -59,7 +64,7 @@ def destroy_infra():
             sys.exit(0)
 
         # Apply destroy
-        run_command("terraform apply destroy.tfplan", cwd=BOOTSTRAP_INFRA_DIR)
+        run_command("terraform apply destroy.tfplan", cwd=BOOTSTRAP_INFRA_DIR, env=env)
 
         print("")
         info("Infrastructure successfully destroyed.")
