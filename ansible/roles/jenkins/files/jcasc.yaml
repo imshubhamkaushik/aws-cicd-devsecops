@@ -15,9 +15,6 @@ jenkins:
       permissions:
         - "Overall/Administer:${JENKINS_ADMIN_USER}"
 
-    loggedInUsersCanDoAnything:
-      allowAnonymousRead: false
-
   disableRememberMe: false
 
   remotingSecurity:
