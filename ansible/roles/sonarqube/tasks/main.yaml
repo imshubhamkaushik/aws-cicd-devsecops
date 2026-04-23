@@ -67,6 +67,9 @@
       login: admin
       previousPassword: admin
       password: "{{ vault_sonar_admin_password }}"
+  loop:
+    - admin
+    - "{{ vault_sonar_admin_password }}"
   register: change_password
   failed_when: false
 
@@ -82,7 +85,10 @@
     body:
       name: "jenkins-token"
   register: sonar_token_response
-  when: sonar_token is not defined
+  failed_when:
+    - sonar_token_response.status != 200
+    - "'Name already exists' not in (sonar_token_response.json.errors | map(attribute='msg') | join(','))"
+  when: vault_sonar_token == ""
 
 # Store token as fact for later use (e.g. Jenkins configuration)
 - name: Set Sonar token fact
