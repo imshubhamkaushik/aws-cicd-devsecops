@@ -24,3 +24,4 @@ compose:
   # SonarQube is in a private subnet — use its private IP, accessed via Jenkins as a jump host.
   # See group_vars/sonarqube.yaml for the ProxyJump configuration.
   ansible_host: "(public_ip_address if public_ip_address else private_ip_address)"
+  host_ip: "(public_ip_address if public_ip_address else private_ip_address)"

@@ -16,4 +16,4 @@ ansible_ssh_common_args: >-
   -i {{ inventory_dir }}/../terraform/bootstrap-infra/catalogix-key.pem
   -o StrictHostKeyChecking=no
   -o UserKnownHostsFile=/dev/null
-  ubuntu@{{ hostvars[groups['jenkins'][0]]['ansible_host'] }}"
+  ubuntu@{{ hostvars[groups['jenkins'][0]]['host_ip'] }}"
