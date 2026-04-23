@@ -54,24 +54,34 @@
   retries: 30
   delay: 10
 
-# Change default admin password
+# Check which password is currently active
+- name: Check if admin password is already changed
+  uri:
+    url: "http://localhost:9000/api/authentication/validate"
+    method: GET
+    user: admin
+    password: "{{ vault_sonar_admin_password }}"
+    force_basic_auth: yes
+    status_code: [200, 401]
+  register: auth_check
+  failed_when: false
+
+# Only change password if vault password doesn't work yet (still on default)
 - name: Change SonarQube admin password
   uri:
     url: "http://localhost:9000/api/users/change_password"
     method: POST
     user: admin
-    password: "{{ item }}"
+    password: admin
     force_basic_auth: yes
     body_format: form-urlencoded
     body:
       login: admin
-      previousPassword: "{{ item }}"
+      previousPassword: admin
       password: "{{ vault_sonar_admin_password }}"
-  loop:
-    - admin
-    - "{{ vault_sonar_admin_password }}"
-  register: change_password
-  failed_when: false
+  when: auth_check.status == 401
+  register: password_change
+  failed_when: password_change.status not in [200, 204]
 
 # Generate Sonar token (idempotent - only generates if token doesn't already exist)
 - name: Generate SonarQube token
