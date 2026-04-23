@@ -159,6 +159,7 @@
 - name: Persist/Save Sonar token to vault file (first run only)
   delegate_to: localhost
   run_once: true
+  become: false
   when: sonar_token is defined
   vars:
     vault_file: "{{ playbook_dir }}/group_vars/all/vault.yaml"
