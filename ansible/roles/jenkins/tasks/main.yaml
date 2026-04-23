@@ -147,8 +147,8 @@
 - name: Wait for Jenkins to start and listen on port 8080
   wait_for:
     port: 8080
-    delay: 10
-    timeout: 120
+    delay: 15
+    timeout: 180
 
 - name: Wait for Jenkins web UI to respond (HTTP 200)
   uri:
