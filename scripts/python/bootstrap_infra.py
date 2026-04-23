@@ -9,7 +9,7 @@ BOOTSTRAP_INFRA_DIR = ROOT_DIR / "terraform" / "bootstrap-infra"
 # Terraform
 def bootstrap_infra():
     print("")
-    info("\nRunning Bootstrap Infrastructure Terraform...")
+    info("Running Bootstrap Infrastructure Terraform...")
     
     tfplan = BOOTSTRAP_INFRA_DIR / "main.tfplan"
     
@@ -23,10 +23,12 @@ def bootstrap_infra():
         run_command("terraform fmt -check", cwd=BOOTSTRAP_INFRA_DIR, env=env)
         run_command("terraform validate", cwd=BOOTSTRAP_INFRA_DIR, env=env)
         run_command("terraform plan -out main.tfplan", cwd=BOOTSTRAP_INFRA_DIR, env=env)
-               
-        print("\nPerforming Terraform plan review...")
+        
+        print("")
+        print("Performing Terraform plan review...")
         run_command("terraform show main.tfplan", cwd=BOOTSTRAP_INFRA_DIR, env=env)
         
+        print("")
         confirm = input("Proceed with Terraform apply? (yes/no): ").strip().lower()
 
         if confirm not in ["yes", "y"]:
@@ -61,17 +63,18 @@ def wait_for_ec2():
         cwd=BOOTSTRAP_INFRA_DIR,
         capture_output=True
     ).strip()
-    print("Jenkins Instance ID: {jenkins_id}")
     
     sonarqube_id = run_command(
         "terraform output -raw instance_id_sonarqube",
         cwd=BOOTSTRAP_INFRA_DIR,
         capture_output=True
     ).strip()
-    print("SonarQube Instance ID: {sonarqube_id}")
 
     if not jenkins_id or not sonarqube_id:
         error("Could not read instance IDs from Terraform outputs.")
+        
+    print(f"  Jenkins Instance ID: {jenkins_id}")
+    print(f"  SonarQube Instance ID: {sonarqube_id}")
 
     instance_ids = f"{jenkins_id} {sonarqube_id}"
 

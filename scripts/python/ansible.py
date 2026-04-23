@@ -1,4 +1,5 @@
 import getpass
+import subprocess
 from pathlib import Path
 from utils.command import info, error, warn, run_command
 
@@ -101,14 +102,16 @@ def _setup_vault_file():
     VAULT_FILE.write_text("\n".join(lines) + "\n")
  
     # Encrypt it immediately
-    result = run_command(
-        f"ansible-vault encrypt {VAULT_FILE} --vault-password-file {VAULT_PASSWORD_FILE}"
+    result = subprocess.run(
+        f"ansible-vault encrypt {VAULT_FILE} --vault-password-file {VAULT_PASSWORD_FILE}",
+        shell=True,
     )
     if result.returncode != 0:
         VAULT_FILE.unlink(missing_ok=True)
         error("Failed to encrypt vault file. Check ansible-vault is installed.")
- 
-    info(f"\nVault file created and encrypted at {VAULT_FILE}")
+        
+    print("")
+    info(f"Vault file created and encrypted at {VAULT_FILE}")
  
  
 def check_vault():
@@ -119,18 +122,30 @@ def check_vault():
 
 # Ansible
 def run_ansible():
-    info("\nRunning Ansible Configuration...")
+    print("")
+    info("Running Ansible Configuration...")
     
-    print("\nChecking Ansible Vault setup...")    
+    print("")
+    confirm = input("Ready to run Ansible playbook. Proceed with Ansible configuration? (yes/no): ").strip().lower()
+    
+    if confirm not in ["yes", "y"]:
+        info("Ansible configuration aborted by user.")
+        return
+    
+    print("")
+    print("Checking Ansible Vault setup...")    
     check_vault()
     
-    print("\nRunning Ansible Galaxy collection install...")
+    print("")
+    print("Running Ansible Galaxy collection install...")
     run_command("ansible-galaxy collection install -r requirements.yaml --force", cwd=ANSIBLE_DIR)
     
-    print("\nRunning Ansible playbook...")
+    print("")
+    print("Running Ansible playbook...")
     run_command(
         f"ansible-playbook playbook.yaml --vault-password-file {VAULT_PASSWORD_FILE}",
         cwd=ANSIBLE_DIR
     )
     
-    info("\nAnsible Configuration Complete.")
+    print("")
+    info("Ansible Configuration Complete.")

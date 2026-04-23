@@ -74,9 +74,15 @@ def _is_missing(dep):
     if dep["cli_tool"] and shutil.which(dep["cli_tool"]) is None:
         return True
     if dep["py_module"]:
-        result = run_command(f"python3 -c 'import {dep['py_module']}'")
-        if result.returncode != 0:
-            return True
+        # Use subprocess directly — run_command exits on failure which would
+        # abort the whole check loop instead of just marking the dep as missing.
+        result = subprocess.run(
+            f"python3 -c 'import {dep['py_module']}'",
+            shell=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        return result.returncode != 0
     return False
 
 
@@ -86,13 +92,14 @@ def check_dependencies():
     if not missing:
         info("All dependencies satisfied.")
         return
- 
-    warn("\nThe following dependencies are missing:")
+    
+    print("")
+    warn("The following dependencies are missing:")
     for dep in missing:
         print(f"       - {dep['name']}")
  
     print("")
-    confirm = input("\nAuto-install all missing dependencies? (yes/no): ").strip().lower()
+    confirm = input("Auto-install all missing dependencies? (yes/no): ").strip().lower()
  
     if confirm not in ["yes", "y"]:
         print("")
@@ -104,19 +111,20 @@ def check_dependencies():
     # apt-get based installs benefit from a single update pass first
     apt_needed = any("apt-get" in dep["install"] for dep in missing)
     if apt_needed:
-        info("\nUpdating apt package index...")
-        result = run_command("sudo apt-get update -qq")
-        if result.returncode != 0:
-            error("apt-get update failed. Check your network or sudo permissions.")
+        info("Updating apt package index...")
+        run_command("sudo apt-get update -qq")
  
     for dep in missing:
         info(f"Installing {dep['name']}...")
-        result = run_command(dep["install"])
-        if result.returncode != 0:
+
+        try:
+            run_command(dep["install"])
+        except SystemExit:
             error(
-                f"Failed to install {dep['name']}.\n"
-                f"Manual install: {dep['help']}"
+                f"{dep['name']} installation failed.\n"
+                f"Try manually: {dep['help']}"
             )
+            sys.exit(1)
  
     # Verify everything is now present after installation
     still_missing = [dep for dep in missing if _is_missing(dep)]
@@ -129,15 +137,17 @@ def check_dependencies():
 
 
 def check_aws_auth():
-    result = run_command(
+    # Use subprocess directly — we want to suppress output without affecting
+    # run_command's retry/error logic for a simple auth check.
+    result = subprocess.run(
         "aws sts get-caller-identity",
+        shell=True,
         stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL
+        stderr=subprocess.DEVNULL,
     )
-
     if result.returncode != 0:
-        error("AWS credentials invalid/not configured.")
-
+        error("AWS credentials invalid or not configured. Run: aws configure")
+    
 
 def run_full_bootstrap():
 
@@ -154,8 +164,9 @@ def run_full_bootstrap():
     bootstrap_infra()
     wait_for_ec2()
     
+    print("")
     confirm_ansible = input(
-        "\nReady to run Ansible. Proceed to Ansible Configuration? (yes/no): "
+        "Ready to run Ansible. Proceed to Ansible Configuration? (yes/no): "
     ).strip().lower()
     
     if confirm_ansible not in ["yes", "y"]:
@@ -176,7 +187,7 @@ def main():
         "command",
         nargs="?",
         default="full",
-        choices=["backend", "infra", "full"],
+        choices=["backend", "infra", "ansible", "full"],
         help="Command to run (default: full)"
     )
 

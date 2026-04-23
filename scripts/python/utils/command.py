@@ -5,42 +5,86 @@ import os
 
 def info(msg):
     print(f"[INFO] {msg}")
-
+    
+def warn(msg):
+    print(f"[WARN] {msg}")
 
 def error(msg):
     print(f"[ERROR] {msg}")
     sys.exit(1)
     
-def warn(msg):
-    print(f"[WARN] {msg}")
-    
-def _print_error_output(e, capture_output):
-    if capture_output and e.stdout:
-        print(e.stdout)
-    if capture_output and e.stderr:
-        print(e.stderr)
+
+def _get_custom_error(stderr: str):
+    """Return human-friendly error message if known pattern matches."""
+    if not stderr:
+        return None
+
+    stderr = stderr.lower()
+
+    # Network / S3 backend issues
+    if "unable to list objects in s3 bucket" in stderr:
+        return "S3 backend unreachable. Check internet or AWS region."
+
+    if "connection reset by peer" in stderr:
+        return "Network instability detected. Please retry."
+
+    # AWS issues
+    if "unable to locate credentials" in stderr:
+        return "AWS credentials not configured. Run: aws configure"
+
+    if "accessdenied" in stderr:
+        return "AWS access denied. Check IAM permissions or credentials."
+
+    # Terraform issues
+    if "error: invalid" in stderr:
+        return "Terraform configuration error. Check your .tf files."
+
+    # Ansible Vault issues
+    if "decryption failed" in stderr:
+        return "Invalid Ansible Vault password."
+
+    return None
 
 
 def run_command(cmd, cwd=None, capture_output=False, retries=3, delay=5, env=None):
     """
-    Run shell command with retry logic (for network issues like S3 backend).
+    Run a shell command with retry logic and friendly error messages.
+ 
+    Args:
+        capture_output: If True, suppress terminal output and return stdout string.
+                        If False (default), output streams directly to the terminal
+                        in real-time — important for long-running commands like
+                        terraform apply and ansible-playbook.
     """
+    merged_env = {**os.environ, **(env or {})}
+    
     for attempt in range(retries):
         try:
-            result = subprocess.run(
-                cmd,
-                cwd=cwd,
-                shell=True,
-                check=True,
-                text=True,
-                capture_output=capture_output,
-                env={**os.environ, **(env or {})}
-            )
-            return result.stdout if capture_output else None
-        except subprocess.CalledProcessError as e:
-            warn(f"\nCommand failed (attempt {attempt+1}/{retries}): {cmd}")
-            _print_error_output(e, capture_output)
-            if attempt < retries - 1:
-                time.sleep(delay * (attempt + 1))
+            if capture_output:
+                # Capture stdout/stderr for programmatic use (e.g. reading instance IDs)
+                result = subprocess.run(
+                    cmd, cwd=cwd, shell=True, check=True,
+                    text=True, capture_output=True, env=merged_env
+                )
+                return result.stdout
             else:
-                error(f"Command failed after {retries} attempts: {cmd}")
+                # Stream output directly to terminal so the user sees progress in real-time
+                subprocess.run(
+                    cmd, cwd=cwd, shell=True, check=True,
+                    env=merged_env
+                )
+                return None
+ 
+        except subprocess.CalledProcessError as e:
+            stderr = (e.stderr or "") if capture_output else ""
+ 
+            warn(f"Command failed (attempt {attempt + 1}/{retries}): {cmd}")
+ 
+            if stderr.strip():
+                print(stderr)
+ 
+            if attempt + 1 == retries:
+                custom_msg = _get_custom_error(stderr)
+                error(custom_msg or f"Command failed after {retries} attempts: {cmd}")
+            else:
+                time.sleep(delay * (attempt + 1))

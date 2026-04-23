@@ -1,6 +1,6 @@
 import sys
 from pathlib import Path
-from utils.command import info, error, warn, run_command
+from utils.command import info, run_command
 
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
@@ -9,11 +9,12 @@ BACKEND_BOOTSTRAP_DIR = ROOT_DIR / "terraform" / "backend-bootstrap"
 
 
 def backend_bootstrap():
-    info("\nRunning Terraform Backend Bootstrap...")
+    print("")
+    info("Running Terraform Backend Bootstrap...")
     
     tfplan = BACKEND_BOOTSTRAP_DIR / "main.tfplan"
     
-    env={
+    env = {
         "AWS_MAX_ATTEMPTS": "10",
         "AWS_RETRY_MODE": "adaptive"
     }
@@ -32,7 +33,8 @@ def backend_bootstrap():
         confirm = input("Proceed with Terraform apply? (yes/no): ").strip().lower()
     
         if confirm not in ["yes", "y"]:
-            info("\nBackend bootstrap aborted.")
+            print("")
+            info("Backend bootstrap aborted.")
             sys.exit(0)
 
         run_command("terraform apply main.tfplan", cwd=BACKEND_BOOTSTRAP_DIR, env=env)
@@ -43,5 +45,4 @@ def backend_bootstrap():
     finally:
         if tfplan.exists():
             tfplan.unlink()
-
     
