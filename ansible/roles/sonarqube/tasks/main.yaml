@@ -24,9 +24,9 @@
 
 # Container
 # Run SonarQube container
+# FQCN is required when the collection is installed via requirements.yml. The collection itself must be installed:
+#   ansible-galaxy collection install -r requirements.yml
 - name: Run SonarQube container
-  # FQCN is required when the collection is installed via requirements.yml. The collection itself must be installed:
-  #   ansible-galaxy collection install -r requirements.yml
   community.docker.docker_container:
     name: sonarqube
     image: sonarqube:26.3.0.120487-community
@@ -71,7 +71,7 @@
   failed_when: false
 
 # Only change password if vault password doesn't work yet (still on default)
-- name: Change SonarQube admin password
+- name: Change SonarQube admin password from default
   uri:
     url: "http://localhost:9000/api/users/change_password"
     method: POST
@@ -88,37 +88,33 @@
   failed_when: password_change.status not in [200, 204]
 
 # Token Handling
-# Get new auth token if we had to change the password (first run) or if token is missing/empty
-- name: Get existing SonarQube tokens
+# Token management is skipped entirely if vault_sonar_token is already set —
+# the token is valid and Jenkins is already using it. 
+# Regenerating on every run would invalidate Jenkins' stored credential.
+- name: Check if SonarQube token is already stored in vault
+  set_fact:
+    sonar_token_in_vault: "{{ vault_sonar_token | default('') | length > 0 }}"
+
+- name: Get existing SonarQube user tokens
   uri:
     url: "http://localhost:9000/api/user_tokens/search"
     user: admin
     password: "{{ vault_sonar_admin_password }}"
     force_basic_auth: yes
   register: sonar_tokens
+  when: not sonar_token_in_vault
 
-# Check if token already exists
-- name: Check if jenkins token exists
+- name: Check if jenkins-token already exists in SonarQube
   set_fact:
     jenkins_token_exists: >-
       {{
         sonar_tokens.json is defined and
         'jenkins-token' in (sonar_tokens.json.userTokens | map(attribute='name') | list)
       }}
+  when: not sonar_token_in_vault
 
-# 🔥 IMPORTANT: if token exists, we cannot retrieve it → warn
-- name: Warn if token exists but not stored
-  fail:
-    msg: >
-      SonarQube token 'jenkins-token' already exists but its value
-      cannot be retrieved. Please delete it or provide it manually.
-  when:
-    - jenkins_token_exists
-    - vault_sonar_token is not defined
-
-# Revoke existing token, if it exists — this forces us to generate a new one and ensures we have the value for Jenkins configuration. Token rotation is a security best practice.
-- name: Revoke existing jenkins token (rotation)
-  when: jenkins_token_exists
+# If a stale jenkins-token exists with no corresponding vault entry, revoke it so we can generate a fresh one and capture its value.
+- name: Revoke stale jenkins-token in SonarQube (no vault entry — cannot retrieve value)
   uri:
     url: "http://localhost:9000/api/user_tokens/revoke"
     method: POST
@@ -130,9 +126,12 @@
       name: "jenkins-token"
   register: revoke_result
   failed_when: revoke_result.status not in [200, 204]
+  when:
+    - not sonar_token_in_vault
+    - jenkins_token_exists | default(false)
 
 # Generate token and capture value for Jenkins configuration and Vault persistence
-- name: Generate SonarQube token (fresh)
+- name: Generate SonarQube token ("jenkins-token" -- fresh)
   uri:
     url: "http://localhost:9000/api/user_tokens/generate"
     method: POST
@@ -144,12 +143,14 @@
       name: "jenkins-token"
   register: sonar_token_result
   failed_when: sonar_token_result.status not in [200]
+  when: not sonar_token_in_vault
 
 # Store token as fact for later use (e.g. Jenkins configuration)
 - name: Set Sonar token fact
   set_fact:
     sonar_token: "{{ sonar_token_result.json.token }}"
   when: 
+    - not sonar_token_in_vault
     - sonar_token_result is defined
     - sonar_token_result.json is defined
     - sonar_token_result.json.token is defined
@@ -160,10 +161,12 @@
   delegate_to: localhost
   run_once: true
   become: false
-  when: sonar_token is defined
+  when: 
+    - not sonar_token_in_vault
+    - sonar_token is defined
   vars:
     vault_file: "{{ playbook_dir }}/group_vars/all/vault.yaml"
-    vault_pass: "{{ lookup('env','HOME') }}/.vault_pass"
+    vault_pass: "{{ playbook_dir }}/../.vault_pass"
   block:
 
     - name: Decrypt vault file
