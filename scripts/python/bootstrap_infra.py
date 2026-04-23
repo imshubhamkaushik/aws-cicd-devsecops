@@ -1,6 +1,6 @@
 import sys
 from pathlib import Path
-from utils.command import info, error, warn, run_command
+from utils.command import info, error, run_command
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
 

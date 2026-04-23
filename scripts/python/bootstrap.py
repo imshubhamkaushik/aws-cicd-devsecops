@@ -116,15 +116,8 @@ def check_dependencies():
  
     for dep in missing:
         info(f"Installing {dep['name']}...")
-
-        try:
-            run_command(dep["install"])
-        except SystemExit:
-            error(
-                f"{dep['name']} installation failed.\n"
-                f"Try manually: {dep['help']}"
-            )
-            sys.exit(1)
+        info(f"If this fails, install manually: {dep['help']}")
+        run_command(dep["install"])
  
     # Verify everything is now present after installation
     still_missing = [dep for dep in missing if _is_missing(dep)]
