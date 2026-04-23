@@ -147,7 +147,7 @@
 
       # Jenkins and SonarQube URLs for Jenkins pipeline configuration
       JENKINS_URL={{ ansible_host }}
-      SONARQUBE_HOST={{ hostvars[groups['sonarqube'][0]]['ansible_host'] }}
+      SONARQUBE_HOST={{ sonarqube_host }}
 
       # Source control for Jenkins pipeline configuration
       GIT_REPO_URL={{ git_repo_url }}
