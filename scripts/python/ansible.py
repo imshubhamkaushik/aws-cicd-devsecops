@@ -12,12 +12,31 @@ VAULT_PASSWORD_FILE = Path.home() / ".vault_pass"
 VAULT_FILE = ANSIBLE_DIR / "group_vars" / "all" / "vault.yaml"
 
 
-def _setup_vault_password_file():
-    """Create ~/.vault_pass interactively if it doesn't exist."""
-    if VAULT_PASSWORD_FILE.exists():
-        info(f"Vault password file found at {VAULT_PASSWORD_FILE}")
-        return
- 
+# Vault Handling
+def _is_vault_password_valid():
+    """Check if current vault password can decrypt vault.yaml."""
+    if not VAULT_FILE.exists():
+        return True
+
+    result = subprocess.run(
+        f"ansible-vault view {VAULT_FILE} --vault-password-file {VAULT_PASSWORD_FILE}",
+        shell=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    return result.returncode == 0
+
+def _prompt_for_vault_password():
+    while True:
+        password = getpass.getpass("Enter vault password: ")
+        if password.strip():
+            VAULT_PASSWORD_FILE.write_text(password)
+            VAULT_PASSWORD_FILE.chmod(0o600)
+            return
+        warn("Password cannot be empty. Try again.")
+
+
+def _create_vault_password_file():
     print("")
     warn("Vault password file not found at ~/.vault_pass")
     warn("This file stores the password used to encrypt/decrypt your secrets vault.")
@@ -28,23 +47,80 @@ def _setup_vault_password_file():
             "Vault password file is required to run Ansible.\n"
             f"       Create it manually: echo 'your-password' > {VAULT_PASSWORD_FILE} && chmod 600 {VAULT_PASSWORD_FILE}"
         )
- 
+
     password = getpass.getpass("Enter vault password: ")
     confirm_password = getpass.getpass("Confirm vault password: ")
- 
+
     if password != confirm_password:
         error("Passwords do not match. Re-run and try again.")
- 
+
     if not password.strip():
         error("Vault password cannot be empty.")
- 
+
     VAULT_PASSWORD_FILE.write_text(password)
     VAULT_PASSWORD_FILE.chmod(0o600)
- 
+
     print("")
     info(f"Vault password file created at {VAULT_PASSWORD_FILE}")
+
+
+def _validate_existing_password_file():
+    if not VAULT_PASSWORD_FILE.exists():
+        warn("Vault password file missing but vault.yaml exists.")
+        return False
+
+    info(f"Vault password file found at {VAULT_PASSWORD_FILE}")
+    if _is_vault_password_valid():
+        info("Vault password is valid.")
+        return True
+
+    warn("Vault password does NOT match vault file.")
+    return False
+
+
+def _handle_invalid_vault_password():
+    attempts = 0
+    while True:
+        print("")
+        _prompt_for_vault_password()
+
+        if _is_vault_password_valid():
+            info("Vault password is valid.")
+            return True
+
+        attempts += 1
+        warn("Incorrect vault password. Try again.")
+
+        if attempts >= 3:
+            print("")
+            warn("Unable to decrypt vault. Password may be incorrect or lost.")
+            confirm = input(
+                "Recreate vault? This will DELETE existing secrets. (yes/no): "
+            ).strip().lower()
+
+            if confirm in ["yes", "y"]:
+                VAULT_FILE.unlink(missing_ok=True)
+                VAULT_PASSWORD_FILE.unlink(missing_ok=True)
+                info("Old vault deleted. Starting fresh setup.")
+                return False
+
+            error("Cannot proceed without valid vault password.")
+
+
+def _setup_vault_password_file():
+    """Ensure ~/.vault_pass exists and is valid."""
+
+    if VAULT_FILE.exists():
+        if _validate_existing_password_file():
+            return
+
+        _handle_invalid_vault_password()
+        return
+
+    if not VAULT_PASSWORD_FILE.exists():
+        _create_vault_password_file()
  
- 
+# Vault File Setup
 def _prompt_secret(prompt, allow_empty=False):
     """Prompt for a secret using getpass (input is hidden)."""
     while True:
@@ -63,6 +139,7 @@ def _setup_vault_file():
     print("")
     warn(f"Vault file not found at {VAULT_FILE}")
     warn("This file holds all encrypted secrets used by Ansible.")
+    
     print("")
     confirm = input("Create and encrypt vault file now? (yes/no): ").strip().lower()
     if confirm not in ["yes", "y"]:
@@ -106,6 +183,7 @@ def _setup_vault_file():
         f"ansible-vault encrypt {VAULT_FILE} --vault-password-file {VAULT_PASSWORD_FILE}",
         shell=True,
     )
+    
     if result.returncode != 0:
         VAULT_FILE.unlink(missing_ok=True)
         error("Failed to encrypt vault file. Check ansible-vault is installed.")
