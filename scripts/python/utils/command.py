@@ -46,45 +46,48 @@ def _get_custom_error(stderr: str):
     return None
 
 
-def run_command(cmd, cwd=None, capture_output=False, retries=3, delay=5, env=None):
+def _execute_once(cmd, cwd, capture_output, merged_env):
     """
-    Run a shell command with retry logic and friendly error messages.
+    Run a single command attempt.
  
-    Args:
-        capture_output: If True, suppress terminal output and return stdout string.
-                        If False (default), output streams directly to the terminal
-                        in real-time — important for long-running commands like
-                        terraform apply and ansible-playbook.
+    Returns stdout string when capture_output=True, otherwise None.
+    Streams output directly to the terminal when capture_output=False —
+    important for long-running commands like terraform apply and ansible-playbook.
     """
+    if capture_output:
+        result = subprocess.run(
+            cmd, cwd=cwd, shell=True, check=True,
+            text=True, capture_output=True, env=merged_env
+        )
+        return result.stdout
+ 
+    subprocess.run(cmd, cwd=cwd, shell=True, check=True, env=merged_env)
+    return None
+ 
+ 
+def _handle_failure(e, cmd, attempt, retries, delay, capture_output):
+    """Log the failure and either retry (sleep) or raise a final error."""
+    stderr = (e.stderr or "") if capture_output else ""
+ 
+    warn(f"Command failed (attempt {attempt + 1}/{retries}): {cmd}")
+ 
+    if stderr.strip():
+        print(stderr)
+ 
+    if attempt + 1 == retries:
+        custom_msg = _get_custom_error(stderr)
+        error(custom_msg or f"Command failed after {retries} attempts: {cmd}")
+    else:
+        time.sleep(delay * (attempt + 1))
+ 
+ 
+def run_command(cmd, cwd=None, capture_output=False, retries=3, delay=5, env=None):
+    """Run a shell command with retry logic and friendly error messages."""
     merged_env = {**os.environ, **(env or {})}
-    
+ 
     for attempt in range(retries):
         try:
-            if capture_output:
-                # Capture stdout/stderr for programmatic use (e.g. reading instance IDs)
-                result = subprocess.run(
-                    cmd, cwd=cwd, shell=True, check=True,
-                    text=True, capture_output=True, env=merged_env
-                )
-                return result.stdout
-            else:
-                # Stream output directly to terminal so the user sees progress in real-time
-                subprocess.run(
-                    cmd, cwd=cwd, shell=True, check=True,
-                    env=merged_env
-                )
-                return None
- 
+            return _execute_once(cmd, cwd, capture_output, merged_env)
         except subprocess.CalledProcessError as e:
-            stderr = (e.stderr or "") if capture_output else ""
+            _handle_failure(e, cmd, attempt, retries, delay, capture_output)
  
-            warn(f"Command failed (attempt {attempt + 1}/{retries}): {cmd}")
- 
-            if stderr.strip():
-                print(stderr)
- 
-            if attempt + 1 == retries:
-                custom_msg = _get_custom_error(stderr)
-                error(custom_msg or f"Command failed after {retries} attempts: {cmd}")
-            else:
-                time.sleep(delay * (attempt + 1))
