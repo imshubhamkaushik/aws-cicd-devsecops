@@ -1,9 +1,32 @@
-configuration-as-code
-git
-workflow-aggregator
-docker-workflow
-credentials-binding
-aws-credentials
-pipeline-stage-view
-sonar
-nodejs
+- docker-workflow
+
+# CORE
+- configuration-as-code
+- matrix-auth
+- credentials
+- credentials-binding
+
+# PIPELINES
+- workflow-aggregator
+- pipeline-stage-view
+
+# SCM
+- git
+- github
+
+# JOB DSL
+- job-dsl
+
+# TOOLS
+- nodejs
+- maven-plugin
+
+  # SONAR
+- sonar
+
+# AWS
+- aws-credentials
+
+# UTILS
+- timestamper
+- ws-cleanup

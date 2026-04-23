@@ -146,3 +146,15 @@
     port: 8080
     delay: 10
     timeout: 120
+
+- name: Get Jenkins initial admin password
+  command: cat /var/lib/jenkins/secrets/initialAdminPassword
+  register: jenkins_admin_password
+  changed_when: false
+
+- name: Wait for Jenkins API to be ready
+  uri:
+    url: "http://localhost:8080/login"
+    status_code: 200
+  retries: 30
+  delay: 5

@@ -1,5 +1,5 @@
 jenkins:
-  systemMessage: "Catalogix CI/CD — configured automatically via JCasC"
+  systemMessage: "Jenkins Bootstrap Mode (JCasC)"
   numExecutors: 2
   mode: NORMAL
 
@@ -14,6 +14,18 @@ jenkins:
     globalMatrix:
       permissions:
         - "Overall/Administer:${JENKINS_ADMIN_USER}"
+
+    loggedInUsersCanDoAnything:
+      allowAnonymousRead: false
+
+  disableRememberMe: false
+
+  remotingSecurity:
+    enabled: true
+
+  crumbIssuer:
+    standard:
+      excludeClientIPFromCrumb: false
 
 unclassified:
   location:
