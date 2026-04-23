@@ -116,9 +116,23 @@
     - jenkins_token_exists
     - vault_sonar_token is not defined
 
-# Generate token if it doesn't exist
-- name: Generate SonarQube token
-  when: not jenkins_token_exists
+# Revoke existing token, if it exists — this forces us to generate a new one and ensures we have the value for Jenkins configuration. Token rotation is a security best practice.
+- name: Revoke existing jenkins token (rotation)
+  when: jenkins_token_exists
+  uri:
+    url: "http://localhost:9000/api/user_tokens/revoke"
+    method: POST
+    user: admin
+    password: "{{ vault_sonar_admin_password }}"
+    force_basic_auth: yes
+    body_format: form-urlencoded
+    body:
+      name: "jenkins-token"
+  register: revoke_result
+  failed_when: revoke_result.status not in [200, 204]
+
+# Generate token and capture value for Jenkins configuration and Vault persistence
+- name: Generate SonarQube token (fresh)
   uri:
     url: "http://localhost:9000/api/user_tokens/generate"
     method: POST
