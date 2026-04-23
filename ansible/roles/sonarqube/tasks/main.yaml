@@ -79,7 +79,7 @@
       login: admin
       previousPassword: admin
       password: "{{ vault_sonar_admin_password }}"
-  when: auth_check.status == 401
+  when: not auth_check.json.valid
   register: password_change
   failed_when: password_change.status not in [200, 204]
 
