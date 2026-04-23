@@ -60,12 +60,12 @@
     url: "http://localhost:9000/api/users/change_password"
     method: POST
     user: admin
-    password: {{ item }}
+    password: "{{ item }}"
     force_basic_auth: yes
     body_format: form-urlencoded
     body:
       login: admin
-      previousPassword: {{ item }}
+      previousPassword: "{{ item }}"
       password: "{{ vault_sonar_admin_password }}"
   loop:
     - admin
