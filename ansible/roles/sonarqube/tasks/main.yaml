@@ -1,4 +1,5 @@
 ---
+# System Setup for SonarQube
 # SonarQube's embedded Elasticsearch requires vm.max_map_count >= 524288.
 - name: Set vm.max_map_count for Elasticsearch (required by SonarQube)
   sysctl:
@@ -21,6 +22,7 @@
     - /opt/sonarqube/logs
     - /opt/sonarqube/extensions
 
+# Container
 # Run SonarQube container
 - name: Run SonarQube container
   # FQCN is required when the collection is installed via requirements.yml. The collection itself must be installed:
@@ -42,6 +44,7 @@
       - /opt/sonarqube/logs:/opt/sonarqube/logs
       - /opt/sonarqube/extensions:/opt/sonarqube/extensions
 
+# Health Check
 # Wait for SonarQube to be up and running before finishing the playbook
 - name: Wait for SonarQube to be healthy
   uri:
@@ -54,6 +57,7 @@
   retries: 30
   delay: 10
 
+# Password Management
 # Check which password is currently active
 - name: Check if admin password is already changed
   uri:
@@ -79,12 +83,42 @@
       login: admin
       previousPassword: admin
       password: "{{ vault_sonar_admin_password }}"
-  when: not auth_check.json.valid
+  when: auth_check.json is defined and not auth_check.json.valid
   register: password_change
   failed_when: password_change.status not in [200, 204]
 
-# Generate Sonar token (idempotent - only generates if token doesn't already exist)
+# Token Handling
+# Get new auth token if we had to change the password (first run) or if token is missing/empty
+- name: Get existing SonarQube tokens
+  uri:
+    url: "http://localhost:9000/api/user_tokens/search"
+    user: admin
+    password: "{{ vault_sonar_admin_password }}"
+    force_basic_auth: yes
+  register: sonar_tokens
+
+# Check if token already exists
+- name: Check if jenkins token exists
+  set_fact:
+    jenkins_token_exists: >-
+      {{
+        sonar_tokens.json is defined and
+        'jenkins-token' in (sonar_tokens.json.userTokens | map(attribute='name') | list)
+      }}
+
+# 🔥 IMPORTANT: if token exists, we cannot retrieve it → warn
+- name: Warn if token exists but not stored
+  fail:
+    msg: >
+      SonarQube token 'jenkins-token' already exists but its value
+      cannot be retrieved. Please delete it or provide it manually.
+  when:
+    - jenkins_token_exists
+    - vault_sonar_token is not defined
+
+# Generate token if it doesn't exist
 - name: Generate SonarQube token
+  when: not jenkins_token_exists
   uri:
     url: "http://localhost:9000/api/user_tokens/generate"
     method: POST
@@ -94,26 +128,24 @@
     body_format: form-urlencoded
     body:
       name: "jenkins-token"
-  register: sonar_token_response
-  failed_when: >-
-    sonar_token_response.status != 200 and not (
-      sonar_token_response.json is defined and
-      sonar_token_response.json.errors is defined and
-      'Name already exists' in (sonar_token_response.json.errors | map(attribute='msg') | join(','))
-    )
-  when: vault_sonar_token == ""
+  register: sonar_token_result
+  failed_when: sonar_token_result.status not in [200]
 
 # Store token as fact for later use (e.g. Jenkins configuration)
 - name: Set Sonar token fact
   set_fact:
-    sonar_token: "{{ sonar_token_response.json.token }}"
-  when: sonar_token is not defined
+    sonar_token: "{{ sonar_token_result.json.token }}"
+  when: 
+    - sonar_token_result is defined
+    - sonar_token_result.json is defined
+    - sonar_token_result.json.token is defined
 
+# Vault Pesistence
 # Persist Sonar token to Vault
 - name: Persist/Save Sonar token to vault file (first run only)
   delegate_to: localhost
   run_once: true
-  when: sonar_token_response is defined
+  when: sonar_token is defined
   vars:
     vault_file: "{{ playbook_dir }}/group_vars/all/vault.yaml"
     vault_pass: "{{ lookup('env','HOME') }}/.vault_pass"
@@ -127,11 +159,11 @@
     - name: Append token to vault file if not already present
       shell: |
         grep -q "^sonar_token:" {{ vault_file }} || \
-        echo "sonar_token: {{ sonar_token }}" >> {{ vault_file }}
+        echo "vault_sonar_token: {{ sonar_token }}" >> {{ vault_file }}
       changed_when: "'sonar_token:' not in lookup('file', vault_file)"
 
   always:
-    - name: Re-encrypt vault file (always)
+    - name: Encrypt/Re-encrypt vault file (always)
       command: >
         ansible-vault encrypt {{ vault_file }}
         --vault-password-file {{ vault_pass }}
