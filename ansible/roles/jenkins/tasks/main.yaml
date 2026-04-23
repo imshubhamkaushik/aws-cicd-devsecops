@@ -126,7 +126,7 @@
 # Set Jenkins environment variables
 - name: Write /etc/default/jenkins — Java opts + JCasC env vars + credentials
   template:
-    src: jenkins-defaults.j2
+    src: jenkins_defaults.j2
     dest: /etc/default/jenkins
     owner: root
     group: root
