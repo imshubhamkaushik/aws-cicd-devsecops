@@ -13,8 +13,8 @@ JENKINS_ADMIN_USER={{ jenkins_admin_user }}
 JENKINS_ADMIN_PASSWORD={{ vault_jenkins_admin_password }}
 
 # Jenkins and SonarQube URLs
-JENKINS_URL={{ hostvars[groups['jenkins'][0]]['public_ip_address'] }}
-SONARQUBE_HOST={{ hostvars[groups['sonarqube'][0]]['private_ip_address'] }}
+JENKINS_URL={{ hostvars[groups['jenkins'][0]]['public_ip_address'] | default(hostvars[groups['jenkins'][0]].ansible_facts.public_ip_address)  }}
+SONARQUBE_HOST={{ hostvars[groups['sonarqube'][0]]['private_ip_address'] | default(hostvars[groups['sonarqube'][0]].ansible_facts.private_ip_address) }}
 
 # Source control
 GIT_REPO_URL={{ git_repo_url }}

@@ -10,14 +10,14 @@ filters:
   # This prevent Ansible from targeting stopped or termminated instances
 
 keyed_groups:
-  - key: tags.Role
+  - key: ec2_Tags.Role
     prefix: ""
     separator: ""
     # Setting prefix to "" and separator to "" means the group name is exactly the tag value: "jenkins" and "sonarqube".
 
 groups:
-  jenkins: "tags.Role == 'jenkins'"
-  sonarqube: "tags.Role == 'sonarqube'"
+  jenkins: "ec2_Tags.Role == 'jenkins'"
+  sonarqube: "ec2_Tags.Role == 'sonarqube'"
 
 compose:
   # Jenkins is in a public subnet — use its public IP for direct SSH from your machine.
