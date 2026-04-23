@@ -60,12 +60,12 @@
     url: "http://localhost:9000/api/users/change_password"
     method: POST
     user: admin
-    password: admin
+    password: {{ item }}
     force_basic_auth: yes
     body_format: form-urlencoded
     body:
       login: admin
-      previousPassword: admin
+      previousPassword: {{ item }}
       password: "{{ vault_sonar_admin_password }}"
   loop:
     - admin
@@ -85,9 +85,12 @@
     body:
       name: "jenkins-token"
   register: sonar_token_response
-  failed_when:
-    - sonar_token_response.status != 200
-    - "'Name already exists' not in (sonar_token_response.json.errors | map(attribute='msg') | join(','))"
+  failed_when: >-
+    sonar_token_response.status != 200 and not (
+      sonar_token_response.json is defined and
+      sonar_token_response.json.errors is defined and
+      'Name already exists' in (sonar_token_response.json.errors | map(attribute='msg') | join(','))
+    )
   when: vault_sonar_token == ""
 
 # Store token as fact for later use (e.g. Jenkins configuration)
