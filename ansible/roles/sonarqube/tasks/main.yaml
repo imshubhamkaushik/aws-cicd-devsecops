@@ -174,10 +174,15 @@
         ansible-vault decrypt {{ vault_file }}
         --vault-password-file {{ vault_pass }}
 
-    - name: Append/Update Sonar token (vault_sonar_token) to vault file if not already present
+    - name: Remove all existing vault_sonar_token entries
       lineinfile:
         path: "{{ vault_file }}"
         regexp: '^vault_sonar_token:'
+        state: absent          # removes EVERY line matching the regexp
+
+    - name: Write vault_sonar_token
+      lineinfile:
+        path: "{{ vault_file }}"
         line: 'vault_sonar_token: "{{ sonar_token }}"'
 
   always:
