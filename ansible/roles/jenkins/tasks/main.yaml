@@ -106,7 +106,6 @@
     dest: /usr/local/lib/jenkins-plugin-manager.jar
     mode: "0644"
     force: yes        # always re-download, never use cached/corrupt file
-    checksum: "sha256:https://github.com/jenkinsci/plugin-installation-manager-tool/releases/download/2.12.13/jenkins-plugin-manager-2.12.13.jar.sha256"
 
 - name: Install jenkins-plugin-cli wrapper script
   copy:
