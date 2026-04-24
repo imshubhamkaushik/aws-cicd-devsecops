@@ -7,13 +7,12 @@ jenkins:
     local:
       allowsSignup: false
       users:
-        - id: "${JENKINS_ADMIN_USER}"
-          password: "${JENKINS_ADMIN_PASSWORD}"
+        - id: "${JENKINS_ADMIN_USER:-admin}"
+          password: "${JENKINS_ADMIN_PASSWORD:-admin123}"
     
   authorizationStrategy:
-    globalMatrix:
-      permissions:
-        - "Overall/Administer:${JENKINS_ADMIN_USER}"
+    loggedInUsersCanDoAnything:
+      allowAnonymousRead: false
 
   disableRememberMe: false
 
@@ -75,12 +74,12 @@ credentials:
               secret: "${SONARQUBE_TOKEN}"
           # AWS IAM user credentials — access key + secret key
           # Used by all AWS CLI and Terraform calls in the pipelines
-          - aws:
+          - usernamePassword:
               scope: GLOBAL
               id: "aws-creds"
               description: "AWS IAM user credentials for Catalogix"
-              accessKey: "${AWS_ACCESS_KEY_ID}"
-              secretKey: "${AWS_SECRET_ACCESS_KEY}"
+              username: "${AWS_ACCESS_KEY_ID}"
+              password: "${AWS_SECRET_ACCESS_KEY}"
 
 # Job Definitions — both pipelines created automatically on Jenkins startup
 jobs:

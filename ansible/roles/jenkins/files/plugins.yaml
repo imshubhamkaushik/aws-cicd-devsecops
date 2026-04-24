@@ -1,3 +1,4 @@
+plugins:
 - docker-workflow
 
 # CORE

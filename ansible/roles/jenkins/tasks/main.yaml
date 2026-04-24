@@ -62,8 +62,29 @@
     state: present
     update_cache: yes
 
-# Install plugins before start
-- name: Copy Jenkins plugins list 
+# -----------------------------
+# Ensure directories exist
+# -----------------------------
+
+- name: Ensure JCasC config directory exists
+  file:
+    path: /var/lib/jenkins/casc_configs
+    state: directory
+    owner: jenkins
+    group: jenkins
+    mode: "0755"
+
+- name: Ensure plugins directory exists
+  file:
+    path: /var/lib/jenkins/plugins
+    state: directory
+    owner: jenkins
+    group: jenkins
+
+# -----------------------------
+# Copy required files
+# -----------------------------
+- name: Copy plugins.yaml
   copy:
     src: plugins.yaml
     dest: /tmp/plugins.yaml
@@ -73,6 +94,8 @@
     url: "https://github.com/jenkinsci/plugin-installation-manager-tool/releases/download/2.12.13/jenkins-plugin-manager-2.12.13.jar"
     dest: /usr/local/lib/jenkins-plugin-manager.jar
     mode: '0644'
+  args:
+    creates: /usr/local/lib/jenkins-plugin-manager.jar
 
 - name: Install jenkins-plugin-cli wrapper script
   copy:
@@ -82,26 +105,16 @@
       #!/bin/bash
       exec java -jar /usr/local/lib/jenkins-plugin-manager.jar "$@"
 
-- name: Install Jenkins plugins
-  shell: |
-    jenkins-plugin-cli --plugin-file /tmp/plugins.yaml \
-      && touch /var/lib/jenkins/.plugins-installed
-  args:
-    creates: /var/lib/jenkins/.plugins-installed
+- name: Configure Jenkins environment file
+  template:
+    src: jenkins_defaults.j2
+    dest: /etc/default/jenkins
+    mode: "0644"
 
 # JCasC (Jenkins Configuration as Code) setup
-# Add JCasC config
-- name: Create JCasC configs directory # Create the casc_configs directory
-  file:
-    path: /var/lib/jenkins/casc_configs
-    state: directory
-    owner: jenkins
-    group: jenkins
-    mode: '0755'
-
-# Copy JCasC config file to Jenkins server
-- name: Copy JCasC config file to Jenkins server 
-  copy:
+# Deploy JCasC config file to Jenkins server
+- name: Deploy JCasC config file to Jenkins server 
+  template:
     src: jcasc.yaml
     dest: /var/lib/jenkins/casc_configs/jcasc.yaml
     owner: jenkins
@@ -116,24 +129,75 @@
     group: jenkins
     recurse: yes
 
-# Service Configuration
-# Write config BEFORE starting Jenkins so it starts with the correct settings on first run. 
-# On re-runs, the notify triggers a controlled restart via meta: flush_handlers (below), which fires BEFORE the wait tasks.
-- name: Write /etc/default/jenkins (Java opts + JCasC env vars + credentials
-  template:
-    src: jenkins_defaults.j2
-    dest: /etc/default/jenkins
-    owner: root
-    group: root
-    mode: '0600'
-  notify: restart jenkins
+# -----------------------------
+# CRITICAL: systemd must load env
+# -----------------------------
 
-# Enables and starts the Jenkins service.
-- name: Enable and start Jenkins
+- name: Ensure systemd override directory exists
+  file:
+    path: /etc/systemd/system/jenkins.service.d
+    state: directory
+
+- name: Configure systemd to load Jenkins env file
+  copy:
+    dest: /etc/systemd/system/jenkins.service.d/override.conf
+    content: |
+      [Service]
+      EnvironmentFile=/etc/default/jenkins
+
+- name: Reload systemd daemon
+  command: systemctl daemon-reload
+
+# -----------------------------
+# Initialize Jenkins once BEFORE plugin install
+# (Prevents plugin install race condition)
+# -----------------------------
+- name: Start Jenkins once to initialize home
   service:
     name: jenkins
     state: started
-    enabled: true
+
+- name: Wait for initial Jenkins startup
+  wait_for:
+    port: 8080
+    delay: 10
+    timeout: 120
+
+- name: Stop Jenkins before plugin install
+  service:
+    name: jenkins
+    state: stopped
+
+# -----------------------------
+# Install plugins (safe method)
+# -----------------------------
+- name: Install Jenkins plugins
+  become_user: jenkins
+  shell: |
+    jenkins-plugin-cli \
+      --plugin-file /tmp/plugins.yaml \
+      --plugin-download-directory /var/lib/jenkins/plugins
+  args:
+    creates: /var/lib/jenkins/plugins/configuration-as-code.jpi
+
+- name: Verify JCasC plugin exists
+  stat:
+    path: /var/lib/jenkins/plugins/configuration-as-code.jpi
+  register: casc_plugin
+
+- name: Fail if JCasC plugin missing
+  fail:
+    msg: "JCasC plugin not installed"
+  when: not casc_plugin.stat.exists
+
+# -----------------------------
+# Start Jenkins after full setup
+# -----------------------------
+- name: Start Jenkins
+  service:
+    name: jenkins
+    state: started
+    enabled: yes
 
 # Flush handlers HERE — not at end-of-play — so Jenkins restarts (if config
 # changed) BEFORE the wait tasks run. Without this, the handler would fire
@@ -147,21 +211,22 @@
 - name: Wait for Jenkins to start and listen on port 8080
   wait_for:
     port: 8080
-    delay: 15
-    timeout: 180
+    delay: 5
+    timeout: 300
 
 - name: Wait for Jenkins web UI to respond (HTTP 200)
   uri:
     url: "http://localhost:8080/login"
     status_code: 200
-  register: jenkins_ui_check
-  until: jenkins_ui_check.status == 200
-  retries: 36
+  register: jenkins_ui
+  retries: 30
   delay: 5
+  until: jenkins_ui.status == 200
 
-# If this task fails, JCasC did not apply the admin user correctly.
-# Check /var/log/jenkins/jenkins.log for "io.jenkins.plugins.casc" errors.
-- name: Verify admin credentials work (confirms JCasC applied successfully)
+# -----------------------------
+# FIX: Strong JCasC verification (auth = success)
+# -----------------------------
+- name: Verify admin credentials (confirms JCasC applied successfully)
   uri:
     url: "http://localhost:8080/api/json"
     user: "{{ jenkins_admin_user }}"
@@ -169,13 +234,15 @@
     force_basic_auth: yes
     status_code: 200
   register: jenkins_auth_check
+  retries: 20   # increase retries to allow more time for Jenkins to apply config and be ready
+  delay: 10
   until: jenkins_auth_check.status == 200
-  retries: 12
-  delay: 5
   failed_when: jenkins_auth_check.status != 200
 
-# Confirms the JCasC plugin is installed, active, and the config endpoint is reachable.
-- name: Confirm JCasC configuration page is accessible
+# -----------------------------
+# Verify JCasC UI (optional)
+# -----------------------------
+- name: Verify JCasC UI is accessible
   uri:
     url: "http://localhost:8080/manage/configuration-as-code/"
     user: "{{ jenkins_admin_user }}"
@@ -193,3 +260,10 @@
       - "Username: {{ jenkins_admin_user }}"
       - "Password: (vault_jenkins_admin_password)"
       - "JCasC   : /var/lib/jenkins/casc_configs/jcasc.yaml"
+
+# -----------------------------
+# Correct debug condition variable
+# -----------------------------
+- name: Dump Jenkins logs if auth fails
+  shell: journalctl -u jenkins -n 200
+  when: jenkins_auth_check is failed
