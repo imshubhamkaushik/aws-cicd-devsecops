@@ -89,6 +89,17 @@
     src: plugins.yaml
     dest: /tmp/plugins.yaml
 
+# TEST
+- name: Show remote plugins.yaml content
+  command: cat /tmp/plugins.yaml
+  register: remote_plugins
+  changed_when: false
+
+- name: Print remote plugins.yaml
+  debug:
+    var: remote_plugins.stdout_lines
+# TEST/
+
 - name: Check if plugin manager already exists
   stat:
     path: /usr/local/lib/jenkins-plugin-manager.jar
