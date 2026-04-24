@@ -118,7 +118,7 @@
 # JCasC (Jenkins Configuration as Code) setup
 # Deploy JCasC config file to Jenkins server
 - name: Deploy JCasC config file to Jenkins server
-  template:
+  ansible.builtin.template:
     src: jcasc.yaml
     dest: /var/lib/jenkins/casc_configs/jcasc.yaml
     owner: jenkins
