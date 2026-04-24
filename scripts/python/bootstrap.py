@@ -157,14 +157,6 @@ def run_full_bootstrap():
     bootstrap_infra()
     wait_for_ec2()
     
-    print("")
-    confirm_ansible = input(
-        "Ready to run Ansible. Proceed to Ansible Configuration? (yes/no): "
-    ).strip().lower()
-    
-    if confirm_ansible not in ["yes", "y"]:
-        sys.exit(0)
-    
     run_ansible()
     
     print("")
