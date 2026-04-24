@@ -100,17 +100,13 @@
     var: remote_plugins.stdout_lines
 # TEST/
 
-- name: Check if plugin manager already exists
-  stat:
-    path: /usr/local/lib/jenkins-plugin-manager.jar
-  register: plugin_manager
-
 - name: Download jenkins-plugin-manager.jar
   get_url:
     url: "https://github.com/jenkinsci/plugin-installation-manager-tool/releases/download/2.12.13/jenkins-plugin-manager-2.12.13.jar"
     dest: /usr/local/lib/jenkins-plugin-manager.jar
     mode: "0644"
-  when: not plugin_manager.stat.exists
+    force: yes        # always re-download, never use cached/corrupt file
+    checksum: "sha256:https://github.com/jenkinsci/plugin-installation-manager-tool/releases/download/2.12.13/jenkins-plugin-manager-2.12.13.jar.sha256"
 
 - name: Install jenkins-plugin-cli wrapper script
   copy:
