@@ -140,7 +140,7 @@
 # Ensure correct permissions
 - name: Fix Jenkins home directory permissions
   file:
-    path: {{ item }}
+    path: "{{ item }}"
     owner: jenkins
     group: jenkins
     state: directory
