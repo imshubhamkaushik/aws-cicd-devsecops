@@ -16,12 +16,8 @@ jenkins:
 
   disableRememberMe: false
 
-  remotingSecurity:
-    enabled: true
-
   crumbIssuer:
-    standard:
-      excludeClientIPFromCrumb: false
+    standard: {}
 
 unclassified:
   location:
