@@ -180,57 +180,30 @@
     name: jenkins
     state: stopped
 
-- name: Load plugin list
-  ansible.builtin.include_vars:
-    file: "{{ role_path }}/files/plugins.yaml"
-    name: plugin_vars
-
+# -----------------------------
+# Install plugins
+# -----------------------------
 - name: Install Jenkins plugins
-  community.general.jenkins_plugin:
-    name: "{{ item.name }}"
-    version: "{{ item.version | default(omit) }}"
-    url_username: "{{ jenkins_admin_user }}"
-    url_password: "{{ vault_jenkins_admin_password }}"
-    url: "http://localhost:8080"
-    state: present
-  with_items: "{{ plugin_vars.plugins }}"
-  notify: Restart Jenkins
+  become: true
+  shell: |
+    set -e
+    jenkins-plugin-cli \
+      --war /usr/share/java/jenkins.war \
+      --plugin-file /tmp/plugins.yaml \
+      --plugin-download-directory /var/lib/jenkins/plugins
+  args:
+    creates: /var/lib/jenkins/plugins/configuration-as-code.jpi
+    executable: /bin/bash
+  register: plugin_install_output
+  changed_when: true
 
-# # -----------------------------
-# # Install plugins (safe method)
-# # -----------------------------
-# - name: Install Jenkins plugins
-#   become: true
-#   shell: |
-#     set -e
-#     jenkins-plugin-cli \
-#       --war /usr/share/java/jenkins.war \
-#       --plugin-file /tmp/plugins.yaml \
-#       --plugin-download-directory /var/lib/jenkins/plugins
-#   args:
-#     creates: /var/lib/jenkins/plugins/configuration-as-code.jpi
+- name: Show plugin install output
+  debug:
+    var: plugin_install_output.stdout_lines
 
-# # -----------------------------
-# # Install plugins (DEBUG MODE)
-# # -----------------------------
-# - name: Install Jenkins plugins (DEBUG MODE)
-#   become: true
-#   shell: |
-#     set -e
-#     jenkins-plugin-cli \
-#       --war /usr/share/java/jenkins.war \
-#       --plugin-file /tmp/plugins.yaml \
-#       --plugin-download-directory /var/lib/jenkins/plugins
-#   register: plugin_install_output
-#   ignore_errors: true
-
-# - name: Show plugin install output
-#   debug:
-#     var: plugin_install_output.stdout_lines
-
-# - name: Show plugin install errors
-#   debug:
-#     var: plugin_install_output.stderr_lines
+- name: Show plugin install errors
+  debug:
+    var: plugin_install_output.stderr_lines
 
 # -----------------------------
 # Verify JCasC plugin exists
