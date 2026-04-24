@@ -178,7 +178,9 @@
 - name: Install Jenkins plugins
   become: true
   shell: |
+    set -e
     jenkins-plugin-cli \
+      --war /usr/share/jenkins/jenkins.war \
       --plugin-file /tmp/plugins.yaml \
       --plugin-download-directory /var/lib/jenkins/plugins
   args:
