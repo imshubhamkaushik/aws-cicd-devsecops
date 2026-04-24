@@ -8,8 +8,12 @@ pipeline {
         AWS_REGION   = "ap-south-1"
         CLUSTER_NAME = "catalogix-dev"
         TF_DIR       = "terraform/platform-infra/env/dev"
-        // GIT_REPO_URL is injected by JCasC from /etc/default/jenkins — update group_vars/jenkins.yaml
+        // GIT_REPO_URL is injected by JCasC from /etc/default/jenkins — update group_vars/all/jenkins.yaml
         GIT_REPO_URL = "${env.GIT_REPO_URL}"
+        // KUBECONFIG must be written to this path explicitly by passing
+        // --kubeconfig ${KUBECONFIG} to every `aws eks update-kubeconfig` call.
+        // Jenkins runs as a non-root user without a home directory guaranteed,
+        // so writing to the workspace is safer and stage-isolated.
         KUBECONFIG   = "${WORKSPACE}/kubeconfig"
     }
 
@@ -131,7 +135,13 @@ pipeline {
                 ]]) {
                     sh """
                     set -e
-                    aws eks update-kubeconfig --name ${CLUSTER_NAME} --region ${AWS_REGION}
+                    # --kubeconfig required: KUBECONFIG env var points to \${WORKSPACE}/kubeconfig,
+                    # not ~/.kube/config. Without this flag, update-kubeconfig writes to the default
+                    # path and kubectl never finds it.
+                    aws eks update-kubeconfig \\
+                      --name ${CLUSTER_NAME} \\
+                      --region ${AWS_REGION} \\
+                      --kubeconfig ${KUBECONFIG}
  
                     # Resolve the kube-prometheus-stack dependency before install
                     helm dependency update helm/monitoring
@@ -146,12 +156,18 @@ pipeline {
         }
 
         stage('Verify Monitoring Stack') {
-            steps {
-                sh """
-                kubectl get pods -n monitoring
-                kubectl get svc  -n monitoring
-                """
-            }
+            steps  {
+                withCredentials([[
+                    $class: 'AmazonWebServicesCredentialsBinding',
+                    credentialsId: 'aws-creds'
+                ]]) {
+                    sh """
+                    set -e
+                    kubectl get pods -n monitoring
+                    kubectl get svc  -n monitoring
+                    """
+                }
+            }       
         }
     }
 

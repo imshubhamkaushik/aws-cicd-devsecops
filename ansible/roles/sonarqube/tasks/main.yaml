@@ -157,7 +157,7 @@
 
 # Vault Pesistence
 # Persist Sonar token to Vault
-- name: Persist/Save Sonar token to vault file (first run only)
+- name: Persist/Save Sonar token to vault   file (first run only)
   delegate_to: localhost
   run_once: true
   become: false
@@ -174,11 +174,11 @@
         ansible-vault decrypt {{ vault_file }}
         --vault-password-file {{ vault_pass }}
 
-    - name: Append token to vault file if not already present
-      shell: |
-        grep -q "^sonar_token:" {{ vault_file }} || \
-        echo "vault_sonar_token: {{ sonar_token }}" >> {{ vault_file }}
-      changed_when: "'sonar_token:' not in lookup('file', vault_file)"
+    - name: Append/Update Sonar token (vault_sonar_token) to vault file if not already present
+      lineinfile:
+        path: "{{ vault_file }}"
+        regexp: '^vault_sonar_token:'
+        line: 'vault_sonar_token: "{{ sonar_token }}"'
 
   always:
     - name: Encrypt/Re-encrypt vault file (always)

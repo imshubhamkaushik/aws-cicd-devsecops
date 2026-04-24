@@ -114,7 +114,10 @@ def _setup_vault_password_file():
         if _validate_existing_password_file():
             return
 
-        _handle_invalid_vault_password()
+        vaut_valid = _handle_invalid_vault_password()
+        
+        if not vaut_valid:
+            _create_vault_password_file()
         return
 
     if not VAULT_PASSWORD_FILE.exists():

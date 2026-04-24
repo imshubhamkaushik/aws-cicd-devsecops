@@ -56,7 +56,7 @@ tool:
           - installSource:
               installers:
                 - nodeJSInstaller:
-                    id: "20.18.0"
+                    id: "22.15.0"
                     npmPackagesRefreshHours: 72
 
 credentials:

@@ -14,6 +14,7 @@
         - /usr/share/keyrings/jenkins-keyring.gpg
         - /usr/share/keyrings/jenkins-keyring.asc
         - /usr/share/keyrings/jenkins.asc
+      when: "'jenkins' in group_names"
   
   roles:
     - common
