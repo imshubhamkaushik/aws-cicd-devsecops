@@ -97,16 +97,16 @@
     src: plugins.yaml
     dest: /tmp/plugins.yaml
 
-# TEST
-- name: Show remote plugins.yaml content
-  command: cat /tmp/plugins.yaml
-  register: remote_plugins
-  changed_when: false
+# # TEST
+# - name: Show remote plugins.yaml content
+#   command: cat /tmp/plugins.yaml
+#   register: remote_plugins
+#   changed_when: false
 
-- name: Print remote plugins.yaml
-  debug:
-    var: remote_plugins.stdout_lines
-# TEST/
+# - name: Print remote plugins.yaml
+#   debug:
+#     var: remote_plugins.stdout_lines
+# # TEST/
 
 - name: Download jenkins-plugin-manager.jar
   get_url:
