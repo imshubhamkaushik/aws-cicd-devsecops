@@ -148,12 +148,15 @@
     path: /etc/systemd/system/jenkins.service.d
     state: directory
 
-- name: Configure systemd to load Jenkins env file
+- name: Configure systemd to set Jenkins environment variables
   copy:
     dest: /etc/systemd/system/jenkins.service.d/override.conf
     content: |
       [Service]
-      EnvironmentFile=/etc/default/jenkins
+      # Disable the setup wizard
+      Environment="JAVA_OPTS=-Djava.awt.headless=true -Djenkins.install.runSetupWizard=false"
+      # Point to your JCasC configuration file
+      Environment="CASC_JENKINS_CONFIG=/var/lib/jenkins/casc_configs/jcasc.yaml"
 
 - name: Reload systemd daemon
   command: systemctl daemon-reload
@@ -265,7 +268,7 @@
   until: jenkins_ui.status == 200
 
 # -----------------------------
-# FIX: Strong JCasC verification (auth = success)
+# Strong JCasC verification (auth = success)
 # -----------------------------
 - name: Verify admin credentials (confirms JCasC applied successfully)
   uri:
