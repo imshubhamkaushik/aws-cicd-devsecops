@@ -180,6 +180,21 @@
     name: jenkins
     state: stopped
 
+- name: Load plugin list
+  ansible.builtin.include_vars:
+    file: plugins.yaml
+
+- name: Install Jenkins plugins
+  community.general.jenkins_plugin:
+    name: "{{ item.name }}"
+    version: "{{ item.version | default(omit) }}"
+    url_username: "{{ jenkins_admin_user }}"
+    url_password: "{{ vaut_jenkins_admin_password }}"
+    url: "http://localhost:8080"
+    state: present
+  with_items: "{{ jenkins_plugins }}"
+  notify: Restart Jenkins
+
 # # -----------------------------
 # # Install plugins (safe method)
 # # -----------------------------
@@ -194,27 +209,27 @@
 #   args:
 #     creates: /var/lib/jenkins/plugins/configuration-as-code.jpi
 
-# -----------------------------
-# Install plugins (DEBUG MODE)
-# -----------------------------
-- name: Install Jenkins plugins (DEBUG MODE)
-  become: true
-  shell: |
-    set -e
-    jenkins-plugin-cli \
-      --war /usr/share/java/jenkins.war \
-      --plugin-file /tmp/plugins.yaml \
-      --plugin-download-directory /var/lib/jenkins/plugins
-  register: plugin_install_output
-  ignore_errors: true
+# # -----------------------------
+# # Install plugins (DEBUG MODE)
+# # -----------------------------
+# - name: Install Jenkins plugins (DEBUG MODE)
+#   become: true
+#   shell: |
+#     set -e
+#     jenkins-plugin-cli \
+#       --war /usr/share/java/jenkins.war \
+#       --plugin-file /tmp/plugins.yaml \
+#       --plugin-download-directory /var/lib/jenkins/plugins
+#   register: plugin_install_output
+#   ignore_errors: true
 
-- name: Show plugin install output
-  debug:
-    var: plugin_install_output.stdout_lines
+# - name: Show plugin install output
+#   debug:
+#     var: plugin_install_output.stdout_lines
 
-- name: Show plugin install errors
-  debug:
-    var: plugin_install_output.stderr_lines
+# - name: Show plugin install errors
+#   debug:
+#     var: plugin_install_output.stderr_lines
 
 # -----------------------------
 # Verify JCasC plugin exists
