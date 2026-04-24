@@ -153,10 +153,8 @@
     dest: /etc/systemd/system/jenkins.service.d/override.conf
     content: |
       [Service]
-      # Disable the setup wizard
-      Environment="JAVA_OPTS=-Djava.awt.headless=true -Djenkins.install.runSetupWizard=false"
-      # Point to your JCasC configuration file
-      Environment="CASC_JENKINS_CONFIG=/var/lib/jenkins/casc_configs/jcasc.yaml"
+      # Load all JCasC environment variables and secrets
+      EnvironmentFile=/etc/default/jenkins
 
 - name: Reload systemd daemon
   command: systemctl daemon-reload
