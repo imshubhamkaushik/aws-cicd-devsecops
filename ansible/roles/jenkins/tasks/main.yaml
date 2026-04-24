@@ -176,7 +176,7 @@
 # Install plugins (safe method)
 # -----------------------------
 - name: Install Jenkins plugins
-  become_user: jenkins
+  become: true
   shell: |
     jenkins-plugin-cli \
       --plugin-file /tmp/plugins.yaml \
