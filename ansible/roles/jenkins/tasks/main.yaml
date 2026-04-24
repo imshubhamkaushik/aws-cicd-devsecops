@@ -14,7 +14,7 @@
   file:
     path: /usr/share/keyrings
     state: directory
-    mode: '0755'
+    mode: "0755"
 
 # Install Jenkins
 # Download key and dearmor in one shot — avoids intermediate file trust issues
@@ -40,7 +40,7 @@
 - name: Fix Jenkins key permissions
   file:
     path: /usr/share/keyrings/jenkins-keyring.gpg
-    mode: '0644'
+    mode: "0644"
 
 # Add the Jenkins apt repository to the system's sources list, referencing the imported GPG key for package verification.
 - name: Add Jenkins apt repository
@@ -98,13 +98,13 @@
   get_url:
     url: "https://github.com/jenkinsci/plugin-installation-manager-tool/releases/download/2.12.13/jenkins-plugin-manager-2.12.13.jar"
     dest: /usr/local/lib/jenkins-plugin-manager.jar
-    mode: '0644'
+    mode: "0644"
   when: not plugin_manager.stat.exists
 
 - name: Install jenkins-plugin-cli wrapper script
   copy:
     dest: /usr/local/bin/jenkins-plugin-cli
-    mode: '0755'
+    mode: "0755"
     content: |
       #!/bin/bash
       exec java -jar /usr/local/lib/jenkins-plugin-manager.jar "$@"
@@ -117,13 +117,13 @@
 
 # JCasC (Jenkins Configuration as Code) setup
 # Deploy JCasC config file to Jenkins server
-- name: Deploy JCasC config file to Jenkins server 
+- name: Deploy JCasC config file to Jenkins server
   template:
     src: jcasc.yaml
     dest: /var/lib/jenkins/casc_configs/jcasc.yaml
     owner: jenkins
     group: jenkins
-    mode: '0644'
+    mode: "0644"
 
 # Ensure correct permissions
 - name: Fix Jenkins home directory permissions
@@ -151,6 +151,14 @@
 
 - name: Reload systemd daemon
   command: systemctl daemon-reload
+
+- name: Install required packages for plugin downloads
+  apt:
+    name:
+      - ca-certificates
+      - curl
+      - wget
+    state: present
 
 # -----------------------------
 # Initialize Jenkins once BEFORE plugin install
@@ -211,15 +219,15 @@
 # -----------------------------
 # Verify JCasC plugin exists
 # -----------------------------
-- name: Verify JCasC plugin exists
-  stat:
-    path: /var/lib/jenkins/plugins/configuration-as-code.jpi
-  register: casc_plugin
+- name: Check JCasC plugin (.jpi or .hpi)
+  shell: |
+    ls /var/lib/jenkins/plugins | grep configuration-as-code || true
+  register: casc_check
 
 - name: Fail if JCasC plugin missing
   fail:
     msg: "JCasC plugin not installed"
-  when: not casc_plugin.stat.exists
+  when: casc_check.stdout == ""
 
 # -----------------------------
 # Start Jenkins after full setup
@@ -237,7 +245,7 @@
 - name: Flush handlers (restart Jenkins now if config changed)
   meta: flush_handlers
 
-# Jenkins Unlock & First-Time Setup 
+# Jenkins Unlock & First-Time Setup
 # Wait for Jenkins to start and listen on port 8080 before proceeding.
 - name: Wait for Jenkins to start and listen on port 8080
   wait_for:
@@ -265,7 +273,7 @@
     force_basic_auth: yes
     status_code: 200
   register: jenkins_auth_check
-  retries: 20   # increase retries to allow more time for Jenkins to apply config and be ready
+  retries: 20 # increase retries to allow more time for Jenkins to apply config and be ready
   delay: 10
   until: jenkins_auth_check.status == 200
   failed_when: jenkins_auth_check.status != 200
