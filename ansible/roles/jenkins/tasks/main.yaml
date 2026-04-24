@@ -182,17 +182,18 @@
 
 - name: Load plugin list
   ansible.builtin.include_vars:
-    file: plugins.yaml
+    file: "{{ role_path }}/files/plugins.yaml"
+    name: plugin_vars
 
 - name: Install Jenkins plugins
   community.general.jenkins_plugin:
     name: "{{ item.name }}"
     version: "{{ item.version | default(omit) }}"
     url_username: "{{ jenkins_admin_user }}"
-    url_password: "{{ vaut_jenkins_admin_password }}"
+    url_password: "{{ vault_jenkins_admin_password }}"
     url: "http://localhost:8080"
     state: present
-  with_items: "{{ jenkins_plugins }}"
+  with_items: "{{ plugin_vars.plugins }}"
   notify: Restart Jenkins
 
 # # -----------------------------
