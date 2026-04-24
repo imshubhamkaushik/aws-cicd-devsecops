@@ -140,7 +140,7 @@
 # Ensure correct permissions
 - name: Fix Jenkins home directory permissions
   file:
-    path: /var/lib/jenkins
+    path: {{ item }}
     owner: jenkins
     group: jenkins
     state: directory
@@ -178,6 +178,12 @@
 # Initialize Jenkins once BEFORE plugin install
 # (Prevents plugin install race condition)
 # -----------------------------
+- name: Check if Jenkins plugins already installed
+  find:
+    paths: /var/lib/jenkins/plugins
+    patterns: "configuration-as-code.*pi"
+  register: casc_plugin_check
+
 - name: Start Jenkins once to initialize home
   service:
     name: jenkins
@@ -200,12 +206,6 @@
 # -----------------------------
 # Install plugins
 # -----------------------------
-- name: Check if Jenkins plugins already installed
-  find:
-    paths: /var/lib/jenkins/plugins
-    patterns: "configuration-as-code.*pi"
-  register: casc_plugin_check
-
 - name: Install Jenkins plugins
   shell: |
     set -e
