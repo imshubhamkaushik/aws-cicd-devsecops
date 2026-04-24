@@ -1,33 +1,33 @@
 plugins:
-  - name: docker-workflow
+  - id: docker-workflow
 
   # CORE
-  - name: configuration-as-code
-  - name: matrix-auth
-  - name: credentials
-  - name: credentials-binding
+  - id: configuration-as-code
+  - id: matrix-auth
+  - id: credentials
+  - id: credentials-binding
 
   # PIPELINES
-  - name: workflow-aggregator
-  - name: pipeline-stage-view
+  - id: workflow-aggregator
+  - id: pipeline-stage-view
 
   # SCM
-  - name: git
-  - name: github
+  - id: git
+  - id: github
 
   # JOB DSL
-  - name: job-dsl
+  - id: job-dsl
 
   # TOOLS
-  - name: nodejs
-  - name: maven-plugin
+  - id: nodejs
+  - id: maven-plugin
 
   # SONAR
-  - name: sonar
+  - id: sonar
 
   # AWS
-  - name: aws-credentials
+  - id: aws-credentials
 
   # UTILS
-  - name: timestamper
-  - name: ws-cleanup
+  - id: timestamper
+  - id: ws-cleanup
