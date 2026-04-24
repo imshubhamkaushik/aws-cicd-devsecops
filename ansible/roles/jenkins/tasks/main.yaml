@@ -31,11 +31,18 @@
 
     gpg --homedir "$GNUPGHOME" --batch \
         --export 7198F4B714ABFC68 \
-        > /usr/share/keyrings/jenkins-keyring.gpg
+        > /tmp/jenkins-keyring-new.gpg
 
-    test -s /usr/share/keyrings/jenkins-keyring.gpg \
+    test -s /tmp/jenkins-keyring-new.gpg \
       || { echo "ERROR: exported keyring is empty"; exit 1; }
-  changed_when: true
+
+    if ! diff -q /tmp/jenkins-keyring-new.gpg /usr/share/keyrings/jenkins-keyring.gpg &>/dev/null; then
+      cp /tmp/jenkins-keyring-new.gpg /usr/share/keyrings/jenkins-keyring.gpg
+      echo "KEY_UPDATED"
+    fi
+  register: gpg_fetch_result
+  changed_when: "'KEY_UPDATED' in gpg_fetch_result.stdout"
+  when: jenkins_key_check.rc != 0
 
 - name: Fix Jenkins key permissions
   file:
@@ -105,7 +112,6 @@
     url: "https://github.com/jenkinsci/plugin-installation-manager-tool/releases/download/2.12.13/jenkins-plugin-manager-2.12.13.jar"
     dest: /usr/local/lib/jenkins-plugin-manager.jar
     mode: "0644"
-    force: yes        # always re-download, never use cached/corrupt file
 
 - name: Install jenkins-plugin-cli wrapper script
   copy:
@@ -137,7 +143,10 @@
     path: /var/lib/jenkins
     owner: jenkins
     group: jenkins
-    recurse: yes
+    state: directory
+  loop:
+    - /var/lib/jenkins/casc_configs
+    - /var/lib/jenkins/plugins
 
 # -----------------------------
 # CRITICAL: systemd must load env
@@ -155,9 +164,7 @@
       [Service]
       # Load all JCasC environment variables and secrets
       EnvironmentFile=/etc/default/jenkins
-
-- name: Reload systemd daemon
-  command: systemctl daemon-reload
+  notify: Reload systemd daemon
 
 - name: Install required packages for plugin downloads
   apt:
@@ -175,34 +182,40 @@
   service:
     name: jenkins
     state: started
+  when: casc_plugin_check.matched == 0
 
 - name: Wait for initial Jenkins startup
   wait_for:
     port: 8080
     delay: 10
     timeout: 120
+  when: casc_plugin_check.matched == 0
 
 - name: Stop Jenkins before plugin install
   service:
     name: jenkins
     state: stopped
+  when: casc_plugin_check.matched == 0
 
 # -----------------------------
 # Install plugins
 # -----------------------------
+- name: Check if Jenkins plugins already installed
+  find:
+    paths: /var/lib/jenkins/plugins
+    patterns: "configuration-as-code.*pi"
+  register: casc_plugin_check
+
 - name: Install Jenkins plugins
-  become: true
   shell: |
     set -e
     jenkins-plugin-cli \
       --war /usr/share/java/jenkins.war \
       --plugin-file /tmp/plugins.yaml \
       --plugin-download-directory /var/lib/jenkins/plugins
-  args:
-    creates: /var/lib/jenkins/plugins/configuration-as-code.jpi
-    executable: /bin/bash
   register: plugin_install_output
-  changed_when: true
+  changed_when: "'skipped' not in plugin_install_output.stdout"
+  when: casc_plugin_check.matched == 0
 
 - name: Fix Jenkins plugin directory ownership
   file:
@@ -214,10 +227,12 @@
 - name: Show plugin install output
   debug:
     var: plugin_install_output.stdout_lines
+  when: plugin_install_output is not skipped and plugin_install_output is defined
 
 - name: Show plugin install errors
   debug:
     var: plugin_install_output.stderr_lines
+  when: plugin_install_output is not skipped and plugin_install_output is defined
 
 # -----------------------------
 # Verify JCasC plugin exists
@@ -226,6 +241,7 @@
   shell: |
     ls /var/lib/jenkins/plugins | grep configuration-as-code || true
   register: casc_check
+  changed_when: false
 
 - name: Fail if JCasC plugin missing
   fail:

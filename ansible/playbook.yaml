@@ -5,7 +5,17 @@
   become: true
 
   pre_tasks:
-    - name: Remove stale Jenkins repo and key files from previous runs
+    - name: Check if Jenkins GPG key is already valid
+      shell: |
+        gpg --no-default-keyring \
+          --keyring /usr/share/keyrings/jenkins-keyring.gpg \
+          --list-keys 7198F4B714ABFC68 2>/dev/null
+      register: jenkins_key_check
+      changed_when: false
+      failed_when: false
+      when: "'jenkins' in group_names"
+
+    - name: Remove stale Jenkins repo and key files (only if key is missing/invalid)
       file:
         path: "{{ item }}"
         state: absent
@@ -14,7 +24,9 @@
         - /usr/share/keyrings/jenkins-keyring.gpg
         - /usr/share/keyrings/jenkins-keyring.asc
         - /usr/share/keyrings/jenkins.asc
-      when: "'jenkins' in group_names"
+      when:
+        - "'jenkins' in group_names"
+        - jenkins_key_check.rc != 0
   
   roles:
     - common
