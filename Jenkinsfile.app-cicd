@@ -145,8 +145,8 @@ pipeline {
  
                     docker run --rm \
                         -v $(pwd):/usr/src \
-                        -e SONAR_HOST_URL=${env.SONAR_HOST_URL} \
-                        -e SONAR_TOKEN=${env.SONAR_AUTH_TOKEN} \
+                        -e SONAR_HOST_URL \
+                        -e SONAR_TOKEN \
                         sonarsource/sonar-scanner-cli:11 \
                         -Dsonar.projectBaseDir=/usr/src
                     '''
@@ -171,6 +171,7 @@ pipeline {
 
                         docker run --rm \
                           -v /var/run/docker.sock:/var/run/docker.sock \
+                          -v \$(pwd)/.trivyignore:/.trivyignore \
                           ${TRIVY_IMAGE}:0.71.0 image \
                           --severity HIGH,CRITICAL \
                           --exit-code 1 \
@@ -189,6 +190,7 @@ pipeline {
 
                         docker run --rm \
                           -v /var/run/docker.sock:/var/run/docker.sock \
+                          -v \$(pwd)/.trivyignore:/.trivyignore \
                           ${TRIVY_IMAGE}:0.71.0 image \
                           --severity HIGH,CRITICAL \
                           --exit-code 1 \
@@ -207,6 +209,7 @@ pipeline {
 
                         docker run --rm \
                           -v /var/run/docker.sock:/var/run/docker.sock \
+                          -v \$(pwd)/.trivyignore:/.trivyignore \
                           ${TRIVY_IMAGE}:0.71.0 image \
                           --severity HIGH,CRITICAL \
                           --exit-code 1 \
@@ -290,7 +293,7 @@ pipeline {
                 ]]) {
                     script {
                         env.RDS_ENDPOINT = sh(
-                            script: "aws ssm get-parameter --name {{SSM_RDS_PATH}} --query Parameter.Value --output text --region ${AWS_REGION}",
+                            script: "aws ssm get-parameter --name ${{SSM_RDS_PATH}} --query Parameter.Value --output text --region ${AWS_REGION}",
                             returnStdout: true
                         ).trim()
                     }
