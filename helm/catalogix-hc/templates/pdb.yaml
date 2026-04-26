@@ -1,4 +1,4 @@
-{{- if .Values.hpa.enabled }}
+{{- if gt (.Values.userSvc.replicaCount | int) 1 }}
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
@@ -9,7 +9,9 @@ spec:
   selector:
     matchLabels:
       app: user-svc
+{{ end }}
 ---
+{{- if gt (.Values.productSvc.replicaCount | int) 1 }}
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
@@ -20,7 +22,9 @@ spec:
   selector:
     matchLabels:
       app: product-svc
+{{ end }}
 ---
+{{- if gt (.Values.frontendSvc.replicaCount | int) 1 }}
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:

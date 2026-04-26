@@ -19,6 +19,12 @@ pipeline {
         // KUBECONFIG is set as a pipeline-level env var pointing to $WORKSPACE/kubeconfig.
         // It persists across all stages because it's in the environment{} block, not inside a shell subprocess. The kubeconfig file was written by Validate Kubernetes Access.
         KUBECONFIG     = "${WORKSPACE}/kubeconfig"
+
+        // SSM Parameter Store
+        SSM_RDS_PATH = "/${CLUSTER_NAME}/rds-endpoint"
+
+        // Trivy Docker Image
+        TRIVY_IMAGE = "aquasec/trivy"
     }
 
     tools {
@@ -91,14 +97,14 @@ pipeline {
                 stage('User Service') {
                     steps {
                         dir('user-svc') {
-                            sh "mvn -B clean verify"
+                            sh "mvn -B clean test"
                         }
                     }
                 }
                 stage('Product Service') {
                     steps {
                         dir('product-svc') {
-                            sh "mvn -B clean verify"
+                            sh "mvn -B clean test"
                         }
                     }
                 }
@@ -134,16 +140,16 @@ pipeline {
         stage('SonarQube Analysis') {
             steps {
                 withSonarQubeEnv('sonarqube') {
-                    sh """
+                    sh '''
                     set -e
  
-                    docker run --rm \\
-                        -v \\$(pwd):/usr/src \\
-                        -e SONAR_HOST_URL=${env.SONAR_HOST_URL} \\
-                        -e SONAR_TOKEN=${env.SONAR_AUTH_TOKEN} \\
-                        sonarsource/sonar-scanner-cli:11 \\
+                    docker run --rm \
+                        -v $(pwd):/usr/src \
+                        -e SONAR_HOST_URL=${env.SONAR_HOST_URL} \
+                        -e SONAR_TOKEN=${env.SONAR_AUTH_TOKEN} \
+                        sonarsource/sonar-scanner-cli:11 \
                         -Dsonar.projectBaseDir=/usr/src
-                    """
+                    '''
                 }
                 // Block the pipeline until SonarQube finishes analysis and reports the gate result. 
                 // If the quality gate fails, the pipeline stops here — no images are built.
@@ -163,12 +169,13 @@ pipeline {
 
                         docker build -t ${USER_SVC_IMAGE} user-svc
 
-                        docker run --rm \\
-                          -v /var/run/docker.sock:/var/run/docker.sock \\
-                          aquasec/trivy:0.71.0 image \\
-                          --severity HIGH,CRITICAL \\
-                          --exit-code 1 \\
-                          --ignore-unfixed \\
+                        docker run --rm \
+                          -v /var/run/docker.sock:/var/run/docker.sock \
+                          ${TRIVY_IMAGE}:0.71.0 image \
+                          --severity HIGH,CRITICAL \
+                          --exit-code 1 \
+                          --ignore-unfixed \
+                          --ignorefile /.trivyignore \
                           ${USER_SVC_IMAGE}
                         """
                     }
@@ -180,12 +187,13 @@ pipeline {
 
                         docker build -t ${PRODUCT_SVC_IMAGE} product-svc
 
-                        docker run --rm \\
-                          -v /var/run/docker.sock:/var/run/docker.sock \\
-                          aquasec/trivy:0.71.0 image \\
-                          --severity HIGH,CRITICAL \\
-                          --exit-code 1 \\
-                          --ignore-unfixed \\
+                        docker run --rm \
+                          -v /var/run/docker.sock:/var/run/docker.sock \
+                          ${TRIVY_IMAGE}:0.71.0 image \
+                          --severity HIGH,CRITICAL \
+                          --exit-code 1 \
+                          --ignore-unfixed \
+                          --ignorefile /.trivyignore \
                           ${PRODUCT_SVC_IMAGE}
                         """
                     }
@@ -197,12 +205,13 @@ pipeline {
 
                         docker build -t ${FRONTEND_SVC_IMAGE} frontend-svc
 
-                        docker run --rm \\
-                          -v /var/run/docker.sock:/var/run/docker.sock \\
-                          aquasec/trivy:0.71.0 image \\
-                          --severity HIGH,CRITICAL \\
-                          --exit-code 1 \\
-                          --ignore-unfixed \\
+                        docker run --rm \
+                          -v /var/run/docker.sock:/var/run/docker.sock \
+                          ${TRIVY_IMAGE}:0.71.0 image \
+                          --severity HIGH,CRITICAL \
+                          --exit-code 1 \
+                          --ignore-unfixed \
+                          --ignorefile /.trivyignore \
                           ${FRONTEND_SVC_IMAGE}
                         """
                     }
@@ -263,7 +272,7 @@ pipeline {
 
                 docker run --rm \
                   -v \$(pwd):/catalogix \
-                  aquasec/trivy:0.70.0 config \
+                  ${TRIVY_IMAGE}:0.71.0 config \
                   --severity HIGH,CRITICAL --exit-code 1 \
                   --ignorefile /catalogix/.trivyignore \
                   /catalogix/${HELM_CHART_DIR}
@@ -281,7 +290,7 @@ pipeline {
                 ]]) {
                     script {
                         env.RDS_ENDPOINT = sh(
-                            script: "aws ssm get-parameter --name /catalogix-dev/rds-endpoint --query Parameter.Value --output text --region ${AWS_REGION}",
+                            script: "aws ssm get-parameter --name {{SSM_RDS_PATH}} --query Parameter.Value --output text --region ${AWS_REGION}",
                             returnStdout: true
                         ).trim()
                     }

@@ -315,7 +315,10 @@ resource "aws_iam_policy" "jenkins_iam" {
           "iam:GetRolePolicy",
           "iam:PassRole"
         ]
-        Resource = "arn:aws:iam::*:role/${var.ec2_name}-*"
+        Resource = [
+          "arn:aws:iam::*:role/${var.ec2_name}-*",
+          "arn:aws:iam::*:role/${var.cluster_name}-*"
+        ]
       },
       {
         Sid    = "PolicyManagement"
@@ -458,7 +461,10 @@ resource "aws_iam_policy" "jenkins_ops" {
           "ssm:AddTagsToResource", "ssm:ListTagsForResource"
         ]
         # Scoped to /${var.ec2_name}/ prefix — covers /catalogix/dev/rds-endpoint etc.
-        Resource = "arn:aws:ssm:${var.aws_region}:*:parameter/${var.ec2_name}/*"
+        Resource = [
+          "arn:aws:ssm:${var.aws_region}:*:parameter/${var.ec2_name}/*",
+          "arn:aws:ssm:${var.aws_region}:*:parameter/${var.cluster_name}-*"
+        ]
       },
       {
         Sid      = "STSCallerIdentity"

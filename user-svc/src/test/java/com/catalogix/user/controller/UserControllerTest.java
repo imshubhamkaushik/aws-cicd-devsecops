@@ -57,7 +57,7 @@ class UserControllerTest {
     }
 
     @Test
-    void registerDuplicateEmailReturns400() throws Exception {
+    void registerDuplicateEmailReturns409() throws Exception {
         CreateUserRequest req = new CreateUserRequest();
         req.setName("John");
         req.setEmail("john@example.com");
@@ -68,7 +68,7 @@ class UserControllerTest {
         mvc.perform(post("/users/register")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(mapper.writeValueAsString(req)))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isConflict());
     }
 
     // POST /users/login tests

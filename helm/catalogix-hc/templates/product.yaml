@@ -6,7 +6,7 @@ metadata:
     app: product-svc
 spec:
   {{- if not .Values.hpa.enabled }}
-  replicas: {{ .Values.productSvc.replicaCount | default 1 }}
+  replicas: {{ .Values.productSvc.replicaCount | default 2 }}
   {{- end }}
   selector:
     matchLabels:

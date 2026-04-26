@@ -20,18 +20,6 @@
     <properties>
         <java.version>21</java.version>
         <spring.boot.version>3.5.13</spring.boot.version>
-
-        <!-- SonarQube — single project key covers both modules in one scan -->
-        <sonar.projectKey>catalogix</sonar.projectKey>
-        <sonar.projectName>Catalogix</sonar.projectName>
-        <sonar.projectVersion>1.0</sonar.projectVersion>
-        <sonar.sourceEncoding>UTF-8</sonar.sourceEncoding>
-        <sonar.sources>src/main/java</sonar.sources>
-        <sonar.tests>src/test/java</sonar.tests>
-        <sonar.java.binaries>target/classes</sonar.java.binaries>
-        <sonar.coverage.jacoco.xmlReportPaths>
-            ${project.basedir}/target/site/jacoco/jacoco.xml
-        </sonar.coverage.jacoco.xmlReportPaths>
     </properties>
 
     <!-- Dependency Management -->
@@ -58,7 +46,7 @@
             <dependency>
                 <groupId>org.testcontainers</groupId>
                 <artifactId>testcontainers-bom</artifactId>
-                <version>1.19.0</version>
+                <version>1.20.4</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>

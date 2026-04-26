@@ -31,6 +31,8 @@ spec:
               mountPath: /var/cache/nginx
             - name: nginx-run
               mountPath: /var/run
+            - name: nginx-log
+              mountPath: /var/log
           securityContext:
             runAsNonRoot: true
             runAsUser: 1000
@@ -39,6 +41,11 @@ spec:
             capabilities:
               drop:
                 - ALL
+              # NET_BIND_SERVICE allows a non-root process to bind port 80.
+              # This is the minimum required capability — all others remain dropped.
+              # Port 8080 is reserved for Jenkins in this environment, so we keep nginx on port 80 and grant only this one capability instead of switching to an unprivileged image on 8080.
+              add:
+                - NET_BIND_SERVICE
           readinessProbe:
             httpGet:
               path: /
@@ -57,6 +64,8 @@ spec:
         - name: nginx-cache
           emptyDir: {}
         - name: nginx-run
+          emptyDir: {}
+        - name: nginx-log
           emptyDir: {}
 ---
 apiVersion: v1

@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: postgres:16-alpine
+    image: postgres:18-alpine
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -63,6 +63,15 @@ services:
         condition: service_healthy
     ports:
       - "3000:80"
+    cap_add:
+      - NET_BIND_SERVICE
+    user: "1000"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO /dev/null http://localhost:80/ || exit 1"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
 volumes:
   pgdata:

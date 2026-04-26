@@ -33,7 +33,7 @@ data "aws_iam_policy_document" "alb_assume_role" {
 }
 
 resource "aws_iam_role" "alb" {
-  name               = "alb-role"
+  name               = "${var.cluster_name}-alb-role"
   assume_role_policy = data.aws_iam_policy_document.alb_assume_role.json
 }
 
