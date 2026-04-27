@@ -114,7 +114,7 @@ pipeline {
                     $class: 'AmazonWebServicesCredentialsBinding',
                     credentialsId: 'aws-creds'
                 ]]) {
-                    sh """
+                    sh '''
                     echo "Waiting for EKS to become ACTIVE..."
 
                     for i in {1..30}; do
@@ -154,7 +154,7 @@ pipeline {
 
                     echo "EKS did not become ready in time"
                     exit 1
-                    """
+                    '''
                 }
             }
         }
