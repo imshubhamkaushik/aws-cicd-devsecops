@@ -47,11 +47,19 @@ resource "aws_eks_cluster" "cluster" {
     endpoint_private_access = true
     # DEV NOTE: public access is on so you can run kubectl from your laptop.
     # For production set this to false and access only from within the VPC.
-    endpoint_public_access = true # for production, set to false
-    public_access_cidrs    = [local.my_ip_cidr]
+    endpoint_public_access = true               # for production, set to false
+    public_access_cidrs    = [local.my_ip_cidr] # auto-locked to your IP at apply time
   }
 
   enabled_cluster_log_types = ["api", "audit", "authenticator"]
+
+  encryption_config {
+    resources = ["secrets"]
+
+    provider {
+      key_arn = aws_kms_key.eks.arn
+    }
+  }
 
   depends_on = [
     aws_iam_role_policy_attachment.cluster_policy,

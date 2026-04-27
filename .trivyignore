@@ -42,3 +42,5 @@ CVE-2026-22801
 
 # Revisit   : When base image is next updated; remove once distro ships libpng >= 1.6.55-r0 (Alpine) or equivalent Debian/Ubuntu patch.
 CVE-2026-25646
+
+AWS-0040
