@@ -156,3 +156,39 @@ module "eso" {
   depends_on = [module.eks, module.alb]
 
 }
+
+# gp3 StorageClass — moved here from modules/eks/main.tf.
+#
+# This resource uses the kubernetes provider. Keeping it inside module.eks
+# caused it to be included in the targeted apply (-target=module.eks),
+# where the kubernetes provider resolves to localhost:80 because
+# local.cluster_endpoint was "(known after apply)" at plan time.
+# Placing it in the root module ensures it runs only in (full apply),
+# when module.eks is in state, the endpoint is known, and the provider
+# connects to the real cluster.
+#
+# WaitForFirstConsumer ensures the EBS volume is created in the same AZ as
+# the pod that claims it — required for single-AZ deployments.
+resource "kubernetes_storage_class_v1" "gp3" {
+  metadata {
+    name = "gp3-sc"
+    annotations = {
+      # Not set as default to avoid silently provisioning volumes for other workloads
+      "storageclass.kubernetes.io/is-default-class" = "false"
+    }
+  }
+
+  storage_provisioner    = "ebs.csi.aws.com"
+  reclaim_policy         = "Retain"
+  volume_binding_mode    = "WaitForFirstConsumer"
+  allow_volume_expansion = true
+
+  parameters = {
+    type = "gp3"
+  }
+
+  # depends_on updated from aws_eks_addon.ebs_csi (module-internal ref)
+  # to module.eks — the root-level handle for the entire EKS module,
+  # which includes the ebs_csi addon internally.
+  depends_on = [module.eks]
+}

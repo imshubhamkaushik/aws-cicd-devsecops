@@ -223,23 +223,36 @@ resource "aws_eks_addon" "ebs_csi" {
 
 # gp3 StorageClass — used by Prometheus and Grafana PVC requests.
 # WaitForFirstConsumer ensures the volume is created in the same AZ as the pod.
-resource "kubernetes_storage_class_v1" "gp3" {
-  metadata {
-    name = "gp3-sc"
-    annotations = {
-      # Not set as default to avoid silently provisioning volumes for other workloads
-      "storageclass.kubernetes.io/is-default-class" = "false"
-    }
-  }
+# resource "kubernetes_storage_class_v1" "gp3" {
+#   metadata {
+#     name = "gp3-sc"
+#     annotations = {
+#       # Not set as default to avoid silently provisioning volumes for other workloads
+#       "storageclass.kubernetes.io/is-default-class" = "false"
+#     }
+#   }
 
-  storage_provisioner    = "ebs.csi.aws.com"
-  reclaim_policy         = "Retain"
-  volume_binding_mode    = "WaitForFirstConsumer"
-  allow_volume_expansion = true
+#   storage_provisioner    = "ebs.csi.aws.com"
+#   reclaim_policy         = "Retain"
+#   volume_binding_mode    = "WaitForFirstConsumer"
+#   allow_volume_expansion = true
 
-  parameters = {
-    type = "gp3"
-  }
+#   parameters = {
+#     type = "gp3"
+#   }
 
-  depends_on = [aws_eks_addon.ebs_csi]
-}
+#   depends_on = [aws_eks_addon.ebs_csi]
+# }
+
+# NOTE: kubernetes_storage_class_v1.gp3 was intentionally moved to env/dev/main.tf.
+#
+# Reason: this resource uses the kubernetes provider, which is configured with
+# local.cluster_endpoint = module.eks.cluster_endpoint. During 
+# (terraform apply -target=module.eks), the endpoint is not yet in provider
+# config — it was "(known after apply)" at plan time, so Terraform initialises
+# the kubernetes provider pointing at localhost:80. The StorageClass apply then
+# fails immediately with "dial tcp 127.0.0.1:80: connection refused".
+#
+# Moving it to the root module means it only runs in Wave 2 (full apply), by
+# which time module.eks is already in state, the endpoint is known, and the
+# kubernetes provider connects to the real cluster.
