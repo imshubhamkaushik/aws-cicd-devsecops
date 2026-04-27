@@ -48,7 +48,7 @@ pipeline {
             }
         }
 
-        stage("Terraform Format Check"){ 
+        stage("Terraform Format Check - terraform/platform-infra/"){ 
             steps { 
                 sh "terraform fmt -check -recursive terraform/"
             } 
@@ -59,12 +59,12 @@ pipeline {
                 sh """
                 set -e
 
-                echo "=== Trivy IaC scan — terraform/ ==="
+                echo "=== Trivy IaC scan - terraform/platform-infra ==="
                 trivy config \\
                     --severity HIGH,CRITICAL \\
                     --exit-code 1 \\
                     --ignorefile .trivyignore \\
-                    terraform/
+                    terraform/platform-infra/
                 """
             }
         }
