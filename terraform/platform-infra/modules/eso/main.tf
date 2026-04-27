@@ -1,3 +1,20 @@
+terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 6.0"
+    }
+    kubernetes = {
+      source  = "hashicorp/kubernetes"
+      version = "~> 3.0"
+    }
+    helm = {
+      source  = "hashicorp/helm"
+      version = "~> 3.0"
+    }
+  }
+}
+
 # IAM Policy — scoped to only reading secrets from Secrets Manager.
 # ESO only needs GetSecretValue and DescribeSecret — nothing else.
 data "aws_caller_identity" "current" {}
@@ -81,35 +98,50 @@ resource "helm_release" "eso" {
   depends_on = [aws_iam_role_policy_attachment.eso]
 }
 
-# ClusterSecretStore — cluster-scoped resource that tells ESO how to connect to
-# AWS Secrets Manager and which service account to use for authentication.
-# ExternalSecret resources in any namespace can reference this store by name.
-resource "kubernetes_manifest" "cluster_secret_store" {
-  manifest = {
-    apiVersion = "external-secrets.io/v1beta1"
-    kind       = "ClusterSecretStore"
-    metadata = {
-      name = "aws-secrets-manager"
-    }
-    spec = {
-      provider = {
-        aws = {
-          service = "SecretsManager"
-          region  = var.region
-          auth = {
-            jwt = {
-              serviceAccountRef = {
-                name      = "external-secrets"
-                namespace = "external-secrets"
-              }
-            }
-          }
-        }
-      }
-    }
+# ClusterSecretStore — applied via kubectl instead of kubernetes_manifest.
+#
+# WHY NOT kubernetes_manifest:
+# hashicorp/kubernetes kubernetes_manifest fetches the CRD schema from the live cluster at PLAN time. 
+# On a fresh deploy the cluster doesn't exist yet at plan time, so Terraform fails with "cannot create REST client: no client config".
+# null_resource + local-exec runs only at APPLY time, after the cluster and ESO helm chart (which installs the ClusterSecretStore CRD) are both up.
+resource "null_resource" "cluster_secret_store" {
+  triggers = {
+    # Re-apply if the ESO role ARN or region changes
+    eso_role_arn = aws_iam_role.eso.arn
+    region       = var.region
   }
 
-  # The ClusterSecretStore CRD must exist (installed by the helm_release above)
-  # before this manifest can be created.
+  provisioner "local-exec" {
+    # KUBECONFIG is set by the Jenkins pipeline to ${WORKSPACE}/kubeconfig.
+    # Passing it here ensures update-kubeconfig writes to the same file that
+    # kubectl uses in the pipeline — not ~/.kube/config which may not exist
+    # or may belong to a different cluster/context.
+    environment = {
+      KUBECONFIG = coalesce(env.KUBECONFIG, pathexpand("~/.kube/config"))
+    }
+
+    command = <<-EOF
+      aws eks update-kubeconfig --region ${var.region} --name ${var.cluster_name} --kubeconfig $KUBECONFIG
+      kubectl apply -f - <<YAML
+apiVersion: external-secrets.io/v1beta1
+kind: ClusterSecretStore
+metadata:
+  name: aws-secrets-manager
+spec:
+  provider:
+    aws:
+      service: SecretsManager
+      region: ${var.region}
+      auth:
+        jwt:
+          serviceAccountRef:
+            name: external-secrets
+            namespace: external-secrets
+YAML
+    EOF
+  }
+
+  # ESO helm chart must be fully deployed first — it installs the
+  # ClusterSecretStore CRD that kubectl apply depends on.
   depends_on = [helm_release.eso]
 }

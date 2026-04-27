@@ -50,7 +50,7 @@ pipeline {
 
         stage("Terraform Format Check - terraform/platform-infra/"){ 
             steps { 
-                sh "terraform fmt -check -recursive terraform/"
+                sh "terraform fmt -check -recursive terraform/platform-infra/"
             } 
         }
 
@@ -71,41 +71,57 @@ pipeline {
 
         stage("Terraform Init") { 
             steps { 
-                dir("${TF_DIR}") { 
-                    sh "terraform init" 
-                } 
+                withCredentials([[
+                    $class: 'AmazonWebServicesCredentialsBinding',
+                    credentialsId: 'aws-creds'
+                ]]) {
+                    dir("${TF_DIR}") { 
+                        sh "terraform init" 
+                    } 
+                }
             }
         }
 
         stage("Terraform Validate")    { 
             steps { 
-                dir("${TF_DIR}") { 
-                    sh "terraform validate" 
-                } 
+                withCredentials([[
+                    $class: 'AmazonWebServicesCredentialsBinding',
+                    credentialsId: 'aws-creds'
+                ]]) {
+                    dir("${TF_DIR}") { 
+                        sh "terraform validate" 
+                    } 
+                }                
             } 
         }
 
-        stage("Terraform Plan") { 
-            steps { 
-                dir("${TF_DIR}") { 
-                    sh "terraform plan -out main.tfplan" 
-                } 
-            } 
-        }
-
-        // Human must review the plan output before infra is changed
-        stage("Approval") {
+        stage("Terraform Plan and Apply - EKS Core") {
             steps {
-                input message: "Review the plan above. Approve FULL infrastructure deployment (EKS + addons)?", ok: "Apply"
-            }
-        }
+                withCredentials([[
+                    $class: 'AmazonWebServicesCredentialsBinding',
+                    credentialsId: 'aws-creds'
+                ]]) {
+                    dir("${TF_DIR}") {
+                        sh "terraform plan -target=module.eks -out eks.tfplan"
+                    }
+                }
 
-        stage("Terraform Apply - EKS Core") { 
-            steps { 
-                dir("${TF_DIR}") { 
-                    sh "terraform apply -target=module.eks -auto-approve" 
-                } 
-            } 
+                // input is a Jenkins DSL step — CANNOT go inside sh.
+                // Must be at Groovy level between shell steps.
+                input message: "Review the EKS core plan above. Approve?", ok: "Apply"
+
+                withCredentials([[
+                    $class: 'AmazonWebServicesCredentialsBinding',
+                    credentialsId: 'aws-creds'
+                ]]) {
+                    dir("${TF_DIR}") {
+                        sh """
+                        terraform apply -auto-approve eks.tfplan
+                        rm -f eks.tfplan
+                        """
+                    }
+                }
+            }
         }
 
         stage("Wait for EKS Ready") {
@@ -117,35 +133,38 @@ pipeline {
                     sh '''
                     echo "Waiting for EKS to become ACTIVE..."
 
-                    for i in {1..30}; do
+                    for i in $(seq 1 30); do
                         STATUS=$(aws eks describe-cluster \
                             --name ${CLUSTER_NAME} \
                             --region ${AWS_REGION} \
                             --query "cluster.status" \
                             --output text)
 
-                        echo "Current status: $STATUS"
+                        echo "Attempt $i/30 — status: $STATUS"
 
                         if [ "$STATUS" = "ACTIVE" ]; then
-                            echo "Cluster ACTIVE, checking nodes..."
+                            echo "Cluster ACTIVE. Writing kubeconfig and checking nodes..."
 
                             aws eks update-kubeconfig \
                                 --name ${CLUSTER_NAME} \
                                 --region ${AWS_REGION} \
                                 --kubeconfig ${KUBECONFIG}
 
-                            for j in {1..20}; do
+                            for j in $(seq 1 20); do
 
-                                if kubectl get nodes >/dev/null 2>&1; then
+                                READY=$(kubectl get nodes --no-headers 2>/dev/null | grep -c " Ready" || true)
+
+                                echo "Attempt $j/20 — ready nodes: $READY"
+
+                                if [ "$READY" -gt "0" ]; then
                                     echo "Nodes are ready!"
                                     exit 0
                                 fi
 
-                                echo "Waiting for nodes..."
                                 sleep 15
                             done
 
-                            echo "Cluster ACTIVE but nodes NOT ready"
+                            echo "Cluster ACTIVE but no nodes became Ready in time."
                             exit 1
                         fi
 
@@ -159,35 +178,27 @@ pipeline {
             }
         }
 
-        stage("Terraform Plan - Remaining Infra") {
-            steps {
-                dir("${TF_DIR}") {
-                    sh "terraform plan -out main.tfplan"
-                }
-            }
-        }
-
-        stage("Terraform Apply - Remaining Infra") {
-            steps {
-                dir("${TF_DIR}") {
-                    sh "terraform apply -auto-approve main.tfplan"
-                }
-            }
-        }
-
-        stage("Verify EKS Cluster") {
+        stage("Terraform Plan and Apply - Remaining Infra") {
             steps {
                 withCredentials([[
                     $class: 'AmazonWebServicesCredentialsBinding',
                     credentialsId: 'aws-creds'
                 ]]) {
-                    sh """
-                    aws eks describe-cluster \
-                      --name ${CLUSTER_NAME} \
-                      --region ${AWS_REGION} \
-                      --query "cluster.status" \
-                        --output text
-                    """
+                    dir("${TF_DIR}") {
+                        sh "terraform plan -out main.tfplan"
+                    }
+                }
+
+                // input must be at Groovy level — not inside sh.
+                input message: "Review the remaining infra plan (ALB, ESO, RDS, Secrets). Approve apply?", ok: "Apply"
+
+                withCredentials([[
+                    $class: 'AmazonWebServicesCredentialsBinding',
+                    credentialsId: 'aws-creds'
+                ]]) {
+                    dir("${TF_DIR}") {
+                        sh "terraform apply -auto-approve main.tfplan"
+                    }
                 }
             }
         }
@@ -209,6 +220,11 @@ pipeline {
                       --name ${CLUSTER_NAME} \\
                       --region ${AWS_REGION} \\
                       --kubeconfig ${KUBECONFIG}
+
+                    # helm repo add is idempotent — safe on every run.
+                    # Without this, helm dependency update fails on a clean Jenkins workspace.
+                    helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+                    helm repo update
  
                     # Resolve the kube-prometheus-stack dependency before install
                     helm dependency update helm/monitoring
@@ -259,6 +275,7 @@ pipeline {
         
         always  { 
             dir("${TF_DIR}") { 
+                sh "rm -f eks.tfplan || true"
                 sh "rm -f main.tfplan || true" 
             } 
         }
