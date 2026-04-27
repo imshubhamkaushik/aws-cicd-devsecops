@@ -74,8 +74,8 @@ credentials:
               scope: GLOBAL
               id: "aws-creds"
               description: "AWS IAM user credentials for Catalogix"
-              awsAccessKey: "${AWS_ACCESS_KEY_ID}"
-              awsSecretKey: "${AWS_SECRET_ACCESS_KEY}"
+              accessKey: "${AWS_ACCESS_KEY_ID}"
+              secretKey: "${AWS_SECRET_ACCESS_KEY}"
 
 # Job Definitions — both pipelines created automatically on Jenkins startup
 jobs:
