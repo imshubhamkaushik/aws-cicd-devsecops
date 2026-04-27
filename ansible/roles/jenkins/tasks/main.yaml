@@ -333,3 +333,21 @@
 - name: Dump Jenkins logs if auth fails
   shell: journalctl -u jenkins -n 200
   when: jenkins_auth_check is failed
+
+# -----------------------------
+# Install Terraform
+# -----------------------------
+- name: Add HashiCorp GPG key
+  apt_key:
+    url: https://apt.releases.hashicorp.com/gpg
+    state: present
+
+- name: Add HashiCorp repo
+  apt_repository:
+    repo: "deb [arch=amd64] https://apt.releases.hashicorp.com {{ ansible_distribution_release }} main"
+
+- name: Install Terraform
+  apt:
+    name: terraform
+    state: present
+    update_cache: yes
