@@ -1,9 +1,12 @@
 import axios from "axios";
 
 // Base URL for backend APIs
-// - In Docker/K8s behind a reverse proxy, you can keep this as ""
-// - For local development, set REACT_APP_API_BASE_URL in .env file
-// const API_BASE = process.env.REACT_APP_API_BASE_URL || "";
+// - In Docker/K8s behind a reverse proxy, keep this as "" (same-origin requests).
+// - For local dev pointing at a separate backend, set VITE_API_BASE_URL in a .env file.
+//   Vite exposes env vars via import.meta.env, NOT process.env (that is Create React App syntax).
+//   process.env.REACT_APP_* variables are never populated in a Vite build.
+// FIX: updated the commented-out line from process.env.REACT_APP_API_BASE_URL to import.meta.env.VITE_API_BASE_URL — the correct Vite convention.
+// const API_BASE = import.meta.env.VITE_API_BASE_URL || "";
 const API_BASE = ""; //same origin
 
 const USER_API_BASE = `${API_BASE}/users`;

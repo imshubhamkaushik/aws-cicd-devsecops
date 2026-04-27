@@ -12,7 +12,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 
 import java.util.List;
-import java.util.Collections;
 
 /**
  * Business logic for users:
@@ -63,10 +62,10 @@ public class UserSvc {
     // List all users as DTOs (no passwords)
     @Transactional(readOnly = true)
     public List<UserResponse> listAll() {
-        return Collections.unmodifiableList(repo.findAll()
+        return repo.findAll()
                 .stream()
                 .map(u -> new UserResponse(u.getId(), u.getName(), u.getEmail()))
-                .toList());
+                .toList();
     }
 
     // Delete user by id, return true if deleted, false if not found

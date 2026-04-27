@@ -17,8 +17,15 @@
     mode: "0755"
 
 # Install Jenkins
-# Download key and dearmor in one shot — avoids intermediate file trust issues
-# Use isolated GNUPGHOME to prevent gpg homedir permission issues when run as root
+# Check if Jenkins GPG keyring already exists
+- name: Check if Jenkins GPG keyring already exists
+  stat:
+    path: /usr/share/keyrings/jenkins-keyring.gpg
+  register: jenkins_key_check
+
+# Download key and dearmor in one shot — avoids intermediate file trust issues.
+# Use isolated GNUPGHOME to prevent gpg homedir permission issues when run as root.
+# Skipped when the keyring file already exists (idempotent).
 - name: Fetch Jenkins GPG key by fingerprint from keyserver
   shell: |
     set -e
@@ -42,7 +49,7 @@
     fi
   register: gpg_fetch_result
   changed_when: "'KEY_UPDATED' in gpg_fetch_result.stdout"
-  when: jenkins_key_check.rc != 0
+  when: not jenkins_key_check.stat.exists
 
 - name: Fix Jenkins key permissions
   file:

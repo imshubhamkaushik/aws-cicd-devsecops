@@ -5,7 +5,7 @@ metadata:
   name: user-svc-pdb
   namespace: {{ .Release.Namespace }}
 spec:
-  minAvailable: 1
+  maxUnavailable: 1
   selector:
     matchLabels:
       app: user-svc
@@ -18,7 +18,7 @@ metadata:
   name: product-svc-pdb
   namespace: {{ .Release.Namespace }}
 spec:
-  minAvailable: 1
+  maxUnavailable: 1
   selector:
     matchLabels:
       app: product-svc
@@ -31,7 +31,7 @@ metadata:
   name: frontend-svc-pdb
   namespace: {{ .Release.Namespace }}
 spec:
-  minAvailable: 1
+  maxUnavailable: 1
   selector:
     matchLabels:
       app: frontend-svc
