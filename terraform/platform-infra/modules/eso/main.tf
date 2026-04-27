@@ -1,5 +1,7 @@
 # IAM Policy — scoped to only reading secrets from Secrets Manager.
 # ESO only needs GetSecretValue and DescribeSecret — nothing else.
+data "aws_caller_identity" "current" {}
+
 resource "aws_iam_policy" "eso" {
   name        = "${var.cluster_name}-eso-secrets-policy"
   description = "Allows External Secrets Operator to read from AWS Secrets Manager"
