@@ -37,3 +37,8 @@ variable "desired_size" {
   type        = number
   default     = 2
 }
+
+variable "kms_key_arn" {
+  description = "KMS key ARN for EKS secrets encryption"
+  type        = string
+}

@@ -57,7 +57,7 @@ resource "aws_eks_cluster" "cluster" {
     resources = ["secrets"]
 
     provider {
-      key_arn = aws_kms_key.eks.arn
+      key_arn = var.kms_key_arn
     }
   }
 

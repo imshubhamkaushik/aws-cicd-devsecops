@@ -24,6 +24,11 @@ resource "random_password" "db" {
   }
 }
 
+resource "aws_kms_key" "eks" {
+  description             = "EKS secrets encryption key"
+  deletion_window_in_days = 7
+}
+
 locals {
   # Pulled from remote state so every module uses the same source of truth
   vpc_id          = data.terraform_remote_state.bootstrap.outputs.vpc_id
@@ -61,6 +66,9 @@ module "eks" {
   min_size     = 1
   max_size     = 2
   desired_size = 2
+
+  # KMS key for EKS secrets
+  kms_key_arn = aws_kms_key.eks.arn
 }
 
 # ECR — global, no VPC dependency
