@@ -5,7 +5,7 @@ data "terraform_remote_state" "bootstrap" {
   backend = "s3"
   config = {
     bucket = "catalogix-tfstate"
-    key    = "bootstrap/terraform.tfstate"
+    key    = "bootstrap-infra/terraform.tfstate"
     region = "ap-south-1"
   }
 }
