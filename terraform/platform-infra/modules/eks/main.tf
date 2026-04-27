@@ -253,6 +253,6 @@ resource "aws_eks_addon" "ebs_csi" {
 # the kubernetes provider pointing at localhost:80. The StorageClass apply then
 # fails immediately with "dial tcp 127.0.0.1:80: connection refused".
 #
-# Moving it to the root module means it only runs in Wave 2 (full apply), by
+# Moving it to the root module means it only runs in (full apply), by
 # which time module.eks is already in state, the endpoint is known, and the
 # kubernetes provider connects to the real cluster.

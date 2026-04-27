@@ -131,48 +131,61 @@ pipeline {
                     credentialsId: 'aws-creds'
                 ]]) {
                     sh '''
-                    echo "Waiting for EKS to become ACTIVE..."
+                    set -e
 
-                    for i in $(seq 1 30); do
-                        STATUS=$(aws eks describe-cluster \
-                            --name ${CLUSTER_NAME} \
-                            --region ${AWS_REGION} \
-                            --query "cluster.status" \
-                            --output text)
+                    NODEGROUP="${CLUSTER_NAME}-node-group"
 
-                        echo "Attempt $i/30 — status: $STATUS"
+                    echo "Get Cluster Information from AWS API..."
+                    echo ""
+                    echo "Verifying EKS cluster..."
 
-                        if [ "$STATUS" = "ACTIVE" ]; then
-                            echo "Cluster ACTIVE. Writing kubeconfig and checking nodes..."
+                    echo "=== Step 1: Wait for node group to reach ACTIVE state ==="
+                    echo "Polling AWS API (aws eks wait) — no kubectl needed for this step."
+                    echo "This waits up to 20 min, polling every 30s."
+                    echo ""
 
-                            aws eks update-kubeconfig \
-                                --name ${CLUSTER_NAME} \
-                                --region ${AWS_REGION} \
-                                --kubeconfig ${KUBECONFIG}
+                    # aws eks wait polls the AWS API directly — no kubectl connection required.
+                    # It exits 0 when the node group is ACTIVE, exits 1 on timeout or error.
+                    # This is more reliable than kubectl polling because it doesn't depend on
+                    # the kubernetes API server being reachable — it just checks EC2/EKS state.
+                    aws eks wait nodegroup-active \
+                        --cluster-name ${CLUSTER_NAME} \
+                        --nodegroup-name ${NODEGROUP} \
+                        --region ${AWS_REGION}
 
-                            for j in $(seq 1 20); do
+                    echo "Node group is ACTIVE."
+                    echo ""
 
-                                READY=$(kubectl get nodes --no-headers 2>/dev/null | grep -c " Ready" || true)
+                    echo "=== Step 2: Write kubeconfig ==="
+ 
+                    aws eks update-kubeconfig \
+                        --name ${CLUSTER_NAME} \
+                        --region ${AWS_REGION} \
+                        --kubeconfig ${KUBECONFIG}
+ 
+                    echo ""
 
-                                echo "Attempt $j/20 — ready nodes: $READY"
-
-                                if [ "$READY" -gt "0" ]; then
-                                    echo "Nodes are ready!"
-                                    exit 0
-                                fi
-
-                                sleep 15
-                            done
-
-                            echo "Cluster ACTIVE but no nodes became Ready in time."
-                            exit 1
-                        fi
-
-                        sleep 20
-                    done
-
-                    echo "EKS did not become ready in time"
-                    exit 1
+                    echo "=== Step 3: Wait for nodes to register as Ready ==="
+                    echo "Using kubectl wait — polls until all nodes report Ready condition."
+                    echo "Timeout: 5 minutes. Each individual kubectl call times out in 15s."
+                    echo ""
+ 
+                    # kubectl wait is cleaner than a manual grep loop:
+                    # - It blocks until the condition is met or the timeout is reached
+                    # - --request-timeout=15s caps each individual API call so a connection
+                    #   failure fails fast instead of hanging for 2-3 minutes per attempt
+                    # - stderr is NOT suppressed so connection errors are visible in the log
+                    kubectl wait \
+                        --for=condition=Ready nodes \
+                        --all \
+                        --timeout=300s \
+                        --request-timeout=15s
+ 
+                    echo ""
+                    echo "All nodes are Ready."
+                    kubectl get nodes --request-timeout=15s
+                    echo ""
+                    echo "Cluster is ready for use."
                     '''
                 }
             }
