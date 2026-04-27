@@ -1,5 +1,6 @@
 package com.catalogix.product.security;
 
+import jakarta.annotation.PreDestroy;
 import jakarta.servlet.*;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -32,6 +33,19 @@ public class RateLimiterFilter implements Filter {
                 return t;
             });
 
+    @PreDestroy
+    public void shutdown() {
+        evictionScheduler.shutdown();
+        try {
+            if (!evictionScheduler.awaitTermination(5, TimeUnit.SECONDS)) {
+                evictionScheduler.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            evictionScheduler.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
+    }
+
     public RateLimiterFilter() {
         // Sweep every 2 minutes. Delay 2 minutes before first run so the map
         // has time to accumulate entries worth evicting.
@@ -49,7 +63,7 @@ public class RateLimiterFilter implements Filter {
 
         // putIfAbsent is atomic — safe under concurrent first requests from the same IP.
         ipStore.putIfAbsent(ip, new RequestCounter(0, now));
-        RequestCounter counter = ipStore.get(ip);
+        RequestCounter counter = ipStore.computeIfAbsent(ip, k -> new RequestCounter(0, now));
 
         synchronized (counter) {
             // Reset window if the current window has expired.

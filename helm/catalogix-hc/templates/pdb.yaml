@@ -9,7 +9,7 @@ spec:
   selector:
     matchLabels:
       app: user-svc
-{{ end }}
+{{- end }}
 ---
 {{- if gt (.Values.productSvc.replicaCount | int) 1 }}
 apiVersion: policy/v1
@@ -22,7 +22,7 @@ spec:
   selector:
     matchLabels:
       app: product-svc
-{{ end }}
+{{- end }}
 ---
 {{- if gt (.Values.frontendSvc.replicaCount | int) 1 }}
 apiVersion: policy/v1

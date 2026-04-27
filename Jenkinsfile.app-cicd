@@ -167,7 +167,7 @@ pipeline {
                         sh """
                         set -e
 
-                        docker build -t ${USER_SVC_IMAGE} user-svc
+                        docker build -f user-svc/Dockerfile -t ${USER_SVC_IMAGE} .
 
                         docker run --rm \
                           -v /var/run/docker.sock:/var/run/docker.sock \
@@ -186,7 +186,7 @@ pipeline {
                         sh """
                         set -e
 
-                        docker build -t ${PRODUCT_SVC_IMAGE} product-svc
+                        docker build -f product-svc/Dockerfile -t ${PRODUCT_SVC_IMAGE} .
 
                         docker run --rm \
                           -v /var/run/docker.sock:/var/run/docker.sock \
@@ -293,7 +293,7 @@ pipeline {
                 ]]) {
                     script {
                         env.RDS_ENDPOINT = sh(
-                            script: "aws ssm get-parameter --name ${{SSM_RDS_PATH}} --query Parameter.Value --output text --region ${AWS_REGION}",
+                            script: "aws ssm get-parameter --name ${SSM_RDS_PATH} --query Parameter.Value --output text --region ${AWS_REGION}",
                             returnStdout: true
                         ).trim()
                     }

@@ -4,7 +4,7 @@ metadata:
   name: catalogix-services
   namespace: {{ .Release.Namespace }}
   labels:
-    release: {{ .Release.Name }}
+    release: monitoring
 spec:
   namespaceSelector:
     matchNames:

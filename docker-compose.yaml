@@ -16,7 +16,9 @@ services:
       retries: 5
 
   user-svc:
-    build: ./user-svc
+    build:
+      context: .
+      dockerfile: user-svc/Dockerfile
     container_name: user-svc
     depends_on:
       postgres:
@@ -35,7 +37,9 @@ services:
       retries: 3
 
   product-svc:
-    build: ./product-svc
+    build:
+      context: .
+      dockerfile: product-svc/Dockerfile
     container_name: product-svc
     depends_on:
       postgres:

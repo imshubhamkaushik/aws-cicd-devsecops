@@ -98,6 +98,7 @@ resource "aws_eks_node_group" "node_group" {
   subnet_ids    = var.private_subnets
 
   instance_types = var.instance_type
+  ami_type       = "AL2023_x86_64_STANDARD"
   capacity_type  = "ON_DEMAND"
   disk_size      = 20
 

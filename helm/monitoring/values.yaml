@@ -42,14 +42,14 @@ kube-prometheus-stack:
   grafana:
     enabled: true
 
-      # DEV NOTE: existingSecret is empty so Grafana uses its default credentials.
-      # For production, create a k8s secret and reference it here:
-      #  kubectl create secret generic grafana-admin-secret \
-      #    --from-literal=admin-user=admin \
-      #    --from-literal=admin-password=<strong-password> \
-      #    -n monitoring
-      # Then set:
-      #   existingSecret: "grafana-admin-secret"
+    # DEV NOTE: existingSecret is empty so Grafana uses its default credentials.
+    # For production, create a k8s secret and reference it here:
+    #  kubectl create secret generic grafana-admin-secret \
+    #    --from-literal=admin-user=admin \
+    #    --from-literal=admin-password=<strong-password> \
+    #    -n monitoring
+    # Then set:
+    #   existingSecret: "grafana-admin-secret"
 
     admin:
       existingSecret: ""
@@ -91,11 +91,6 @@ kube-prometheus-stack:
           editable: true
           options:
             path: /var/lib/grafana/dashboards/default
-  
-    dashboards:
-      default:
-        catalogix-health:
-          file: dashboards/service-health-overview.json
 
   # Alertmanager
   alertmanager:

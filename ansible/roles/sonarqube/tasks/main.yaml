@@ -190,4 +190,3 @@
       command: >
         ansible-vault encrypt {{ vault_file }}
         --vault-password-file {{ vault_pass }}
-      ignore_errors: true
