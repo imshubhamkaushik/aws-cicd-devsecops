@@ -3,7 +3,7 @@
 # Source: https://github.com/kubernetes-sigs/aws-load-balancer-controller/blob/v2.11.0/docs/install/iam_policy.json
 
 resource "aws_iam_policy" "alb" {
-  name        = "AWSLoadBalancerControllerIAMPolicy"
+  name        = "${var.cluster_name}-alb-policy"
   description = "Scoped IAM policy for the AWS Load Balancer Controller"
   policy      = file("${path.module}/iam_policy.json")
 }
@@ -43,7 +43,7 @@ resource "aws_iam_role_policy_attachment" "alb" {
 }
 
 # Service account for IRSA
-resource "kubernetes_service_account" "alb" {
+resource "kubernetes_service_account_v1" "alb" {
   metadata {
     name      = "aws-load-balancer-controller"
     namespace = "kube-system"

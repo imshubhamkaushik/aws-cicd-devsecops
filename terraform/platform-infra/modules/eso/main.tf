@@ -15,7 +15,7 @@ resource "aws_iam_policy" "eso" {
       # Scoped to secrets whose name starts with the cluster name.
       # The trailing /* covers both the secret itself and any version stages.
       # Example: catalogix-dev/db-credentials matches catalogix-dev/*
-      Resource = "arn:aws:secretsmanager:${var.region}:*:secret:${var.cluster_name}/*"
+      Resource = "arn:aws:secretsmanager:${var.region}:${data.aws_caller_identity.current.account_id}:secret:${var.cluster_name}/*"
       # PROD NOTE: scope Resource to specific secret ARNs for least-privilege
     }]
   })
