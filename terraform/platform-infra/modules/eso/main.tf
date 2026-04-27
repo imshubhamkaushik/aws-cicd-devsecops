@@ -12,6 +12,10 @@ terraform {
       source  = "hashicorp/helm"
       version = "~> 3.0"
     }
+    null = {
+      source  = "hashicorp/null"
+      version = "~> 3.0"
+    }
   }
 }
 
@@ -112,14 +116,6 @@ resource "null_resource" "cluster_secret_store" {
   }
 
   provisioner "local-exec" {
-    # KUBECONFIG is set by the Jenkins pipeline to ${WORKSPACE}/kubeconfig.
-    # Passing it here ensures update-kubeconfig writes to the same file that
-    # kubectl uses in the pipeline — not ~/.kube/config which may not exist
-    # or may belong to a different cluster/context.
-    environment = {
-      KUBECONFIG = coalesce(env.KUBECONFIG, pathexpand("~/.kube/config"))
-    }
-
     command = <<-EOF
       aws eks update-kubeconfig --region ${var.region} --name ${var.cluster_name} --kubeconfig $KUBECONFIG
       kubectl apply -f - <<YAML
