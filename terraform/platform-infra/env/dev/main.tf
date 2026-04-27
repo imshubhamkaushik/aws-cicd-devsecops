@@ -71,6 +71,19 @@ module "eks" {
   kms_key_arn = aws_kms_key.eks.arn
 }
 
+# EKS DATA (safe, resolves after creation)
+data "aws_eks_cluster" "this" {
+  name = module.eks.cluster_name
+
+  depends_on = [module.eks]
+}
+
+data "aws_eks_cluster_auth" "this" {
+  name = module.eks.cluster_name
+
+  depends_on = [module.eks]
+}
+
 # ECR — global, no VPC dependency
 module "ecr" {
   source       = "../../modules/ecr"
@@ -86,6 +99,11 @@ module "alb" {
   region            = var.aws_region
   oidc_provider_arn = module.eks.oidc_provider_arn
   oidc_provider     = trimprefix(module.eks.oidc_provider_arn, "arn:aws:iam::${data.aws_caller_identity.current.account_id}:oidc-provider/")
+
+  providers = {
+    kubernetes = kubernetes.after_eks
+    helm       = helm.after_eks
+  }
 
   depends_on = [module.eks]
 }
@@ -128,6 +146,11 @@ module "eso" {
   oidc_provider_arn = module.eks.oidc_provider_arn
   oidc_provider     = trimprefix(module.eks.oidc_provider_arn, "arn:aws:iam::${data.aws_caller_identity.current.account_id}:oidc-provider/")
   region            = var.aws_region
+
+  providers = {
+    kubernetes = kubernetes.after_eks
+    helm       = helm.after_eks
+  }
 
   # ESO must come after EKS nodes and ALB controller so the cluster is stable
   depends_on = [module.eks, module.alb]

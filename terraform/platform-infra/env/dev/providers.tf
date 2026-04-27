@@ -29,6 +29,8 @@ provider "kubernetes" {
     command     = "aws"
     args        = ["eks", "get-token", "--cluster-name", local.cluster_name]
   }
+
+  alias = "after_eks"
 }
 
 provider "helm" {
@@ -42,4 +44,6 @@ provider "helm" {
       args        = ["eks", "get-token", "--cluster-name", local.cluster_name]
     }
   }
+
+  alias = "after_eks"
 }
