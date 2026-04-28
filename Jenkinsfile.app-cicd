@@ -326,7 +326,7 @@ pipeline {
                         --set global.imageTag=${IMAGE_TAG} \\
                         --set global.cloudProvider=aws \\
                         --set database.host=${RDS_ENDPOINT} \\
-                        --wait --timeout 180s   
+                        --wait --timeout 300s   
                     """
                 }
             }
