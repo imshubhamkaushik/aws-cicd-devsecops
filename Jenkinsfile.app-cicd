@@ -143,14 +143,7 @@ pipeline {
                     sh '''
                     set -e
  
-                    docker run --rm \
-                        -v $(pwd):/usr/src \
-                        -v $(pwd)/.scannerwork:/usr/src/.scannerwork \
-                        -e SONAR_HOST_URL \
-                        -e SONAR_AUTH_TOKEN \
-                        sonarsource/sonar-scanner-cli:11 \
-                        -Dsonar.projectBaseDir=/usr/src \
-                        -Dsonar.working.directory=/usr/src/.scannerwork \
+                    sonar-scanner \
                         -Dsonar.projectKey=catalogix \
                         -Dsonar.host.url=$SONAR_HOST_URL \
                         -Dsonar.token=$SONAR_AUTH_TOKEN
