@@ -77,6 +77,14 @@
     state: present
     update_cache: yes
 
+# Add jenkins user to docker group
+- name: Add jenkins user to docker group
+  user:
+    name: jenkins
+    groups: docker
+    append: yes
+  notify: Restart jenkins
+
 # -----------------------------
 # Ensure directories exist
 # -----------------------------
