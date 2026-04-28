@@ -115,12 +115,12 @@ module "alb" {
 module "rds" {
   source = "../../modules/rds"
 
-  name              = "${local.env_prefix}-db"
-  db_name           = "catalogix"
-  username          = local.db_username
-  password          = random_password.db.result
-  private_subnets   = local.private_subnets
-  security_group_id = module.sg.rds_sg
+  name                    = "${local.env_prefix}-db"
+  db_name                 = "catalogix"
+  username                = local.db_username
+  password                = random_password.db.result
+  private_subnets         = local.private_subnets
+  security_group_id       = module.sg.rds_sg
   backup_retention_period = 0
 
   ssm_parameter_path = "/${local.env_prefix}/rds-endpoint"
