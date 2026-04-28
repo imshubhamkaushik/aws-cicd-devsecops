@@ -1,6 +1,6 @@
 # Multi-stage Dockerfile for User Service
 # ---------- Build Stage ----------
-FROM maven:3.9.10-eclipse-temurin-21-alpine AS build
+FROM maven:3.9.9-eclipse-temurin-21-alpine AS build
 WORKDIR /app
 
 # Install parent POM so the service POM can resolve it
