@@ -142,11 +142,23 @@ pipeline {
                 withSonarQubeEnv('sonarqube') {
                     sh '''
                     set -e
+
+                    mkdir -p $(pwd)/.scannerwork && chmod 777 $(pwd)/.scannerwork
  
-                    sonar-scanner \
+                    docker run --rm \
+                        -v $(pwd):/usr/src \
+                        -v $(pwd)/.scannerwork:/usr/src/.scannerwork \
+                        -e SONAR_HOST_URL \
+                        -e SONAR_AUTH_TOKEN \
+                        sonarsource/sonar-scanner-cli:11 \
+                        -Dsonar.projectBaseDir=/usr/src \
+                        -Dsonar.working.directory=/usr/src/.scannerwork \
                         -Dsonar.projectKey=catalogix \
                         -Dsonar.host.url=$SONAR_HOST_URL \
                         -Dsonar.token=$SONAR_AUTH_TOKEN
+
+                    # Copy report-task.txt from container temp output workaround
+                    cp .scannerwork/report-task.txt . || true
                     '''
                 }
                 // Block the pipeline until SonarQube finishes analysis and reports the gate result. 
