@@ -334,54 +334,63 @@ pipeline {
 
         stage('Wait for Deployment Rollout') {
             steps {
-                // Added --timeout=180s so the pipeline doesn't hang indefinitely
-                sh "kubectl rollout status deployment/frontend-svc -n ${K8S_NAMESPACE} --timeout=180s"
-                sh "kubectl rollout status deployment/user-svc -n ${K8S_NAMESPACE} --timeout=180s"
-                sh "kubectl rollout status deployment/product-svc -n ${K8S_NAMESPACE} --timeout=180s"
-
+                withCredentials([[
+                    $class: 'AmazonWebServicesCredentialsBinding',
+                    credentialsId: 'aws-creds'
+                ]]) {
+                    // Added --timeout=180s so the pipeline doesn't hang indefinitely
+                    sh "kubectl rollout status deployment/frontend-svc -n ${K8S_NAMESPACE} --timeout=180s"
+                    sh "kubectl rollout status deployment/user-svc -n ${K8S_NAMESPACE} --timeout=180s"
+                    sh "kubectl rollout status deployment/product-svc -n ${K8S_NAMESPACE} --timeout=180s"
+                }
             }
         }
 
         stage('Post-Deployment Verification') {
             steps {
-                sh """
-                set -e
+                withCredentials([[
+                    $class: 'AmazonWebServicesCredentialsBinding',
+                    credentialsId: 'aws-creds'
+                ]]) {
+                    sh """
+                    set -e
 
-                echo "=== Pod status ==="
-                kubectl get pods -n ${K8S_NAMESPACE}
+                    echo "=== Pod status ==="
+                    kubectl get pods -n ${K8S_NAMESPACE}
 
-                echo ""
-                echo "=== Services ==="
-                kubectl get svc -n ${K8S_NAMESPACE}
+                    echo ""
+                    echo "=== Services ==="
+                    kubectl get svc -n ${K8S_NAMESPACE}
 
-                echo ""
-                echo "=== Ingress ==="
-                kubectl get ingress -n ${K8S_NAMESPACE}
+                    echo ""
+                    echo "=== Ingress ==="
+                    kubectl get ingress -n ${K8S_NAMESPACE}
 
-                echo ""
-                echo "=== Readiness check ==="
-                # This waits for every pod to actually be Ready before marking the stage green.
-                kubectl wait pod \\
-                    --for=condition=Ready \\
-                    --selector=app=user-svc \\
-                    --namespace=${K8S_NAMESPACE} \\
-                    --timeout=120s
+                    echo ""
+                    echo "=== Readiness check ==="
+                    # This waits for every pod to actually be Ready before marking the stage green.
+                    kubectl wait pod \\
+                        --for=condition=Ready \\
+                        --selector=app=user-svc \\
+                        --namespace=${K8S_NAMESPACE} \\
+                        --timeout=120s
 
-                kubectl wait pod \\
-                    --for=condition=Ready \\
-                    --selector=app=product-svc \\
-                    --namespace=${K8S_NAMESPACE} \\
-                    --timeout=120s
+                    kubectl wait pod \\
+                        --for=condition=Ready \\
+                        --selector=app=product-svc \\
+                        --namespace=${K8S_NAMESPACE} \\
+                        --timeout=120s
 
-                kubectl wait pod \\
-                    --for=condition=Ready \\
-                    --selector=app=frontend-svc \\
-                    --namespace=${K8S_NAMESPACE} \\
-                    --timeout=120s
+                    kubectl wait pod \\
+                        --for=condition=Ready \\
+                        --selector=app=frontend-svc \\
+                        --namespace=${K8S_NAMESPACE} \\
+                        --timeout=120s
 
-                echo ""
-                echo "All pods Ready. Deployment verified."
-                """
+                    echo ""
+                    echo "All pods Ready. Deployment verified."
+                    """
+                }
             }
         }
     }
@@ -406,14 +415,35 @@ pipeline {
                   --region ${AWS_REGION} \\
                   --kubeconfig ${KUBECONFIG}
 
+                echo "=== Pod status ==="
+                kubectl get pods -n ${K8S_NAMESPACE} || true
+
+                echo "=== Events ==="
+                kubectl get events -n ${K8S_NAMESPACE} --sort-by='.lastTimestamp' | tail -30 || true
+
+                echo "=== user-svc logs ==="
+                kubectl logs -n ${K8S_NAMESPACE} -l app=user-svc --tail=80 --previous 2>/dev/null || \\
+                kubectl logs -n ${K8S_NAMESPACE} -l app=user-svc --tail=80 2>/dev/null || true
+
+                echo "=== product-svc logs ==="
+                kubectl logs -n ${K8S_NAMESPACE} -l app=product-svc --tail=80 --previous 2>/dev/null || \\
+                kubectl logs -n ${K8S_NAMESPACE} -l app=product-svc --tail=80 2>/dev/null || true
+
+                echo "=== frontend-svc logs ==="
+                kubectl logs -n ${K8S_NAMESPACE} -l app=frontend-svc --tail=80 --previous 2>/dev/null || \\
+                kubectl logs -n ${K8S_NAMESPACE} -l app=frontend-svc --tail=80 2>/dev/null || true
+
+                echo "=== ExternalSecret status ==="
+                kubectl get externalsecret -n ${K8S_NAMESPACE} || true
+
                 echo "=== Release history ==="
                 helm history catalogix --namespace ${K8S_NAMESPACE} || true
 
                 # Find the last revision with DEPLOYED status — that is the last good release.
                 # If no deployed revision exists (first ever deploy failed), skip rollback.
-                LAST_GOOD=\$(helm history catalogix \
-                    --namespace ${K8S_NAMESPACE} \
-                    --output json 2>/dev/null \
+                LAST_GOOD=\$(helm history catalogix \\
+                    --namespace ${K8S_NAMESPACE} \\
+                    --output json 2>/dev/null \\
                     | jq -r '[.[] | select(.status=="deployed")] | last | .revision // empty')
 
                 if [ -z "\$LAST_GOOD" ]; then
