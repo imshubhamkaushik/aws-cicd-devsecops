@@ -24,7 +24,7 @@ pipeline {
         SSM_RDS_PATH = "/${CLUSTER_NAME}/rds-endpoint"
 
         // Trivy Docker Image
-        TRIVY_IMAGE = "aquasec/trivy"
+        TRIVY_IMAGE = "aquasec/trivy:0.70.0"
     }
 
     tools {
@@ -179,7 +179,7 @@ pipeline {
                         docker run --rm \
                           -v /var/run/docker.sock:/var/run/docker.sock \
                           -v \$(pwd)/.trivyignore:/.trivyignore \
-                          ${TRIVY_IMAGE}:0.71.0 image \
+                          ${TRIVY_IMAGE} image \
                           --severity HIGH,CRITICAL \
                           --exit-code 1 \
                           --ignore-unfixed \
@@ -198,7 +198,7 @@ pipeline {
                         docker run --rm \
                           -v /var/run/docker.sock:/var/run/docker.sock \
                           -v \$(pwd)/.trivyignore:/.trivyignore \
-                          ${TRIVY_IMAGE}:0.71.0 image \
+                          ${TRIVY_IMAGE} image \
                           --severity HIGH,CRITICAL \
                           --exit-code 1 \
                           --ignore-unfixed \
@@ -217,7 +217,7 @@ pipeline {
                         docker run --rm \
                           -v /var/run/docker.sock:/var/run/docker.sock \
                           -v \$(pwd)/.trivyignore:/.trivyignore \
-                          ${TRIVY_IMAGE}:0.71.0 image \
+                          ${TRIVY_IMAGE} image \
                           --severity HIGH,CRITICAL \
                           --exit-code 1 \
                           --ignore-unfixed \
@@ -282,7 +282,7 @@ pipeline {
 
                 docker run --rm \
                   -v \$(pwd):/catalogix \
-                  ${TRIVY_IMAGE}:0.71.0 config \
+                  ${TRIVY_IMAGE} config \
                   --severity HIGH,CRITICAL --exit-code 1 \
                   --ignorefile /catalogix/.trivyignore \
                   /catalogix/${HELM_CHART_DIR}
