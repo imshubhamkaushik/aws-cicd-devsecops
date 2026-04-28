@@ -26,3 +26,12 @@ resource "aws_security_group" "rds" {
   }
 }
 
+resource "aws_security_group_rule" "jenkins_to_eks_api" {
+  description              = "Allow Jenkins to reach the EKS private API endpoint on port 443"
+  type                     = "ingress"
+  from_port                = 443
+  to_port                  = 443
+  protocol                 = "tcp"
+  source_security_group_id = var.jenkins_sg_id
+  security_group_id        = var.eks_cluster_sg_id
+}

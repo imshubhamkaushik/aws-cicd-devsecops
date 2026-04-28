@@ -9,6 +9,11 @@ variable "cluster_version" {
   default     = "1.32"
 }
 
+output "cluster_sg_id" {
+  description = "EKS cluster security group ID (AWS-managed) — passed to security-groups module for the Jenkins ingress rule"
+  value       = aws_eks_cluster.cluster.vpc_config[0].cluster_security_group_id
+}
+
 variable "private_subnets" {
   description = "List of private subnet IDs for EKS cluster"
   type        = list(string)

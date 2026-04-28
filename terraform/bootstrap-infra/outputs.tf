@@ -18,6 +18,11 @@ output "private_ip_sonarqube" {
   value       = aws_instance.sonarqube_catalogix.private_ip
 }
 
+output "jenkins_sg_id" {
+  description = "Jenkins SG ID — consumed by platform-infra to allow kubectl access to EKS private endpoint"
+  value       = aws_security_group.jenkins.id
+}
+
 output "vpc_id" {
   description = "VPC ID — consumed by platform-infra via remote state"
   value       = aws_vpc.this.id

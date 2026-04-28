@@ -53,6 +53,9 @@ module "sg" {
   source   = "../../modules/security-groups"
   vpc_id   = local.vpc_id
   vpc_cidr = local.vpc_cidr
+
+  jenkins_sg_id     = data.terraform_remote_state.bootstrap.outputs.jenkins_sg_id
+  eks_cluster_sg_id = module.eks.cluster_sg_id  # implicit depends_on module.eks
 }
 
 # EKS
