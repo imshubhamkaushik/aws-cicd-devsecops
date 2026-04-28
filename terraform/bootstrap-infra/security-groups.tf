@@ -29,6 +29,14 @@ resource "aws_security_group" "jenkins" {
     cidr_blocks = [local.my_ip_cidr] # need to set this to My IP only
   }
 
+  ingress {
+    description     = "SonarQube webhook callback to Jenkins"
+    from_port       = 8080
+    to_port         = 8080
+    protocol        = "tcp"
+    security_groups = [aws_security_group.sonar.id]
+  }
+
   egress {
     description = "Allow all outbound - Jenkins pulls plugins, pushes to ECR, calls EKS"
     from_port   = 0
