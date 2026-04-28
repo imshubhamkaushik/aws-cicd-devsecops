@@ -17,3 +17,5 @@ ansible_ssh_common_args: >-
   -o StrictHostKeyChecking=no
   -o UserKnownHostsFile=/dev/null
   ubuntu@{{ hostvars[groups['jenkins'][0]]['public_ip_address'] }}"
+# Jenkins private IP — SonarQube → Jenkins webhook is a VPC-internal call
+jenkins_host: "{{ hostvars[groups['jenkins'][0]]['private_ip_address'] }}"

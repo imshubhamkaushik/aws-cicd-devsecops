@@ -207,14 +207,10 @@
     status_code: 200
   register: sonar_webhooks
 
-# 
+# Set fact
 - name: Set fact — does Jenkins webhook already exist?
   set_fact:
-    jenkins_webhook_exists: >-
-      {{
-        sonar_webhooks.json is defined and
-        sonar_webhooks.json.webhooks | selectattr('url', 'search', 'sonarqube-webhook') | list | length > 0
-      }}
+    jenkins_webhook_exists: "{{ sonar_webhooks.json is defined and (sonar_webhooks.json.webhooks | selectattr('url', 'search', 'sonarqube-webhook') | list | length > 0) | bool }}"
 
 # Create Jenkins webhook
 - name: Create Jenkins webhook in SonarQube
