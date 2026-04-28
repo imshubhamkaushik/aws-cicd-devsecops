@@ -190,3 +190,52 @@
       command: >
         ansible-vault encrypt {{ vault_file }}
         --vault-password-file {{ vault_pass }}
+
+# -----------------------------
+# Jenkins Webhook
+# -----------------------------
+
+# Check if a webhook pointing at Jenkins already exists.
+# Avoids creating duplicates on re-runs (idempotent).
+- name: List existing SonarQube webhooks
+  uri:
+    url: "http://localhost:9000/api/webhooks/list"
+    method: GET
+    user: admin
+    password: "{{ vault_sonar_admin_password }}"
+    force_basic_auth: yes
+    status_code: 200
+  register: sonar_webhooks
+
+# 
+- name: Set fact — does Jenkins webhook already exist?
+  set_fact:
+    jenkins_webhook_exists: >-
+      {{
+        sonar_webhooks.json is defined and
+        sonar_webhooks.json.webhooks | selectattr('url', 'search', 'sonarqube-webhook') | list | length > 0
+      }}
+
+# Create Jenkins webhook
+- name: Create Jenkins webhook in SonarQube
+  uri:
+    url: "http://localhost:9000/api/webhooks/create"
+    method: POST
+    user: admin
+    password: "{{ vault_sonar_admin_password }}"
+    force_basic_auth: yes
+    body_format: form-urlencoded
+    body:
+      name: "Jenkins"
+      url: "http://{{ jenkins_host }}:8080/sonarqube-webhook/"
+    status_code: [200, 201]
+  when: not jenkins_webhook_exists
+  register: webhook_create_result
+
+- name: Confirm Jenkins webhook created
+  debug:
+    msg: "Webhook created: {{ webhook_create_result.json.webhook.url }}"
+  when: 
+    - not jenkins_webhook_exists
+    - webhook_create_result is defined
+    - webhook_create_result.json is defined

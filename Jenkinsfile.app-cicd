@@ -156,9 +156,6 @@ pipeline {
                         -Dsonar.projectKey=catalogix \
                         -Dsonar.host.url=$SONAR_HOST_URL \
                         -Dsonar.token=$SONAR_AUTH_TOKEN
-
-                    # Copy report-task.txt from container temp output workaround
-                    cp .scannerwork/report-task.txt . || true
                     '''
                 }
                 // Block the pipeline until SonarQube finishes analysis and reports the gate result. 
