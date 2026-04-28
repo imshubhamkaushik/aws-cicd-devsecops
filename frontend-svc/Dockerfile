@@ -7,7 +7,7 @@ COPY . .
 RUN npm run build
 
 # Stage 2: Serve via Nginx (non-root, port 80)
-FROM nginx:1.26-alpine
+FROM nginx:1.29.8-alpine
 RUN apk update && apk upgrade --no-cache \
     && sed -i '/^user /d' /etc/nginx/nginx.conf \
     && chown -R 1000:1000 \
