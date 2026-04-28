@@ -83,7 +83,7 @@
     name: jenkins
     groups: docker
     append: yes
-  notify: Restart jenkins
+  notify: restart jenkins
 
 # -----------------------------
 # Ensure directories exist
