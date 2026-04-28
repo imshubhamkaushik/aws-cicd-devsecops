@@ -22,7 +22,7 @@ resource "aws_db_instance" "postgres" {
   vpc_security_group_ids = [var.security_group_id]
 
   publicly_accessible     = false
-  backup_retention_period = 7
+  backup_retention_period = var.backup_retention_period
   # DEV NOTE: skip_final_snapshot = true means no backup snapshot is taken when this RDS instance is destroyed. Fine for dev — acceptable to lose the data. 
   # For production set to false and set final_snapshot_identifier.
   skip_final_snapshot = true # Fine for dev, but not for production

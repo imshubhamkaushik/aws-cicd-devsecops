@@ -121,6 +121,7 @@ module "rds" {
   password          = random_password.db.result
   private_subnets   = local.private_subnets
   security_group_id = module.sg.rds_sg
+  backup_retention_period = 0
 
   ssm_parameter_path = "/${local.env_prefix}/rds-endpoint"
 }
@@ -173,6 +174,8 @@ module "eso" {
 # WaitForFirstConsumer ensures the EBS volume is created in the same AZ as
 # the pod that claims it — required for single-AZ deployments.
 resource "kubernetes_storage_class_v1" "gp3" {
+  provider = kubernetes.after_eks
+
   metadata {
     name = "gp3-sc"
     annotations = {

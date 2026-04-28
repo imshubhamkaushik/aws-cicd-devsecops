@@ -29,3 +29,9 @@ variable "ssm_parameter_path" {
   description = "SSM Parameter Store path for the RDS endpoint"
   type        = string
 }
+
+variable "backup_retention_period" {
+  description = "Days to retain automated backups. Set to 0 to disable (required on free tier accounts)."
+  type        = number
+  default     = 7
+}
