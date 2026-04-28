@@ -150,9 +150,10 @@ pipeline {
                         -e SONAR_AUTH_TOKEN \
                         sonarsource/sonar-scanner-cli:11 \
                         -Dsonar.projectBaseDir=/usr/src \
+                        -Dsonar.working.directory=/usr/src/.scannerwork \
                         -Dsonar.projectKey=catalogix \
                         -Dsonar.host.url=$SONAR_HOST_URL \
-                        -Dsonar.login=$SONAR_AUTH_TOKEN
+                        -Dsonar.token=$SONAR_AUTH_TOKEN
                     '''
                 }
                 // Block the pipeline until SonarQube finishes analysis and reports the gate result. 
