@@ -26,11 +26,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @WebMvcTest(ProductController.class)
 class ProductControllerTest {
 
-    @Autowired MockMvc mvc;
-    @Autowired ObjectMapper mapper;
+    @Autowired 
+    private ObjectMapper mapper;
 
     @MockitoBean
-    ProductSvc svc;
+    private ProductSvc svc;
+
+    @Autowired
+    private MockMvc mvc;
 
     @Test
     void listReturnsOk() throws Exception {
