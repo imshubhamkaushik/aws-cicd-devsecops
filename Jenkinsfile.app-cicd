@@ -145,6 +145,7 @@ pipeline {
  
                     docker run --rm \
                         -v $(pwd):/usr/src \
+                        -v $(pwd)/.scannerwork:/usr/src/.scannerwork \
                         -e SONAR_HOST_URL \
                         -e SONAR_AUTH_TOKEN \
                         sonarsource/sonar-scanner-cli:11 \
