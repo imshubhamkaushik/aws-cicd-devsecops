@@ -32,7 +32,7 @@ spec:
             - name: nginx-run
               mountPath: /var/run
             - name: nginx-log
-              mountPath: /var/log
+              mountPath: /var/log/nginx
           securityContext:
             runAsNonRoot: true
             runAsUser: 1000
