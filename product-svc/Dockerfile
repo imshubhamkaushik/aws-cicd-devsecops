@@ -17,8 +17,8 @@ FROM gcr.io/distroless/java21-debian13:nonroot
 WORKDIR /app
 
 # Copy only the JAR from build stage
-COPY --from=build /app/product-svc/target/*.jar app.jar
+COPY --from=build /app/product-svc/target/product-svc.jar product-svc.jar
 EXPOSE 8082
 
 # Run the JAR
-ENTRYPOINT ["java", "-XX:MaxRAMPercentage=75", "-XX:InitialRAMPercentage=50", "-Djava.security.egd=file:/dev/./urandom", "-jar", "/app/app.jar"]
+ENTRYPOINT ["java", "-XX:MaxRAMPercentage=75", "-XX:InitialRAMPercentage=50", "-Djava.security.egd=file:/dev/./urandom", "-jar", "/app/product-svc.jar"]
