@@ -29,14 +29,6 @@ resource "aws_security_group" "jenkins" {
     cidr_blocks = [local.my_ip_cidr] # need to set this to My IP only
   }
 
-  ingress {
-    description     = "SonarQube webhook callback to Jenkins"
-    from_port       = 8080
-    to_port         = 8080
-    protocol        = "tcp"
-    security_groups = [aws_security_group.sonar.id]
-  }
-
   egress {
     description = "Allow all outbound - Jenkins pulls plugins, pushes to ECR, calls EKS"
     from_port   = 0
@@ -68,22 +60,6 @@ resource "aws_security_group" "sonar" {
     cidr_blocks = [local.my_ip_cidr] # need to set this to My IP only
   }
 
-  ingress {
-    description     = "Ansible ProxyJump - SSH from Jenkins to reach SonarQube private subnet"
-    from_port       = 22
-    to_port         = 22
-    protocol        = "tcp"
-    security_groups = [aws_security_group.jenkins.id]
-  }
-
-  ingress {
-    description     = "Jenkins pipeline - SonarQube analysis and Quality gate webhook"
-    from_port       = 9000
-    to_port         = 9000
-    protocol        = "tcp"
-    security_groups = [aws_security_group.jenkins.id] # Allow Jenkins SG to access SonarQube
-  }
-
   egress {
     description = "Allow all outbound"
     from_port   = 0
@@ -91,4 +67,42 @@ resource "aws_security_group" "sonar" {
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
+}
+
+# -----------------------------------------------------------------------
+# Cross-referencing rules extracted to break the SG → SG cycle.
+# Both SG blocks above are now cycle-free. Terraform creates them first,
+# then attaches these rules once both SG IDs are known.
+# -----------------------------------------------------------------------
+
+# Sonar SG rules that reference Jenkins SG
+resource "aws_security_group_rule" "sonar_allow_jenkins_ssh" {
+  description              = "Ansible ProxyJump - SSH from Jenkins to reach SonarQube private subnet"
+  type                     = "ingress"
+  from_port                = 22
+  to_port                  = 22
+  protocol                 = "tcp"
+  security_group_id        = aws_security_group.sonar.id
+  source_security_group_id = aws_security_group.jenkins.id
+}
+
+resource "aws_security_group_rule" "sonar_allow_jenkins_9000" {
+  description              = "Jenkins pipeline - SonarQube analysis and Quality gate webhook"
+  type                     = "ingress"
+  from_port                = 9000
+  to_port                  = 9000
+  protocol                 = "tcp"
+  security_group_id        = aws_security_group.sonar.id
+  source_security_group_id = aws_security_group.jenkins.id
+}
+
+# Jenkins SG rule that references Sonar SG (the new webhook callback rule)
+resource "aws_security_group_rule" "jenkins_allow_sonar_webhook" {
+  description              = "SonarQube webhook callback to Jenkins"
+  type                     = "ingress"
+  from_port                = 8080
+  to_port                  = 8080
+  protocol                 = "tcp"
+  security_group_id        = aws_security_group.jenkins.id
+  source_security_group_id = aws_security_group.sonar.id
 }
