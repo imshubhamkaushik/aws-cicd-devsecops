@@ -90,7 +90,7 @@ data "aws_eks_cluster_auth" "this" {
 # ECR — global, no VPC dependency
 module "ecr" {
   source       = "../../modules/ecr"
-  repositories = ["frontend-svc", "user-svc", "product-svc"]
+  repositories = ["frontend-svc", "user-svc", "product-svc", "user-svc-migrations", "product-svc-migrations"]
 }
 
 # ALB Controller (installs the AWS Load Balancer Controller into EKS)

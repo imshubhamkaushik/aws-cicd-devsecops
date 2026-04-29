@@ -280,7 +280,7 @@ pipeline {
                     set -e
 
                     # --kubeconfig writes to \${WORKSPACE}/kubeconfig as required by the KUBECONFIG env var. 
-                    #Without this flag, update-kubeconfig writes to ~/.kube/config which kubectl never reads.
+                    # Without this flag, update-kubeconfig writes to ~/.kube/config which kubectl never reads.
                     aws eks update-kubeconfig \\
                       --region ${AWS_REGION} \\
                       --name ${CLUSTER_NAME} \\
