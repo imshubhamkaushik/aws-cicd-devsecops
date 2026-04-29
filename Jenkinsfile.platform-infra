@@ -46,6 +46,14 @@ pipeline {
             }
         }
 
+        stage("Precheck Bootstrap State") {
+            steps {
+                sh """
+                aws s3 ls s3://catalogix-tfstate/bootstrap-infra/terraform.tfstate
+                """
+            }
+        }
+
         stage("Terraform Format Check - terraform/platform-infra/"){ 
             steps { 
                 sh "terraform fmt -check -recursive terraform/platform-infra/"

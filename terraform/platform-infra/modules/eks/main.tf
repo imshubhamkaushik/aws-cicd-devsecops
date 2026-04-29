@@ -265,13 +265,15 @@ resource "aws_eks_addon" "ebs_csi" {
 # Allow your Jenkins EC2 instance (and terminal) to run kubectl commands
 resource "aws_eks_access_entry" "jenkins_admin" {
   cluster_name  = aws_eks_cluster.cluster.name
-  principal_arn = aws_iam_role.jenkins_ec2_role.arn
+  principal_arn = var.jenkins_role_arn
   type          = "STANDARD"
+
+  depends_on = [aws_eks_cluster.cluster]
 }
 
 resource "aws_eks_access_policy_association" "jenkins_admin_policy" {
   cluster_name  = aws_eks_cluster.cluster.name
-  principal_arn = aws_iam_role.jenkins_ec2_role.arn
+  principal_arn = var.jenkins_role_arn
   policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
 
   access_scope {

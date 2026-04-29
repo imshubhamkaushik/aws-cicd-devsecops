@@ -47,3 +47,8 @@ variable "kms_key_arn" {
   description = "KMS key ARN for EKS secrets encryption"
   type        = string
 }
+
+variable "jenkins_role_arn" {
+  description = "Jenkins role ARN"
+  type        = string
+}
