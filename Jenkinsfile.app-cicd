@@ -84,9 +84,14 @@ pipeline {
 
                         env.ECR_REGISTRY       = "${env.AWS_ACCOUNT_ID}.dkr.ecr.${env.AWS_REGION}.amazonaws.com"
 
+                        // Main Application Images
                         env.USER_SVC_IMAGE     = "${env.ECR_REGISTRY}/user-svc:${env.IMAGE_TAG}"
                         env.PRODUCT_SVC_IMAGE  = "${env.ECR_REGISTRY}/product-svc:${env.IMAGE_TAG}"
                         env.FRONTEND_SVC_IMAGE = "${env.ECR_REGISTRY}/frontend-svc:${env.IMAGE_TAG}"
+
+                        // Migration Images
+                        env.USER_SVC_MIGRATIONS_IMAGE    = "${env.ECR_REGISTRY}/user-svc-migrations:${env.IMAGE_TAG}"
+                        env.PRODUCT_SVC_MIGRATIONS_IMAGE = "${env.ECR_REGISTRY}/product-svc-migrations:${env.IMAGE_TAG}"
                     }
                 }
             }   
@@ -174,7 +179,11 @@ pipeline {
                         sh """
                         set -e
 
+                        # Build Main Image
                         docker build -f user-svc/Dockerfile -t ${USER_SVC_IMAGE} .
+
+                        # Build Migrations Image (using the target stage in your Dockerfile)
+                        docker build --target migrations -f user-svc/Dockerfile -t ${USER_SVC_MIGRATIONS_IMAGE} .
 
                         docker run --rm \
                           -v /var/run/docker.sock:/var/run/docker.sock \
@@ -193,7 +202,11 @@ pipeline {
                         sh """
                         set -e
 
+                        # Build Main Image
                         docker build -f product-svc/Dockerfile -t ${PRODUCT_SVC_IMAGE} .
+
+                        # Build Migrations Image (using the target stage in your Dockerfile)
+                        docker build --target migrations -f product-svc/Dockerfile -t ${PRODUCT_SVC_MIGRATIONS_IMAGE} .
 
                         docker run --rm \
                           -v /var/run/docker.sock:/var/run/docker.sock \
