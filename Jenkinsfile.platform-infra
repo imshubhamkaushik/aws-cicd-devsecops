@@ -140,7 +140,7 @@ pipeline {
                         sleep 10
                     done
 
-                    if [ "$SUCCESS" -ne 1 ]; then
+                    if [ "\$SUCCESS" -ne 1 ]; then
                         echo "ERROR: Failed to generate kubeconfig after retries"
                         exit 1
                     fi
