@@ -285,7 +285,8 @@ resource "aws_eks_access_policy_association" "jenkins_admin_policy" {
 
   depends_on = [
     aws_eks_cluster.cluster,
-    aws_eks_node_group.node_group
+    aws_eks_node_group.node_group,
+    aws_eks_access_entry.jenkins_admin
   ]
 }
 
