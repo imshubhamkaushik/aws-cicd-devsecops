@@ -497,6 +497,29 @@ resource "aws_iam_role_policy_attachment" "jenkins_ops" {
   policy_arn = aws_iam_policy.jenkins_ops.arn
 }
 
+# Custom policy for Jenkins to manage EKS
+resource "aws_iam_policy" "jenkins_eks_access" {
+  name = "${var.ec2_name}-jenkins-eks-access"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "eks:DescribeCluster"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "jenkins_eks_access" {
+  role       = aws_iam_role.jenkins_ec2_role.name
+  policy_arn = aws_iam_policy.jenkins_eks_access.arn
+}
+
 resource "aws_iam_instance_profile" "jenkins_profile" {
   name = "${var.ec2_name}-jenkins-instance-profile"
   role = aws_iam_role.jenkins_ec2_role.name
@@ -521,3 +544,4 @@ resource "aws_iam_instance_profile" "sonar_profile" {
   name = "${var.ec2_name}-sonar-instance-profile"
   role = aws_iam_role.sonar_ec2_role.name
 }
+
