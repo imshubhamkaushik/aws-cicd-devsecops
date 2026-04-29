@@ -261,7 +261,11 @@ pipeline {
         stage('Push Images to ECR') {
             parallel {
                 stage('Push User Service') { steps { sh "docker push ${USER_SVC_IMAGE}" } }
+                stage('Push User Migrations') { steps { sh "docker push ${USER_SVC_MIGRATIONS_IMAGE}" } }
+                
                 stage('Push Product Service') { steps { sh "docker push ${PRODUCT_SVC_IMAGE}" } }
+                stage('Push Product Migrations') { steps { sh "docker push ${PRODUCT_SVC_MIGRATIONS_IMAGE}" } }
+                
                 stage('Push Frontend Service') { steps { sh "docker push ${FRONTEND_SVC_IMAGE}" } }
             }
         }   
