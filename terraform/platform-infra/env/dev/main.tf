@@ -85,7 +85,7 @@ resource "kubernetes_config_map_v1" "aws_auth" {
   data = {
     mapRoles = yamlencode([
       {
-        rolearn  = aws_iam_role.jenkins_ec2_role.arn
+        rolearn  = data.terraform_remote_state.bootstrap.outputs.jenkins_role_arn
         username = "jenkins"
         groups   = ["system:masters"]
       }

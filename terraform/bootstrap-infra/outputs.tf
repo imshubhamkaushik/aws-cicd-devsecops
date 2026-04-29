@@ -42,3 +42,7 @@ output "vpc_cidr" {
   description = "VPC CIDR block — consumed by platform-infra security groups"
   value       = aws_vpc.this.cidr_block
 }
+
+output "jenkins_role_arn" {
+  value = aws_iam_role.jenkins_ec2_role.arn
+}
