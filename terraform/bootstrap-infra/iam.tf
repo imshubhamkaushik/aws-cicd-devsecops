@@ -11,50 +11,10 @@ resource "aws_iam_role" "jenkins_ec2_role" {
   })
 }
 
-# Custom policy for Jenkins to manage VPC and network resources — scoped to what Terraform actually creates
-resource "aws_iam_policy" "jenkins_vpc" {
-  name        = "${var.ec2_name}-jenkins-vpc-policy"
-  description = "VPC, subnet, IGW, NAT, EIP, route table management for Terraform"
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Sid    = "VPCManagement"
-        Effect = "Allow"
-        Action = [
-          "ec2:CreateVpc", "ec2:DeleteVpc", "ec2:DescribeVpcs",
-          "ec2:ModifyVpcAttribute", "ec2:DescribeVpcAttribute",
-          "ec2:CreateSubnet", "ec2:DeleteSubnet", "ec2:DescribeSubnets",
-          "ec2:ModifySubnetAttribute",
-          "ec2:CreateInternetGateway", "ec2:DeleteInternetGateway",
-          "ec2:AttachInternetGateway", "ec2:DetachInternetGateway",
-          "ec2:DescribeInternetGateways",
-          "ec2:CreateNatGateway", "ec2:DeleteNatGateway", "ec2:DescribeNatGateways",
-          "ec2:AllocateAddress", "ec2:ReleaseAddress",
-          "ec2:AssociateAddress", "ec2:DisassociateAddress", "ec2:DescribeAddresses",
-          "ec2:CreateRouteTable", "ec2:DeleteRouteTable", "ec2:DescribeRouteTables",
-          "ec2:CreateRoute", "ec2:DeleteRoute",
-          "ec2:AssociateRouteTable", "ec2:DisassociateRouteTable",
-          "ec2:CreateTags", "ec2:DeleteTags", "ec2:DescribeTags",
-          "ec2:DescribeAvailabilityZones",
-          "ec2:DescribeAccountAttributes"
-        ]
-        Resource = "*"
-      }
-    ]
-  })
-}
-
-resource "aws_iam_role_policy_attachment" "jenkins_vpc" {
-  role       = aws_iam_role.jenkins_ec2_role.name
-  policy_arn = aws_iam_policy.jenkins_vpc.arn
-}
-
-# Custom policy for Jenkins to manage EC2 compute resources — instances, security groups, launch templates, volumes
-resource "aws_iam_policy" "jenkins_compute" {
-  name        = "${var.ec2_name}-jenkins-compute-policy"
-  description = "EC2 instances, security groups, launch templates, EBS volumes for Terraform"
+# Custom policy for Jenkins to manage EC2 compute resources — instances, security groups, launch templates, volumes etc and VPC and network resources
+resource "aws_iam_policy" "jenkins_ec2_vpc" {
+  name        = "${var.ec2_name}-jenkins-ec2-vpc-policy"
+  description = "Policy for VPC management (VPC, subnet, IGW, NAT, EIP, route table management) and EC2 management (EC2 instances, security groups, launch templates, EBS volumes) for Terraform"
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -108,14 +68,37 @@ resource "aws_iam_policy" "jenkins_compute" {
           "ec2:DescribeVolumesModifications"
         ]
         Resource = "*"
+      },
+      {
+        Sid    = "VPCManagement"
+        Effect = "Allow"
+        Action = [
+          "ec2:CreateVpc", "ec2:DeleteVpc", "ec2:DescribeVpcs",
+          "ec2:ModifyVpcAttribute", "ec2:DescribeVpcAttribute",
+          "ec2:CreateSubnet", "ec2:DeleteSubnet", "ec2:DescribeSubnets",
+          "ec2:ModifySubnetAttribute",
+          "ec2:CreateInternetGateway", "ec2:DeleteInternetGateway",
+          "ec2:AttachInternetGateway", "ec2:DetachInternetGateway",
+          "ec2:DescribeInternetGateways",
+          "ec2:CreateNatGateway", "ec2:DeleteNatGateway", "ec2:DescribeNatGateways",
+          "ec2:AllocateAddress", "ec2:ReleaseAddress",
+          "ec2:AssociateAddress", "ec2:DisassociateAddress", "ec2:DescribeAddresses",
+          "ec2:CreateRouteTable", "ec2:DeleteRouteTable", "ec2:DescribeRouteTables",
+          "ec2:CreateRoute", "ec2:DeleteRoute",
+          "ec2:AssociateRouteTable", "ec2:DisassociateRouteTable",
+          "ec2:CreateTags", "ec2:DeleteTags", "ec2:DescribeTags",
+          "ec2:DescribeAvailabilityZones",
+          "ec2:DescribeAccountAttributes"
+        ]
+        Resource = "*"
       }
     ]
   })
 }
 
-resource "aws_iam_role_policy_attachment" "jenkins_compute" {
+resource "aws_iam_role_policy_attachment" "jenkins_ec2_vpc" {
   role       = aws_iam_role.jenkins_ec2_role.name
-  policy_arn = aws_iam_policy.jenkins_compute.arn
+  policy_arn = aws_iam_policy.jenkins_ec2_vpc.arn
 }
 
 # Custom policy for Jenkins to manage RDS instances and subnet groups
@@ -191,14 +174,48 @@ resource "aws_iam_role_policy_attachment" "jenkins_asg" {
   policy_arn = aws_iam_policy.jenkins_asg.arn
 }
 
-# Custom policy for Jenkins to manage ECR
-resource "aws_iam_policy" "jenkins_ecr" {
-  name        = "${var.cluster_name}-jenkins-ecr-policy"
-  description = "ECR push/pull and repository lifecycle management for Jenkins"
+# Custom policy for Jenkins to manage EKS and ECR
+resource "aws_iam_policy" "jenkins_eks_ecr" {
+  name        = "${var.cluster_name}-jenkins-eks-ecr-policy"
+  description = "EKS cluster management and ECR push/pull for Jenkins"
 
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
+      {
+        Sid    = "EKSFullManagement"
+        Effect = "Allow"
+        Action = [
+          "eks:CreateCluster",
+          "eks:DeleteCluster",
+          "eks:DescribeCluster",
+          "eks:ListClusters",
+          "eks:UpdateClusterConfig",
+          "eks:UpdateClusterVersion",
+          "eks:TagResource",
+          "eks:UntagResource",
+          "eks:ListTagsForResource",
+          "eks:AccessKubernetesApi",
+          "eks:CreateNodegroup",
+          "eks:DeleteNodegroup",
+          "eks:DescribeNodegroup",
+          "eks:ListNodegroups",
+          "eks:UpdateNodegroupConfig",
+          "eks:UpdateNodegroupVersion",
+          "eks:CreateAddon",
+          "eks:DeleteAddon",
+          "eks:DescribeAddon",
+          "eks:ListAddons",
+          "eks:UpdateAddon",
+          "eks:DescribeAddonVersions",
+          "eks:DescribeAddonConfiguration",
+          "eks:AssociateIdentityProviderConfig",
+          "eks:DisassociateIdentityProviderConfig",
+          "eks:DescribeIdentityProviderConfig",
+          "eks:ListIdentityProviderConfigs"
+        ]
+        Resource = "*"
+      },
       {
         Sid    = "ECRLogin"
         Effect = "Allow"
@@ -233,58 +250,9 @@ resource "aws_iam_policy" "jenkins_ecr" {
   })
 }
 
-resource "aws_iam_role_policy_attachment" "jenkins_ecr" {
+resource "aws_iam_role_policy_attachment" "jenkins_eks_ecr" {
   role       = aws_iam_role.jenkins_ec2_role.name
-  policy_arn = aws_iam_policy.jenkins_ecr.arn
-}
-
-# Custom policy for Jenkins to manage EKS
-resource "aws_iam_policy" "jenkins_eks" {
-  name        = "${var.cluster_name}-jenkins-eks-policy"
-  description = "Full EKS cluster and node group management for Jenkins / Terraform"
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Sid    = "EKSFullManagement"
-      Effect = "Allow"
-      Action = [
-        "eks:CreateCluster",
-        "eks:DeleteCluster",
-        "eks:DescribeCluster",
-        "eks:ListClusters",
-        "eks:UpdateClusterConfig",
-        "eks:UpdateClusterVersion",
-        "eks:TagResource",
-        "eks:UntagResource",
-        "eks:ListTagsForResource",
-        "eks:AccessKubernetesApi",
-        "eks:CreateNodegroup",
-        "eks:DeleteNodegroup",
-        "eks:DescribeNodegroup",
-        "eks:ListNodegroups",
-        "eks:UpdateNodegroupConfig",
-        "eks:UpdateNodegroupVersion",
-        "eks:CreateAddon",
-        "eks:DeleteAddon",
-        "eks:DescribeAddon",
-        "eks:ListAddons",
-        "eks:UpdateAddon",
-        "eks:DescribeAddonVersions",
-        "eks:DescribeAddonConfiguration",
-        "eks:AssociateIdentityProviderConfig",
-        "eks:DisassociateIdentityProviderConfig",
-        "eks:DescribeIdentityProviderConfig",
-        "eks:ListIdentityProviderConfigs"
-      ]
-      Resource = "*"
-    }]
-  })
-}
-
-resource "aws_iam_role_policy_attachment" "jenkins_eks" {
-  role       = aws_iam_role.jenkins_ec2_role.name
-  policy_arn = aws_iam_policy.jenkins_eks.arn
+  policy_arn = aws_iam_policy.jenkins_eks_ecr.arn
 }
 
 # Custom policy for Jenkins to manage IAM
@@ -374,14 +342,15 @@ resource "aws_iam_role_policy_attachment" "jenkins_iam" {
   policy_arn = aws_iam_policy.jenkins_iam.arn
 }
 
-# Custom policy for Jenkins to manage S3 (for Terraform state)
-resource "aws_iam_policy" "jenkins_s3" {
-  name        = "${var.ec2_name}-jenkins-s3-policy"
-  description = "S3 read/write access scoped to the Terraform state bucket"
+# Custom policy for Jenkins to manage S3, CloudWatch Logs, SSM Parameter Store, Secrets Manager and STS for Jenkins operations and monitoring
+resource "aws_iam_policy" "jenkins_s3_ops" {
+  name        = "${var.ec2_name}-jenkins-ops-policy"
+  description = "S3, SSM Parameter Store, Secrets Manager,STS caller identity, and CloudWatch Logs for Jenkins CI/CD"
 
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
+      # S3
       {
         Sid    = "TFStateBucketList"
         Effect = "Allow"
@@ -402,55 +371,8 @@ resource "aws_iam_policy" "jenkins_s3" {
           "s3:DeleteObject"
         ]
         Resource = "arn:aws:s3:::catalogix-tfstate/*"
-      }
-    ]
-  })
-}
-
-resource "aws_iam_role_policy_attachment" "jenkins_s3" {
-  role       = aws_iam_role.jenkins_ec2_role.name
-  policy_arn = aws_iam_policy.jenkins_s3.arn
-}
-
-# Custom policy for Jenkins to manage Secrets Manager (for storing DB credentials, etc.)
-resource "aws_iam_policy" "jenkins_secrets" {
-  name        = "${var.ec2_name}-jenkins-secrets-policy"
-  description = "Secrets Manager access scoped to catalogix-* secrets"
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Sid    = "SecretsManagerCatalogix"
-      Effect = "Allow"
-      Action = [
-        "secretsmanager:CreateSecret",
-        "secretsmanager:DeleteSecret",
-        "secretsmanager:GetSecretValue",
-        "secretsmanager:PutSecretValue",
-        "secretsmanager:DescribeSecret",
-        "secretsmanager:UpdateSecret",
-        "secretsmanager:TagResource",
-        "secretsmanager:ListSecretVersionIds",
-        "secretsmanager:RestoreSecret"
-      ]
-      Resource = "arn:aws:secretsmanager:${var.aws_region}:*:secret:catalogix-*"
-    }]
-  })
-}
-
-resource "aws_iam_role_policy_attachment" "jenkins_secrets" {
-  role       = aws_iam_role.jenkins_ec2_role.name
-  policy_arn = aws_iam_policy.jenkins_secrets.arn
-}
-
-# Custom policy for Jenkins to manage CloudWatch Logs, SSM Parameter Store, and STS for Jenkins operations and monitoring
-resource "aws_iam_policy" "jenkins_ops" {
-  name        = "${var.ec2_name}-jenkins-ops-policy"
-  description = "SSM Parameter Store, STS caller identity, and CloudWatch Logs for Jenkins CI/CD"
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
+      },
+      # SSM Parameter Store
       {
         Sid    = "SSMParameterReadWrite"
         Effect = "Allow"
@@ -466,12 +388,14 @@ resource "aws_iam_policy" "jenkins_ops" {
           "arn:aws:ssm:${var.aws_region}:*:parameter/${var.cluster_name}-*"
         ]
       },
+      # STS
       {
         Sid      = "STSCallerIdentity"
         Effect   = "Allow"
         Action   = ["sts:GetCallerIdentity"]
         Resource = "*"
       },
+      # CloudWatch Logs
       {
         Sid    = "CloudWatchLogsEKS"
         Effect = "Allow"
@@ -487,38 +411,33 @@ resource "aws_iam_policy" "jenkins_ops" {
           "logs:TagResource"
         ]
         Resource = "*"
-      }
-    ]
-  })
-}
-
-resource "aws_iam_role_policy_attachment" "jenkins_ops" {
-  role       = aws_iam_role.jenkins_ec2_role.name
-  policy_arn = aws_iam_policy.jenkins_ops.arn
-}
-
-# Custom policy for Jenkins to manage EKS
-resource "aws_iam_policy" "jenkins_eks_access" {
-  name = "${var.ec2_name}-jenkins-eks-access"
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
+      },
+      # Secrets Manager
       {
+        Sid    = "SecretsManagerCatalogix"
         Effect = "Allow"
         Action = [
-          "eks:DescribeCluster"
+          "secretsmanager:CreateSecret",
+          "secretsmanager:DeleteSecret",
+          "secretsmanager:GetSecretValue",
+          "secretsmanager:PutSecretValue",
+          "secretsmanager:DescribeSecret",
+          "secretsmanager:UpdateSecret",
+          "secretsmanager:TagResource",
+          "secretsmanager:ListSecretVersionIds",
+          "secretsmanager:RestoreSecret"
         ]
-        Resource = "*"
+        Resource = "arn:aws:secretsmanager:${var.aws_region}:*:secret:catalogix-*"
       }
     ]
   })
 }
 
-resource "aws_iam_role_policy_attachment" "jenkins_eks_access" {
+resource "aws_iam_role_policy_attachment" "jenkins_s3_ops" {
   role       = aws_iam_role.jenkins_ec2_role.name
-  policy_arn = aws_iam_policy.jenkins_eks_access.arn
+  policy_arn = aws_iam_policy.jenkins_s3_ops.arn
 }
+
 
 resource "aws_iam_instance_profile" "jenkins_profile" {
   name = "${var.ec2_name}-jenkins-instance-profile"
