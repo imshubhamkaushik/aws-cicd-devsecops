@@ -47,7 +47,7 @@ resource "aws_eks_cluster" "cluster" {
     endpoint_private_access = true
     # DEV NOTE: public access is on so you can run kubectl from your laptop.
     # For production set this to false and access only from within the VPC.
-    endpoint_public_access = false              # for production, set to false
+    endpoint_public_access = false # for production, set to false
     # public_access_cidrs    = [local.my_ip_cidr] # auto-locked to your IP at apply time | use this if endpoint_public_access = true
   }
 
