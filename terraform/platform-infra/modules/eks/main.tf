@@ -51,6 +51,11 @@ resource "aws_eks_cluster" "cluster" {
     # public_access_cidrs    = [local.my_ip_cidr] # auto-locked to your IP at apply time | use this if endpoint_public_access = true
   }
 
+  access_config {
+    authentication_mode                         = "API_AND_CONFIG_MAP"
+    bootstrap_cluster_creator_admin_permissions = true
+  }
+
   enabled_cluster_log_types = ["api", "audit", "authenticator"]
 
   encryption_config {
@@ -256,3 +261,20 @@ resource "aws_eks_addon" "ebs_csi" {
 # Moving it to the root module means it only runs in (full apply), by
 # which time module.eks is already in state, the endpoint is known, and the
 # kubernetes provider connects to the real cluster.
+
+# Allow your Jenkins EC2 instance (and terminal) to run kubectl commands
+resource "aws_eks_access_entry" "jenkins_admin" {
+  cluster_name  = aws_eks_cluster.cluster.name
+  principal_arn = "arn:aws:iam::570538546471:role/catalogix-jenkins-ec2-role"
+  type          = "STANDARD"
+}
+
+resource "aws_eks_access_policy_association" "jenkins_admin_policy" {
+  cluster_name  = aws_eks_cluster.cluster.name
+  principal_arn = "arn:aws:iam::570538546471:role/catalogix-jenkins-ec2-role"
+  policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+
+  access_scope {
+    type = "cluster"
+  }
+}
