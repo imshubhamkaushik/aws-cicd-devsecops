@@ -1,5 +1,5 @@
 # Multi-stage Dockerfile for User Service
-# ---------- Build Stage ----------
+# ---------- Stage 1:Build ----------
 FROM maven:3.9.9-eclipse-temurin-21-alpine AS build
 WORKDIR /app
 
@@ -12,8 +12,8 @@ COPY user-svc/pom.xml user-svc/pom.xml
 COPY user-svc/src user-svc/src
 RUN mvn -B clean package -DskipTests -f user-svc/pom.xml
 
-# ---------- Runtime Stage ----------
-FROM gcr.io/distroless/java21-debian13:nonroot
+# ---------- Stage 2: Runtime ----------
+FROM gcr.io/distroless/java21-debian13:nonroot AS app
 WORKDIR /app
 
 # Copy only the JAR from build stage
@@ -22,3 +22,13 @@ EXPOSE 8081
 
 # Run the JAR
 ENTRYPOINT ["java", "-XX:MaxRAMPercentage=75", "-XX:InitialRAMPercentage=50", "-Djava.security.egd=file:/dev/./urandom", "-jar", "/app/user-svc.jar"]
+
+# ---------- Stage 3: Migration ----------
+# This image is used exclusively by the copy-migrations init container in user.yaml. It is never run as the main application container.
+#
+# Alpine provides /bin/sh so the init container can execute:
+#   cp -r /flyway/sql/. /shared/sql/
+#
+# SQL files are copied directly from the build source tree (not extracted from the JAR) so they are always identical to what Spring Boot resolves from the classpath at runtime.
+FROM alpine:3.20 AS migrations
+COPY --from=build /app/user-svc/src/main/resources/db/migration/ /flyway/sql/
