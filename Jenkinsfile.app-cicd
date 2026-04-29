@@ -99,17 +99,25 @@ pipeline {
                 sh"""
                 set -e
 
+                mkdir -p \$(dirname ${KUBECONFIG})
+
                 echo "=== Checking Kubernetes access ==="
 
                 if ! kubectl get nodes --request-timeout=10s; then
                     echo "kubectl failed — regenerating kubeconfig..."
 
+                    echo "=== AWS Identity ==="
+                    aws sts get-caller-identity || true
+
+                    echo "=== Regenerating kubeconfig ==="
                     aws eks update-kubeconfig \
                         --region ${AWS_REGION} \
                         --name ${CLUSTER_NAME} \
                         --kubeconfig ${KUBECONFIG}
+                    
+                    chmod 600 ${KUBECONFIG}
 
-                    echo "Retrying kubectl..."
+                    echo "=== Retrying kubectl ==="
                     kubectl get nodes --request-timeout=10s
                 fi
 

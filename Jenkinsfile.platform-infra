@@ -102,6 +102,52 @@ pipeline {
             }
         }
 
+        stage('Ensure Kubernetes Access') {
+            steps {
+                sh"""
+                set -e
+
+                mkdir -p \$(dirname ${KUBECONFIG})
+
+                echo "=== Checking Kubernetes access ==="
+
+                if ! kubectl get nodes --request-timeout=10s; then
+                    echo "kubectl failed — regenerating kubeconfig..."
+
+                    echo "=== AWS Identity ==="
+                    aws sts get-caller-identity || true
+
+                    echo "=== Regenerating kubeconfig ==="
+                    SUCCESS=0
+                    for i in 1 2 3 4 5; do
+                        if aws eks update-kubeconfig \
+                            --region ${AWS_REGION} \
+                            --name ${CLUSTER_NAME} \
+                            --kubeconfig ${KUBECONFIG}; then
+                            SUCCESS=1
+                            break
+                        fi
+
+                        echo "Retrying kubeconfig setup in 10s..."
+                        sleep 10
+                    done
+
+                    if [ "$SUCCESS" -ne 1 ]; then
+                        echo "ERROR: Failed to generate kubeconfig after retries"
+                        exit 1
+                    fi
+                    
+                    chmod 600 ${KUBECONFIG}
+
+                    echo "=== Retrying kubectl ==="
+                    kubectl get nodes --request-timeout=10s >/dev/null
+                fi
+
+                echo "Kubernetes access verified."
+                """               
+            }
+        }
+
         stage("Wait for EKS Ready") {
             steps {
                 sh '''
