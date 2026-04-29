@@ -268,7 +268,10 @@ resource "aws_eks_access_entry" "jenkins_admin" {
   principal_arn = var.jenkins_role_arn
   type          = "STANDARD"
 
-  depends_on = [aws_eks_cluster.cluster]
+  depends_on = [
+    aws_eks_cluster.cluster,
+    aws_eks_node_group.node_group
+  ]
 }
 
 resource "aws_eks_access_policy_association" "jenkins_admin_policy" {
@@ -279,4 +282,50 @@ resource "aws_eks_access_policy_association" "jenkins_admin_policy" {
   access_scope {
     type = "cluster"
   }
+
+  depends_on = [aws_eks_cluster.cluster]
+}
+
+# resource "kubernetes_config_map_v1" "aws_auth" {
+#   metadata {
+#     name      = "aws-auth"
+#     namespace = "kube-system"
+#   }
+
+#   data = {
+#     mapRoles = <<EOF
+# - rolearn: ${aws_iam_role.node_role.arn}
+#   username: system:node:{{EC2PrivateDNSName}}
+#   groups:
+#     - system:bootstrappers
+#     - system:nodes
+# EOF
+#   }
+
+#   depends_on = [aws_eks_node_group.node_group]
+# }
+
+resource "null_resource" "aws_auth" {
+  provisioner "local-exec" {
+    command = <<EOF
+aws eks update-kubeconfig --region ${var.aws_region} --name ${var.cluster_name}
+
+kubectl apply -f - <<YAML
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: aws-auth
+  namespace: kube-system
+data:
+  mapRoles: |
+    - rolearn: ${aws_iam_role.node_role.arn}
+      username: system:node:{{EC2PrivateDNSName}}
+      groups:
+        - system:bootstrappers
+        - system:nodes
+YAML
+EOF
+  }
+
+  depends_on = [aws_eks_node_group.node_group]
 }

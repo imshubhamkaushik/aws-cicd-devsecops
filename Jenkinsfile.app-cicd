@@ -319,6 +319,8 @@ pipeline {
                         script: "aws ssm get-parameter --name ${SSM_RDS_PATH} --query Parameter.Value --output text --region ${AWS_REGION}",
                         returnStdout: true
                     ).trim()
+
+                    echo "Fetched RDS endpoint: ${RDS_ENDPOINT}"
                 }
             }
         } 
