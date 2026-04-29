@@ -209,7 +209,7 @@ pipeline {
                         set -e
 
                         # Build Main Image
-                        docker build -f user-svc/Dockerfile -t ${USER_SVC_IMAGE} .
+                        docker build --target runtime -f user-svc/Dockerfile -t ${USER_SVC_IMAGE} .
 
                         # Build Migrations Image (using the target stage in your Dockerfile)
                         docker build --target migrations -f user-svc/Dockerfile -t ${USER_SVC_MIGRATIONS_IMAGE} .
@@ -232,7 +232,7 @@ pipeline {
                         set -e
 
                         # Build Main Image
-                        docker build -f product-svc/Dockerfile -t ${PRODUCT_SVC_IMAGE} .
+                        docker build --target runtime -f product-svc/Dockerfile -t ${PRODUCT_SVC_IMAGE} .
 
                         # Build Migrations Image (using the target stage in your Dockerfile)
                         docker build --target migrations -f product-svc/Dockerfile -t ${PRODUCT_SVC_MIGRATIONS_IMAGE} .
@@ -336,7 +336,19 @@ pipeline {
                     --create-namespace \\
                     -f ${HELM_CHART_DIR}/values-dev.yaml \\
                     --set global.imageRegistry=${ECR_REGISTRY} \\
-                    --set global.imageTag=${IMAGE_TAG} \\
+                    --set userSvc.image.repository=user-svc \\
+                    --set userSvc.image.tag=${IMAGE_TAG} \\
+                    --set userSvc.migrations.repository=user-svc-migrations \
+                    --set userSvc.migrations.tag=${IMAGE_TAG} \\
+
+                    --set productSvc.image.repository=product-svc \\
+                    --set productSvc.image.tag=${IMAGE_TAG} \\
+                    --set productSvc.migrations.repository=product-svc-migrations \\
+                    --set productSvc.migrations.tag=${IMAGE_TAG} \\
+
+                    --set frontendSvc.image.repository=frontend-svc \\
+                    --set frontendSvc.image.tag=${IMAGE_TAG} \\
+
                     --set global.cloudProvider=aws \\
                     --set database.host=${RDS_ENDPOINT} \\
                     --wait --timeout 300s   

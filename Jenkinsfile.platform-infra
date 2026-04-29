@@ -225,6 +225,28 @@ pipeline {
             }
         }
 
+        stage('Install Metrics Server') {
+            steps {
+                sh '''
+                set -e
+
+                echo "Installing metrics-server..."
+
+                helm repo add metrics-server https://kubernetes-sigs.github.io/metrics-server || true
+                helm repo update
+
+                helm upgrade --install metrics-server metrics-server/metrics-server \
+                --namespace kube-system \
+                --create-namespace \
+                --set args="{--kubelet-insecure-tls,--kubelet-preferred-address-types=InternalIP}" \
+                --wait --timeout 120s
+
+                echo "Verifying metrics-server..."
+                kubectl get deployment metrics-server -n kube-system
+                '''
+            }
+        }
+
         // Monitoring is deployed here — after the cluster and ESO are ready — rather than as a separate manual step. 
         // This makes the platform-infra pipeline the single entry point for all cluster-level infrastructure, with app deployments handled separately.
         stage('Deploy Monitoring Stack') {

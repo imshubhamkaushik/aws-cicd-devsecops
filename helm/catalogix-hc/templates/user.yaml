@@ -29,7 +29,7 @@ spec:
           # This init container has a shell (Alpine) so cp works correctly.
           # The distroless app image is never used as an init container.
         - name: copy-migrations
-          image: "{{ .Values.global.imageRegistry }}/{{ .Values.userSvc.migrations.repository }}:{{ .Values.global.imageTag }}"
+          image: "{{ .Values.global.imageRegistry }}/{{ .Values.userSvc.migrations.repository }}:{{ .Values.userSvc.migrations.tag }}"
           imagePullPolicy: {{ .Values.userSvc.image.pullPolicy }}
           command: [ "sh", "-c", "cp -r /flyway/sql/. /shared/sql/" ]
           securityContext:
@@ -83,7 +83,7 @@ spec:
 
       containers:
         - name: user-svc
-          image: "{{ .Values.global.imageRegistry }}/{{ .Values.userSvc.image.repository }}:{{ .Values.global.imageTag }}"
+          image: "{{ .Values.global.imageRegistry }}/{{ .Values.userSvc.image.repository }}:{{ .Values.userSvc.image.tag }}"
           imagePullPolicy: {{ .Values.userSvc.image.pullPolicy }}
           securityContext:
             runAsNonRoot: true
