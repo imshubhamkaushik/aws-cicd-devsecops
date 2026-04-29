@@ -376,6 +376,20 @@ pipeline {
                     kubectl get pods -n ${K8S_NAMESPACE}
 
                     echo ""
+                    echo "=== FETCHING USER-SVC CRASH LOGS ==="
+                    # The || true ensures the pipeline doesn't instantly abort if the command fails
+                    kubectl logs deployment/user-svc -n ${K8S_NAMESPACE} --previous || true
+                    kubectl logs deployment/user-svc -n ${K8S_NAMESPACE} || true
+                    echo "======================================="
+
+                    echo ""
+                    echo "=== FETCHING PRODUCT-SVC CRASH LOGS ==="
+                    # The || true ensures the pipeline doesn't instantly abort if the command fails
+                    kubectl logs deployment/product-svc -n ${K8S_NAMESPACE} --previous || true
+                    kubectl logs deployment/product-svc -n ${K8S_NAMESPACE} || true
+                    echo "======================================="
+
+                    echo ""
                     echo "=== Services ==="
                     kubectl get svc -n ${K8S_NAMESPACE}
 
