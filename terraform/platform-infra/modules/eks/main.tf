@@ -283,7 +283,10 @@ resource "aws_eks_access_policy_association" "jenkins_admin_policy" {
     type = "cluster"
   }
 
-  depends_on = [aws_eks_cluster.cluster]
+  depends_on = [
+    aws_eks_cluster.cluster,
+    aws_eks_node_group.node_group
+  ]
 }
 
 # resource "kubernetes_config_map_v1" "aws_auth" {
