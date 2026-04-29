@@ -343,6 +343,55 @@
   when: jenkins_auth_check is failed
 
 # -----------------------------
+# Configure kubectl for Jenkins (EKS access)
+# -----------------------------
+
+- name: Ensure kube directory exists
+  file:
+    path: /var/lib/jenkins/.kube
+    state: directory
+    owner: jenkins
+    group: jenkins
+    mode: "0755"
+
+- name: Generate kubeconfig using instance role
+  become: true
+  become_user: jenkins
+  environment:
+    AWS_DEFAULT_REGION: "{{ aws_region }}"
+  shell: |
+    set -e
+
+    echo "=== Verifying IAM role ==="
+    aws sts get-caller-identity
+
+    echo "=== Generating kubeconfig ==="
+    aws eks update-kubeconfig \
+      --region {{ aws_region }} \
+      --name {{ cluster_name }} \
+      --kubeconfig /var/lib/jenkins/.kube/config
+
+    echo "=== Testing kubectl ==="
+    kubectl get nodes
+  args:
+    executable: /bin/bash
+  register: kubeconfig_result
+  retries: 5
+  delay: 15
+  until: kubeconfig_result.rc == 0
+
+- name: Fix kubeconfig permissions
+  file:
+    path: /var/lib/jenkins/.kube/config
+    owner: jenkins
+    group: jenkins
+    mode: "0600"
+
+- name: Show kubectl output
+  debug:
+    var: kubeconfig_result.stdout_lines
+
+# -----------------------------
 # Install Terraform
 # -----------------------------
 - name: Add HashiCorp GPG key

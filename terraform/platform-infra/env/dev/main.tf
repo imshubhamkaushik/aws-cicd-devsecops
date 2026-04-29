@@ -74,30 +74,6 @@ module "eks" {
   kms_key_arn = aws_kms_key.eks.arn
 }
 
-resource "kubernetes_config_map_v1" "aws_auth" {
-  provider = kubernetes.after_eks
-
-  metadata {
-    name      = "aws-auth"
-    namespace = "kube-system"
-  }
-
-  data = {
-    mapRoles = yamlencode([
-      {
-        rolearn  = data.terraform_remote_state.bootstrap.outputs.jenkins_role_arn
-        username = "jenkins"
-        groups   = ["system:masters"]
-      }
-    ])
-  }
-
-  depends_on = [
-    module.eks,
-    data.aws_eks_cluster.this
-  ]
-}
-
 # EKS DATA (safe, resolves after creation)
 data "aws_eks_cluster" "this" {
   name = module.eks.cluster_name

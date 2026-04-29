@@ -10,11 +10,9 @@ pipeline {
         TF_DIR       = "terraform/platform-infra/env/dev"
         // GIT_REPO_URL is injected by JCasC from /etc/default/jenkins — update group_vars/all/jenkins.yaml
         GIT_REPO_URL = "${env.GIT_REPO_URL}"
-        // KUBECONFIG must be written to this path explicitly by passing
-        // --kubeconfig ${KUBECONFIG} to every `aws eks update-kubeconfig` call.
-        // Jenkins runs as a non-root user without a home directory guaranteed,
-        // so writing to the workspace is safer and stage-isolated.
-        KUBECONFIG   = "${WORKSPACE}/kubeconfig"
+        // KUBECONFIG is pre-configured by Ansible at /var/lib/jenkins/.kube/config
+        // Pipelines use it directly — no aws eks update-kubeconfig needed
+        KUBECONFIG   = "/var/lib/jenkins/.kube/config"
     }
 
     parameters { 
@@ -71,147 +69,104 @@ pipeline {
 
         stage("Terraform Init") { 
             steps { 
-                withCredentials([[
-                    $class: 'AmazonWebServicesCredentialsBinding',
-                    credentialsId: 'aws-creds'
-                ]]) {
-                    dir("${TF_DIR}") { 
-                        sh "terraform init" 
-                    } 
-                }
+                dir("${TF_DIR}") { 
+                    sh "terraform init" 
+                } 
             }
         }
 
         stage("Terraform Validate")    { 
-            steps { 
-                withCredentials([[
-                    $class: 'AmazonWebServicesCredentialsBinding',
-                    credentialsId: 'aws-creds'
-                ]]) {
-                    dir("${TF_DIR}") { 
-                        sh "terraform validate" 
-                    } 
-                }                
+            steps {    
+                dir("${TF_DIR}") { 
+                    sh "terraform validate" 
+                }               
             } 
         }
 
         stage("Terraform Plan and Apply - EKS Core") {
             steps {
-                withCredentials([[
-                    $class: 'AmazonWebServicesCredentialsBinding',
-                    credentialsId: 'aws-creds'
-                ]]) {
-                    dir("${TF_DIR}") {
-                        sh "terraform plan -target=module.eks -target=module.sg -out eks.tfplan"
-                    }
+                dir("${TF_DIR}") {
+                    sh "terraform plan -target=module.eks -target=module.sg -out eks.tfplan"
                 }
 
                 // input is a Jenkins DSL step — CANNOT go inside sh.
                 // Must be at Groovy level between shell steps.
                 input message: "Review the EKS core plan above. Approve?", ok: "Apply"
 
-                withCredentials([[
-                    $class: 'AmazonWebServicesCredentialsBinding',
-                    credentialsId: 'aws-creds'
-                ]]) {
-                    dir("${TF_DIR}") {
-                        sh """
-                        terraform apply -auto-approve eks.tfplan
-                        rm -f eks.tfplan
-                        """
-                    }
+                dir("${TF_DIR}") {
+                    sh """
+                    terraform apply -auto-approve eks.tfplan
+                    rm -f eks.tfplan
+                    """
                 }
             }
         }
 
         stage("Wait for EKS Ready") {
             steps {
-                withCredentials([[
-                    $class: 'AmazonWebServicesCredentialsBinding',
-                    credentialsId: 'aws-creds'
-                ]]) {
-                    sh '''
-                    set -e
+                sh '''
+                set -e
 
-                    NODEGROUP="${CLUSTER_NAME}-node-group"
+                NODEGROUP="${CLUSTER_NAME}-node-group"
 
-                    echo "Get Cluster Information from AWS API..."
-                    echo ""
-                    echo "Verifying EKS cluster..."
+                echo "Get Cluster Information from AWS API..."
+                echo ""
+                echo "Verifying EKS cluster..."
 
-                    echo "=== Step 1: Wait for node group to reach ACTIVE state ==="
-                    echo "Polling AWS API (aws eks wait) — no kubectl needed for this step."
-                    echo "This waits up to 20 min, polling every 30s."
-                    echo ""
+                echo "=== Step 1: Wait for node group to reach ACTIVE state ==="
+                echo "Polling AWS API (aws eks wait) — no kubectl needed for this step."
+                echo "This waits up to 20 min, polling every 30s."
+                echo ""
 
-                    # aws eks wait polls the AWS API directly — no kubectl connection required.
-                    # It exits 0 when the node group is ACTIVE, exits 1 on timeout or error.
-                    # This is more reliable than kubectl polling because it doesn't depend on
-                    # the kubernetes API server being reachable — it just checks EC2/EKS state.
-                    aws eks wait nodegroup-active \
-                        --cluster-name ${CLUSTER_NAME} \
-                        --nodegroup-name ${NODEGROUP} \
-                        --region ${AWS_REGION}
+                # aws eks wait polls the AWS API directly — no kubectl connection required.
+                # It exits 0 when the node group is ACTIVE, exits 1 on timeout or error.
+                # This is more reliable than kubectl polling because it doesn't depend on
+                # the kubernetes API server being reachable — it just checks EC2/EKS state.
+                aws eks wait nodegroup-active \
+                    --cluster-name ${CLUSTER_NAME} \
+                    --nodegroup-name ${NODEGROUP} \
+                    --region ${AWS_REGION}
 
-                    echo "Node group is ACTIVE."
-                    echo ""
+                echo "Node group is ACTIVE."
+                echo ""
 
-                    echo "=== Step 2: Write kubeconfig ==="
- 
-                    aws eks update-kubeconfig \
-                        --name ${CLUSTER_NAME} \
-                        --region ${AWS_REGION} \
-                        --kubeconfig ${KUBECONFIG}
- 
-                    echo ""
+                echo "=== Step 2: Wait for all nodes to be Ready ==="
+                echo "Using kubectl wait — polls until all nodes report Ready condition."
+                echo "Timeout: 5 minutes. Each individual kubectl call times out in 15s."
+                echo ""
 
-                    echo "=== Step 3: Wait for nodes to register as Ready ==="
-                    echo "Using kubectl wait — polls until all nodes report Ready condition."
-                    echo "Timeout: 5 minutes. Each individual kubectl call times out in 15s."
-                    echo ""
- 
-                    # kubectl wait is cleaner than a manual grep loop:
-                    # - It blocks until the condition is met or the timeout is reached
-                    # - --request-timeout=15s caps each individual API call so a connection
-                    #   failure fails fast instead of hanging for 2-3 minutes per attempt
-                    # - stderr is NOT suppressed so connection errors are visible in the log
-                    kubectl wait \
-                        --for=condition=Ready nodes \
-                        --all \
-                        --timeout=300s \
-                        --request-timeout=15s
- 
-                    echo ""
-                    echo "All nodes are Ready."
-                    kubectl get nodes --request-timeout=15s
-                    echo ""
-                    echo "Cluster is ready for use."
-                    '''
-                }
+                    
+                # kubectl wait is cleaner than a manual grep loop:
+                # - It blocks until the condition is met or the timeout is reached
+                # - --request-timeout=15s caps each individual API call so a connection
+                #   failure fails fast instead of hanging for 2-3 minutes per attempt
+                # - stderr is NOT suppressed so connection errors are visible in the log
+                kubectl wait \
+                    --for=condition=Ready nodes \
+                    --all \
+                    --timeout=300s \
+                    --request-timeout=15s
+
+                echo ""
+                echo "All nodes are Ready."
+                kubectl get nodes --request-timeout=15s
+                echo ""
+                echo "Cluster is ready for use."
+                '''  
             }
         }
 
         stage("Terraform Plan and Apply - Remaining Infra") {
             steps {
-                withCredentials([[
-                    $class: 'AmazonWebServicesCredentialsBinding',
-                    credentialsId: 'aws-creds'
-                ]]) {
-                    dir("${TF_DIR}") {
-                        sh "terraform plan -out main.tfplan"
-                    }
+                dir("${TF_DIR}") {
+                    sh "terraform plan -out main.tfplan"
                 }
 
                 // input must be at Groovy level — not inside sh.
                 input message: "Review the remaining infra plan (ALB, ESO, RDS, Secrets). Approve apply?", ok: "Apply"
 
-                withCredentials([[
-                    $class: 'AmazonWebServicesCredentialsBinding',
-                    credentialsId: 'aws-creds'
-                ]]) {
-                    dir("${TF_DIR}") {
-                        sh "terraform apply -auto-approve main.tfplan"
-                    }
+                dir("${TF_DIR}") {
+                    sh "terraform apply -auto-approve main.tfplan"
                 }
             }
         }
@@ -220,49 +175,32 @@ pipeline {
         // This makes the platform-infra pipeline the single entry point for all cluster-level infrastructure, with app deployments handled separately.
         stage('Deploy Monitoring Stack') {
             steps {
-                withCredentials([[
-                    $class: 'AmazonWebServicesCredentialsBinding',
-                    credentialsId: 'aws-creds'
-                ]]) {
-                    sh """
-                    set -e
-                    # --kubeconfig required: KUBECONFIG env var points to \${WORKSPACE}/kubeconfig,
-                    # not ~/.kube/config. Without this flag, update-kubeconfig writes to the default
-                    # path and kubectl never finds it.
-                    aws eks update-kubeconfig \\
-                      --name ${CLUSTER_NAME} \\
-                      --region ${AWS_REGION} \\
-                      --kubeconfig ${KUBECONFIG}
+                sh """
+                set -e
 
-                    # helm repo add is idempotent — safe on every run.
-                    # Without this, helm dependency update fails on a clean Jenkins workspace.
-                    helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
-                    helm repo update
- 
-                    # Resolve the kube-prometheus-stack dependency before install
-                    helm dependency update helm/monitoring
- 
-                    helm upgrade --install monitoring helm/monitoring \
-                        --namespace monitoring \
-                        --create-namespace \
-                        --wait --timeout 300s
-                    """
-                }
+                # helm repo add is idempotent — safe on every run.
+                # Without this, helm dependency update fails on a clean Jenkins workspace.
+                helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+                helm repo update
+
+                # Resolve the kube-prometheus-stack dependency before install
+                helm dependency update helm/monitoring
+
+                helm upgrade --install monitoring helm/monitoring \
+                    --namespace monitoring \
+                    --create-namespace \
+                    --wait --timeout 300s
+                """
             }
         }
 
         stage('Verify Monitoring Stack') {
             steps  {
-                withCredentials([[
-                    $class: 'AmazonWebServicesCredentialsBinding',
-                    credentialsId: 'aws-creds'
-                ]]) {
-                    sh """
-                    set -e
-                    kubectl get pods -n monitoring
-                    kubectl get svc  -n monitoring
-                    """
-                }
+                sh """
+                set -e
+                kubectl get pods -n monitoring
+                kubectl get svc  -n monitoring
+                """
             }       
         }
     }

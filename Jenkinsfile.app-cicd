@@ -16,15 +16,16 @@ pipeline {
         HELM_CHART_DIR = "helm/catalogix-hc"
         K8S_NAMESPACE = "catalogix"
 
-        // KUBECONFIG is set as a pipeline-level env var pointing to $WORKSPACE/kubeconfig.
-        // It persists across all stages because it's in the environment{} block, not inside a shell subprocess. The kubeconfig file was written by Validate Kubernetes Access.
-        KUBECONFIG     = "${WORKSPACE}/kubeconfig"
+        // KUBECONFIG is pre-configured by Ansible at /var/lib/jenkins/.kube/config
+        // This stage ensures access and recreates kubeconfig only if needed
+        KUBECONFIG     = "/var/lib/jenkins/.kube/config"
 
         // SSM Parameter Store
         SSM_RDS_PATH = "/${CLUSTER_NAME}/rds-endpoint"
 
         // Trivy Docker Image
-        TRIVY_IMAGE = "aquasec/trivy:0.70.0"
+        TRIVY_TAG   = "0.70.0"
+        TRIVY_IMAGE = "aquasec/trivy:${TRIVY_TAG}"
     }
 
     tools {
@@ -72,29 +73,49 @@ pipeline {
 
         stage('AWS Authentication') {
             steps {
-                withCredentials([[
-                    $class: 'AmazonWebServicesCredentialsBinding',
-                    credentialsId: 'aws-creds'
-                ]]) {
-                    script {
-                        env.AWS_ACCOUNT_ID = sh(
-                            script: "aws sts get-caller-identity --query Account --output text",
-                            returnStdout: true
-                        ).trim()
+                script {
+                    env.AWS_ACCOUNT_ID = sh(
+                        script: "aws sts get-caller-identity --query Account --output text",
+                        returnStdout: true
+                    ).trim()
 
-                        env.ECR_REGISTRY       = "${env.AWS_ACCOUNT_ID}.dkr.ecr.${env.AWS_REGION}.amazonaws.com"
+                    env.ECR_REGISTRY       = "${env.AWS_ACCOUNT_ID}.dkr.ecr.${env.AWS_REGION}.amazonaws.com"
 
-                        // Main Application Images
-                        env.USER_SVC_IMAGE     = "${env.ECR_REGISTRY}/user-svc:${env.IMAGE_TAG}"
-                        env.PRODUCT_SVC_IMAGE  = "${env.ECR_REGISTRY}/product-svc:${env.IMAGE_TAG}"
-                        env.FRONTEND_SVC_IMAGE = "${env.ECR_REGISTRY}/frontend-svc:${env.IMAGE_TAG}"
+                    // Main Application Images
+                    env.USER_SVC_IMAGE     = "${env.ECR_REGISTRY}/user-svc:${env.IMAGE_TAG}"
+                    env.PRODUCT_SVC_IMAGE  = "${env.ECR_REGISTRY}/product-svc:${env.IMAGE_TAG}"
+                    env.FRONTEND_SVC_IMAGE = "${env.ECR_REGISTRY}/frontend-svc:${env.IMAGE_TAG}"
 
-                        // Migration Images
-                        env.USER_SVC_MIGRATIONS_IMAGE    = "${env.ECR_REGISTRY}/user-svc-migrations:${env.IMAGE_TAG}"
-                        env.PRODUCT_SVC_MIGRATIONS_IMAGE = "${env.ECR_REGISTRY}/product-svc-migrations:${env.IMAGE_TAG}"
-                    }
+                    // Migration Images
+                    env.USER_SVC_MIGRATIONS_IMAGE    = "${env.ECR_REGISTRY}/user-svc-migrations:${env.IMAGE_TAG}"
+                    env.PRODUCT_SVC_MIGRATIONS_IMAGE = "${env.ECR_REGISTRY}/product-svc-migrations:${env.IMAGE_TAG}"
                 }
+                
             }   
+        }
+
+        stage('Ensure Kubernetes Access') {
+            steps {
+                sh"""
+                set -e
+
+                echo "=== Checking Kubernetes access ==="
+
+                if ! kubectl get nodes --request-timeout=10s; then
+                    echo "kubectl failed — regenerating kubeconfig..."
+
+                    aws eks update-kubeconfig \
+                        --region ${AWS_REGION} \
+                        --name ${CLUSTER_NAME} \
+                        --kubeconfig ${KUBECONFIG}
+
+                    echo "Retrying kubectl..."
+                    kubectl get nodes --request-timeout=10s
+                fi
+
+                echo "Kubernetes access verified."
+                """               
+            }
         }
 
         stage('Unit & Integration Tests (Backend)') {
@@ -244,17 +265,12 @@ pipeline {
 
         stage('Login to Amazon ECR') {
             steps {
-                withCredentials([[
-                    $class: 'AmazonWebServicesCredentialsBinding',
-                    credentialsId: 'aws-creds'
-                ]]) {
-                    sh """
-                    set -e
+                sh """
+                set -e
 
-                    aws ecr get-login-password --region ${AWS_REGION} \
-                      | docker login --username AWS --password-stdin ${ECR_REGISTRY}
-                    """
-                }
+                aws ecr get-login-password --region ${AWS_REGION} \
+                    | docker login --username AWS --password-stdin ${ECR_REGISTRY}
+                """
             }
         }
 
@@ -270,27 +286,6 @@ pipeline {
             }
         }   
 
-        stage('Validate Kubernetes Access') {
-            steps {
-                withCredentials([[
-                    $class: 'AmazonWebServicesCredentialsBinding',
-                    credentialsId: 'aws-creds'
-                ]]){
-                    sh"""
-                    set -e
-
-                    # --kubeconfig writes to \${WORKSPACE}/kubeconfig as required by the KUBECONFIG env var. 
-                    # Without this flag, update-kubeconfig writes to ~/.kube/config which kubectl never reads.
-                    aws eks update-kubeconfig \\
-                      --region ${AWS_REGION} \\
-                      --name ${CLUSTER_NAME} \\
-                      --kubeconfig ${KUBECONFIG}
-
-                    kubectl get nodes
-                    """
-                }                
-            }
-        }
 
         stage('Trivy Scan Helm Charts') {
             steps {
@@ -311,16 +306,11 @@ pipeline {
         // add --set database.host=${RDS_ENDPOINT} at the end of helm upgrade command in "Deploy to EKS using Helm" stage when use this block
         stage('Fetch RDS Endpoint') {
             steps {
-                withCredentials([[
-                    $class: 'AmazonWebServicesCredentialsBinding',
-                    credentialsId: 'aws-creds'
-                ]]) {
-                    script {
-                        env.RDS_ENDPOINT = sh(
-                            script: "aws ssm get-parameter --name ${SSM_RDS_PATH} --query Parameter.Value --output text --region ${AWS_REGION}",
-                            returnStdout: true
-                        ).trim()
-                    }
+                script {
+                    env.RDS_ENDPOINT = sh(
+                        script: "aws ssm get-parameter --name ${SSM_RDS_PATH} --query Parameter.Value --output text --region ${AWS_REGION}",
+                        returnStdout: true
+                    ).trim()
                 }
             }
         } 
@@ -328,47 +318,33 @@ pipeline {
         // Deploy to EKS using Helm. The Helm chart will pull the latest pushed images from ECR and deploy to the cluster.
         stage('Deploy to EKS using Helm') {
             steps {
-                withCredentials([[
-                    $class: 'AmazonWebServicesCredentialsBinding',
-                    credentialsId: 'aws-creds'
-                ]]) {
-                    sh """
-                    set -e
-                    
-                    helm upgrade --install catalogix ${HELM_CHART_DIR} \\
-                        --namespace ${K8S_NAMESPACE} \\
-                        --create-namespace \\
-                        -f ${HELM_CHART_DIR}/values-dev.yaml \\
-                        --set global.imageRegistry=${ECR_REGISTRY} \\
-                        --set global.imageTag=${IMAGE_TAG} \\
-                        --set global.cloudProvider=aws \\
-                        --set database.host=${RDS_ENDPOINT} \\
-                        --wait --timeout 300s   
-                    """
-                }
+                sh """
+                set -e
+                
+                helm upgrade --install catalogix ${HELM_CHART_DIR} \\
+                    --namespace ${K8S_NAMESPACE} \\
+                    --create-namespace \\
+                    -f ${HELM_CHART_DIR}/values-dev.yaml \\
+                    --set global.imageRegistry=${ECR_REGISTRY} \\
+                    --set global.imageTag=${IMAGE_TAG} \\
+                    --set global.cloudProvider=aws \\
+                    --set database.host=${RDS_ENDPOINT} \\
+                    --wait --timeout 300s   
+                """
             }
         }
 
         stage('Wait for Deployment Rollout') {
             steps {
-                withCredentials([[
-                    $class: 'AmazonWebServicesCredentialsBinding',
-                    credentialsId: 'aws-creds'
-                ]]) {
-                    // Added --timeout=180s so the pipeline doesn't hang indefinitely
-                    sh "kubectl rollout status deployment/frontend-svc -n ${K8S_NAMESPACE} --timeout=180s"
-                    sh "kubectl rollout status deployment/user-svc -n ${K8S_NAMESPACE} --timeout=180s"
-                    sh "kubectl rollout status deployment/product-svc -n ${K8S_NAMESPACE} --timeout=180s"
-                }
+                // Added --timeout=180s so the pipeline doesn't hang indefinitely
+                sh "kubectl rollout status deployment/frontend-svc -n ${K8S_NAMESPACE} --timeout=180s"
+                sh "kubectl rollout status deployment/user-svc -n ${K8S_NAMESPACE} --timeout=180s"
+                sh "kubectl rollout status deployment/product-svc -n ${K8S_NAMESPACE} --timeout=180s"
             }
         }
 
         stage('Post-Deployment Verification') {
             steps {
-                withCredentials([[
-                    $class: 'AmazonWebServicesCredentialsBinding',
-                    credentialsId: 'aws-creds'
-                ]]) {
                     sh """
                     set -e
 
@@ -421,7 +397,6 @@ pipeline {
                     echo ""
                     echo "All pods Ready. Deployment verified."
                     """
-                }
             }
         }
     }
@@ -434,57 +409,47 @@ pipeline {
         failure {
             echo "Deployment failed - rolling back to last known-good revision..."
 
-            withCredentials([[
-                $class: 'AmazonWebServicesCredentialsBinding',
-                credentialsId: 'aws-creds'
-            ]]) {
-                sh """
-                set -e
+            sh """
+            set -e
 
-                aws eks update-kubeconfig \\
-                  --name ${CLUSTER_NAME} \\
-                  --region ${AWS_REGION} \\
-                  --kubeconfig ${KUBECONFIG}
+            echo "=== Pod status ==="
+            kubectl get pods -n ${K8S_NAMESPACE} || true
 
-                echo "=== Pod status ==="
-                kubectl get pods -n ${K8S_NAMESPACE} || true
+            echo "=== Events ==="
+            kubectl get events -n ${K8S_NAMESPACE} --sort-by='.lastTimestamp' | tail -30 || true
 
-                echo "=== Events ==="
-                kubectl get events -n ${K8S_NAMESPACE} --sort-by='.lastTimestamp' | tail -30 || true
+            echo "=== user-svc logs ==="
+            kubectl logs -n ${K8S_NAMESPACE} -l app=user-svc --tail=80 --previous 2>/dev/null || \\
+            kubectl logs -n ${K8S_NAMESPACE} -l app=user-svc --tail=80 2>/dev/null || true
 
-                echo "=== user-svc logs ==="
-                kubectl logs -n ${K8S_NAMESPACE} -l app=user-svc --tail=80 --previous 2>/dev/null || \\
-                kubectl logs -n ${K8S_NAMESPACE} -l app=user-svc --tail=80 2>/dev/null || true
+            echo "=== product-svc logs ==="
+            kubectl logs -n ${K8S_NAMESPACE} -l app=product-svc --tail=80 --previous 2>/dev/null || \\
+            kubectl logs -n ${K8S_NAMESPACE} -l app=product-svc --tail=80 2>/dev/null || true
 
-                echo "=== product-svc logs ==="
-                kubectl logs -n ${K8S_NAMESPACE} -l app=product-svc --tail=80 --previous 2>/dev/null || \\
-                kubectl logs -n ${K8S_NAMESPACE} -l app=product-svc --tail=80 2>/dev/null || true
+            echo "=== frontend-svc logs ==="
+            kubectl logs -n ${K8S_NAMESPACE} -l app=frontend-svc --tail=80 --previous 2>/dev/null || \\
+            kubectl logs -n ${K8S_NAMESPACE} -l app=frontend-svc --tail=80 2>/dev/null || true
 
-                echo "=== frontend-svc logs ==="
-                kubectl logs -n ${K8S_NAMESPACE} -l app=frontend-svc --tail=80 --previous 2>/dev/null || \\
-                kubectl logs -n ${K8S_NAMESPACE} -l app=frontend-svc --tail=80 2>/dev/null || true
+            echo "=== ExternalSecret status ==="
+            kubectl get externalsecret -n ${K8S_NAMESPACE} || true
 
-                echo "=== ExternalSecret status ==="
-                kubectl get externalsecret -n ${K8S_NAMESPACE} || true
+            echo "=== Release history ==="
+            helm history catalogix --namespace ${K8S_NAMESPACE} || true
 
-                echo "=== Release history ==="
-                helm history catalogix --namespace ${K8S_NAMESPACE} || true
+            # Find the last revision with DEPLOYED status — that is the last good release.
+            # If no deployed revision exists (first ever deploy failed), skip rollback.
+            LAST_GOOD=\$(helm history catalogix \\
+                --namespace ${K8S_NAMESPACE} \\
+                --output json 2>/dev/null \\
+                | jq -r '[.[] | select(.status=="deployed")] | last | .revision // empty')
 
-                # Find the last revision with DEPLOYED status — that is the last good release.
-                # If no deployed revision exists (first ever deploy failed), skip rollback.
-                LAST_GOOD=\$(helm history catalogix \\
-                    --namespace ${K8S_NAMESPACE} \\
-                    --output json 2>/dev/null \\
-                    | jq -r '[.[] | select(.status=="deployed")] | last | .revision // empty')
-
-                if [ -z "\$LAST_GOOD" ]; then
-                    echo "No previously deployed revision found — skipping rollback."
-                else
-                    echo "Rolling back to revision \$LAST_GOOD..."
-                    helm rollback catalogix "\$LAST_GOOD" --namespace ${K8S_NAMESPACE} || true
-                fi
-                """
-            }
+            if [ -z "\$LAST_GOOD" ]; then
+                echo "No previously deployed revision found — skipping rollback."
+            else
+                echo "Rolling back to revision \$LAST_GOOD..."
+                helm rollback catalogix "\$LAST_GOOD" --namespace ${K8S_NAMESPACE} || true
+            fi
+            """ 
         }
         always {
             // Clean up local Docker images after every build to prevent the Jenkins agent disk from filling up over time
