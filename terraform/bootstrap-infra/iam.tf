@@ -344,7 +344,7 @@ resource "aws_iam_role_policy_attachment" "jenkins_iam" {
 
 # Custom policy for Jenkins to manage S3, CloudWatch Logs, SSM Parameter Store, Secrets Manager and STS for Jenkins operations and monitoring
 resource "aws_iam_policy" "jenkins_s3_ops" {
-  name        = "${var.ec2_name}-jenkins-ops-policy"
+  name        = "${var.ec2_name}-jenkins-s3-ops-policy"
   description = "S3, SSM Parameter Store, Secrets Manager,STS caller identity, and CloudWatch Logs for Jenkins CI/CD"
 
   policy = jsonencode({
