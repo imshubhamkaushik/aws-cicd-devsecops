@@ -51,7 +51,7 @@ pipeline {
                 cleanWs()
             }
         }
-        
+
         stage('Checkout') {
             steps {
                 checkout scm
@@ -386,6 +386,13 @@ pipeline {
                     sh """
                     set -e
 
+                    echo "=== Application Deployment ==="
+
+                    echo ""
+                    echo "=== Deployment status ==="
+                    kubectl get deployment -n ${K8S_NAMESPACE}
+
+                    echo ""
                     echo "=== Pod status ==="
                     kubectl get pods -n ${K8S_NAMESPACE}
 
@@ -396,6 +403,17 @@ pipeline {
                     echo ""
                     echo "=== Ingress ==="
                     kubectl get ingress -n ${K8S_NAMESPACE}
+
+                    echo ""
+                    echo "===== Monitoring Deployment ====="
+
+                    echo ""
+                    echo "=== Pod status ==="
+                    kubectl get pods -n monitoring
+
+                    echo ""
+                    echo "=== Services ==="
+                    kubectl get svc -n monitoring
 
                     echo ""
                     echo "All pods Ready. Deployment verified."
