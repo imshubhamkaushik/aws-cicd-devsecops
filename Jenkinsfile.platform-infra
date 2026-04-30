@@ -180,9 +180,6 @@ pipeline {
         }
 
         stage('Ensure Kubernetes Access') {
-            when {
-                expression { params.ACTION == 'apply' }
-            }
             steps {
                 sh"""
                 set -e
@@ -379,6 +376,7 @@ pipeline {
             steps {
                 dir("${TF_DIR}") {
                     sh """
+                    set -e
                     echo "========================================================"
                     echo "  DESTROY PLAN — resources that WILL be deleted"
                     echo "========================================================"
