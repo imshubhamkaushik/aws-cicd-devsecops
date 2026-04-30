@@ -411,6 +411,7 @@ pipeline {
                 dir("${TF_DIR}") {
                     sh """
                     set -e
+                    terraform state list
                     terraform state rm 'module.alb.kubernetes_service_account_v1.alb'
                     terraform state rm 'module.alb.helm_release.alb_controller'
                     terraform state rm 'module.eso.helm_release.eso'
