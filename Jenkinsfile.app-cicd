@@ -297,7 +297,7 @@ pipeline {
             }
         }
 
-        stage('Login to Amazon ECR and Push Images to ECR') {
+        stage('Login to Amazon ECR') {
             steps {
                 sh """
                 set -e
@@ -305,13 +305,16 @@ pipeline {
                 aws ecr get-login-password --region ${AWS_REGION} \
                     | docker login --username AWS --password-stdin ${ECR_REGISTRY}
                 """
-                parallel {
-                    stage('Push User Service') { steps { sh "docker push ${USER_SVC_IMAGE}" } }
-                    
-                    stage('Push Product Service') { steps { sh "docker push ${PRODUCT_SVC_IMAGE}" } }
-                    
-                    stage('Push Frontend Service') { steps { sh "docker push ${FRONTEND_SVC_IMAGE}" } }
-                }
+            }
+        }
+
+        stage('Push Docker Images to Amazon ECR') {
+            parallel {
+                stage('Push User Service') { steps { sh "docker push ${USER_SVC_IMAGE}" } }
+                
+                stage('Push Product Service') { steps { sh "docker push ${PRODUCT_SVC_IMAGE}" } }
+                
+                stage('Push Frontend Service') { steps { sh "docker push ${FRONTEND_SVC_IMAGE}" } }
             }
         }
 
