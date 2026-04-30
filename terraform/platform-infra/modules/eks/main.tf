@@ -331,5 +331,5 @@ YAML
 EOF
   }
 
-  depends_on = [aws_eks_node_group.node_group]
+  depends_on = [aws_eks_node_group.node_group, module.eks]
 }

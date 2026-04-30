@@ -99,7 +99,14 @@ resource "helm_release" "eso" {
     }
   ]
 
-  depends_on = [aws_iam_role_policy_attachment.eso]
+  lifecycle {
+    prevent_destroy = false
+  }
+
+  depends_on = [
+    aws_iam_role_policy_attachment.eso,
+    module.eks
+  ]
 }
 
 # ClusterSecretStore — applied via kubectl instead of kubernetes_manifest.
@@ -139,5 +146,5 @@ YAML
 
   # ESO helm chart must be fully deployed first — it installs the
   # ClusterSecretStore CRD that kubectl apply depends on.
-  depends_on = [helm_release.eso]
+  depends_on = [helm_release.eso, module.eks]
 }
