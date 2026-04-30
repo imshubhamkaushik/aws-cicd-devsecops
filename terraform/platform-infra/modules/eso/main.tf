@@ -145,5 +145,5 @@ YAML
 
   # ESO helm chart must be fully deployed first — it installs the
   # ClusterSecretStore CRD that kubectl apply depends on.
-  depends_on = [helm_release.eso, module.eks]
+  depends_on = [helm_release.eso]
 }
