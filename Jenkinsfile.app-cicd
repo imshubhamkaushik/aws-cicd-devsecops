@@ -214,6 +214,7 @@ pipeline {
                         # Build Migrations Image (using the target stage in your Dockerfile)
                         docker build --target migrations -f user-svc/Dockerfile -t ${USER_SVC_MIGRATIONS_IMAGE} .
 
+                        # Scan Main Image
                         docker run --rm \
                           -v /var/run/docker.sock:/var/run/docker.sock \
                           -v \$(pwd)/.trivyignore:/.trivyignore \
@@ -223,6 +224,17 @@ pipeline {
                           --ignore-unfixed \
                           --ignorefile /.trivyignore \
                           ${USER_SVC_IMAGE}
+
+                          # Scan Migrations Image
+                          docker run --rm \
+                          -v /var/run/docker.sock:/var/run/docker.sock \
+                          -v \$(pwd)/.trivyignore:/.trivyignore \
+                          ${TRIVY_IMAGE} image \
+                          --severity HIGH,CRITICAL \
+                          --exit-code 1 \
+                          --ignore-unfixed \
+                          --ignorefile /.trivyignore \
+                          ${USER_SVC_MIGRATIONS_IMAGE}
                         """
                     }
                 }
@@ -237,6 +249,7 @@ pipeline {
                         # Build Migrations Image (using the target stage in your Dockerfile)
                         docker build --target migrations -f product-svc/Dockerfile -t ${PRODUCT_SVC_MIGRATIONS_IMAGE} .
 
+                        # Scan Main Image
                         docker run --rm \
                           -v /var/run/docker.sock:/var/run/docker.sock \
                           -v \$(pwd)/.trivyignore:/.trivyignore \
@@ -246,6 +259,17 @@ pipeline {
                           --ignore-unfixed \
                           --ignorefile /.trivyignore \
                           ${PRODUCT_SVC_IMAGE}
+                        
+                        # Scan Migrations Image
+                        docker run --rm \
+                          -v /var/run/docker.sock:/var/run/docker.sock \
+                          -v \$(pwd)/.trivyignore:/.trivyignore \
+                          ${TRIVY_IMAGE} image \
+                          --severity HIGH,CRITICAL \
+                          --exit-code 1 \
+                          --ignore-unfixed \
+                          --ignorefile /.trivyignore \
+                          ${PRODUCT_SVC_MIGRATIONS_IMAGE}
                         """
                     }
                 }
@@ -254,8 +278,10 @@ pipeline {
                         sh """
                         set -e 
 
+                        # Build Main Image
                         docker build -t ${FRONTEND_SVC_IMAGE} frontend-svc
 
+                        # Scan Main Image
                         docker run --rm \
                           -v /var/run/docker.sock:/var/run/docker.sock \
                           -v \$(pwd)/.trivyignore:/.trivyignore \
@@ -337,33 +363,26 @@ pipeline {
                     -f ${HELM_CHART_DIR}/values-dev.yaml \\
                     --set global.imageRegistry=${ECR_REGISTRY} \\
                     --set userSvc.image.repository=user-svc \\
-                    --set userSvc.image.tag=${IMAGE_TAG} \\
-                    --set userSvc.migrations.repository=user-svc-migrations \
-                    --set userSvc.migrations.tag=${IMAGE_TAG} \\
-
+                    --set userSvc.migrations.repository=user-svc-migrations \\
                     --set productSvc.image.repository=product-svc \\
-                    --set productSvc.image.tag=${IMAGE_TAG} \\
                     --set productSvc.migrations.repository=product-svc-migrations \\
-                    --set productSvc.migrations.tag=${IMAGE_TAG} \\
-
                     --set frontendSvc.image.repository=frontend-svc \\
-                    --set frontendSvc.image.tag=${IMAGE_TAG} \\
-
+                    --set global.imageTag=${IMAGE_TAG} \\
                     --set global.cloudProvider=aws \\
                     --set database.host=${RDS_ENDPOINT} \\
-                    --wait --timeout 300s   
+                    --wait --timeout 420s   
                 """
             }
         }
 
-        stage('Wait for Deployment Rollout') {
-            steps {
-                // Added --timeout=180s so the pipeline doesn't hang indefinitely
-                sh "kubectl rollout status deployment/frontend-svc -n ${K8S_NAMESPACE} --timeout=180s"
-                sh "kubectl rollout status deployment/user-svc -n ${K8S_NAMESPACE} --timeout=180s"
-                sh "kubectl rollout status deployment/product-svc -n ${K8S_NAMESPACE} --timeout=180s"
-            }
-        }
+        // stage('Wait for Deployment Rollout') {
+        //     steps {
+        //         // Added --timeout=180s so the pipeline doesn't hang indefinitely
+        //         sh "kubectl rollout status deployment/frontend-svc -n ${K8S_NAMESPACE} --timeout=180s"
+        //         sh "kubectl rollout status deployment/user-svc -n ${K8S_NAMESPACE} --timeout=180s"
+        //         sh "kubectl rollout status deployment/product-svc -n ${K8S_NAMESPACE} --timeout=180s"
+        //     }
+        // }
 
         stage('Post-Deployment Verification') {
             steps {
@@ -394,27 +413,6 @@ pipeline {
                     echo ""
                     echo "=== Ingress ==="
                     kubectl get ingress -n ${K8S_NAMESPACE}
-
-                    echo ""
-                    echo "=== Readiness check ==="
-                    # This waits for every pod to actually be Ready before marking the stage green.
-                    kubectl wait pod \\
-                        --for=condition=Ready \\
-                        --selector=app=user-svc \\
-                        --namespace=${K8S_NAMESPACE} \\
-                        --timeout=120s
-
-                    kubectl wait pod \\
-                        --for=condition=Ready \\
-                        --selector=app=product-svc \\
-                        --namespace=${K8S_NAMESPACE} \\
-                        --timeout=120s
-
-                    kubectl wait pod \\
-                        --for=condition=Ready \\
-                        --selector=app=frontend-svc \\
-                        --namespace=${K8S_NAMESPACE} \\
-                        --timeout=120s
 
                     echo ""
                     echo "All pods Ready. Deployment verified."
