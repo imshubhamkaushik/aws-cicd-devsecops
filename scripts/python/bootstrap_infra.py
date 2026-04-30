@@ -29,7 +29,7 @@ def bootstrap_infra():
         run_command("terraform show main.tfplan", cwd=BOOTSTRAP_INFRA_DIR, env=env)
         
         print("")
-        confirm = input("Proceed with Terraform apply? (yes/no): ").strip().lower()
+        confirm = input("Proceed with Terraform apply for bootstrap-infra? (yes/no): ").strip().lower()
 
         if confirm not in ["yes", "y"]:
             info("Infra bootstrap aborted by user.")

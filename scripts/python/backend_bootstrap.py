@@ -30,7 +30,7 @@ def backend_bootstrap():
         run_command("terraform show main.tfplan", cwd=BACKEND_BOOTSTRAP_DIR, env=env)
            
         print("")
-        confirm = input("Proceed with Terraform apply? (yes/no): ").strip().lower()
+        confirm = input("Proceed with Terraform apply for backend-bootstrap? (yes/no): ").strip().lower()
     
         if confirm not in ["yes", "y"]:
             print("")
