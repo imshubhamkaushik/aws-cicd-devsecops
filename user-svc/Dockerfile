@@ -22,10 +22,3 @@ EXPOSE 8081
 
 # Run the JAR
 ENTRYPOINT ["java", "-XX:MaxRAMPercentage=75", "-XX:InitialRAMPercentage=50", "-Djava.security.egd=file:/dev/./urandom", "-jar", "/app/user-svc.jar"]
-
-# ---------- Stage 3: Migration ----------
-# This image is used exclusively by the copy-migrations init container in user.yaml. It is never run as the main application container.
-# Alpine provides /bin/sh so the init container can execute: cp -r /flyway/sql/. /shared/sql/
-# SQL files are copied directly from the build source tree (not extracted from the JAR) so they are always identical to what Spring Boot resolves from the classpath at runtime.
-FROM alpine:3.20 AS migrations
-COPY --from=build /app/user-svc/src/main/resources/db/migration/ /flyway/sql/

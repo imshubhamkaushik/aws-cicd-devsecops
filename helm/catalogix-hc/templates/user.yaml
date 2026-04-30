@@ -18,68 +18,6 @@ spec:
     spec:
       securityContext:
         runAsNonRoot: true
-      
-      initContainers:
-          # ── Step 1: Copy SQL files from the dedicated migrations image ────────
-          # Uses user-svc-migrations:IMAGE_TAG — a tiny Alpine image (~8 MB) built
-          # from the same Dockerfile as user-svc (--target migrations) and pushed
-          # to ECR with the same tag. Because both images are built from the same
-          # source tree in the same pipeline run they are always version-locked.
-          #
-          # This init container has a shell (Alpine) so cp works correctly.
-          # The distroless app image is never used as an init container.
-        - name: copy-migrations
-          image: "{{ .Values.global.imageRegistry }}/{{ .Values.userSvc.migrations.repository }}:{{ .Values.global.imageTag }}"
-          imagePullPolicy: {{ .Values.userSvc.image.pullPolicy }}
-          command: [ "sh", "-c", "cp -r /flyway/sql/. /shared/sql/" ]
-          securityContext:
-            runAsNonRoot: true
-            runAsUser: 1000
-            readOnlyRootFilesystem: true
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop:
-                - ALL
-          volumeMounts:
-            - name: flyway-migrations
-              mountPath: /shared/sql
-            - name: tmp-volume
-              mountPath: /tmp
-
-          # ── Step 2: Repair flyway_schema_history before Spring Boot starts ────
-          # `flyway repair` updates the checksum stored in flyway_schema_history
-          # to match the current local SQL file. Resolves the
-          # "Migration checksum mismatch" crash automatically on every pod start.
-          # No-op when checksums already match — adds ~1-2 s on a clean deploy.
-        - name: flyway-repair
-          image: flyway/flyway:10.21.0-alpine
-          args: ["repair"]
-          securityContext:
-            runAsNonRoot: true
-            runAsUser: 1000
-            readOnlyRootFilesystem: true
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop:
-                - ALL
-          env:
-            - name: FLYWAY_URL
-              value: "jdbc:postgresql://{{ .Values.database.host }}:{{ .Values.database.port }}/{{ .Values.database.name }}"
-            - name: FLYWAY_USER
-              value: "{{ .Values.database.username }}"
-            - name: FLYWAY_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: catalogix-secrets
-                  key: DB_PASSWORD
-            - name: FLYWAY_LOCATIONS
-              value: "filesystem:/flyway/sql"
-          volumeMounts:
-            - name: flyway-migrations
-              mountPath: /flyway/sql
-              readOnly: true
-            - name: tmp-volume
-              mountPath: /tmp
 
       containers:
         - name: user-svc
@@ -138,8 +76,6 @@ spec:
         - name: tmp-volume
           emptyDir: {}
 
-        - name: flyway-migrations
-          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service

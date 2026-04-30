@@ -46,8 +46,6 @@ userSvc:
   image:
     repository: "user-svc"
     pullPolicy: "IfNotPresent"
-  migrations:
-    repository: "user-svc-migrations"
   replicaCount: 2
   service:
     port: 8081
@@ -70,8 +68,6 @@ productSvc:
   image:
     repository: "product-svc"
     pullPolicy: "IfNotPresent"
-  migrations:
-    repository: "product-svc-migrations"
   replicaCount: 2
   service:
     port: 8082
