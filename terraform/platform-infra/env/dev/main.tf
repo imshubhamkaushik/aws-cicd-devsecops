@@ -160,7 +160,7 @@ module "eso" {
   }
 
   # ESO must come after EKS nodes and ALB controller so the cluster is stable
-  depends_on = [module.eks, module.alb]
+  depends_on = [module.eks, module.alb, module.sg]
 
 }
 
@@ -205,6 +205,7 @@ resource "kubernetes_storage_class_v1" "gp3" {
   # which includes the ebs_csi addon internally.
   depends_on = [
     module.eks,
-    module.alb
+    module.alb,
+    module.sg
   ]
 }
