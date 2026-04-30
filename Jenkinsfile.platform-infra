@@ -180,6 +180,9 @@ pipeline {
         }
 
         stage('Ensure Kubernetes Access') {
+            when {
+                expression { params.ACTION == 'apply' }
+            }
             steps {
                 sh"""
                 set -e
