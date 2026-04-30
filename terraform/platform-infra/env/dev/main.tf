@@ -195,8 +195,15 @@ resource "kubernetes_storage_class_v1" "gp3" {
     type = "gp3"
   }
 
+  lifecycle {
+    prevent_destroy = false
+  }
+
   # depends_on updated from aws_eks_addon.ebs_csi (module-internal ref)
   # to module.eks — the root-level handle for the entire EKS module,
   # which includes the ebs_csi addon internally.
-  depends_on = [module.eks]
+  depends_on = [
+    module.eks,
+    module.alb
+  ]
 }

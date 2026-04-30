@@ -68,6 +68,14 @@ resource "kubernetes_service_account_v1" "alb" {
       "eks.amazonaws.com/role-arn" = aws_iam_role.alb.arn
     }
   }
+
+  lifecycle {
+    prevent_destroy = false
+  }
+
+  depends_on = [
+    aws_iam_role_policy_attachment.alb
+  ]
 }
 
 # Install ALB controller
