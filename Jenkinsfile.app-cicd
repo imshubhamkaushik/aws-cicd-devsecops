@@ -27,9 +27,9 @@ pipeline {
         TRIVY_TAG   = "0.70.0"
         TRIVY_IMAGE = "aquasec/trivy:${TRIVY_TAG}"
 
-        MAVEN_CACHE = "/var/jenkins_home/.m2/repository"
-        NPM_CACHE = "/var/jenkins_home/.npm"
-        TRIVY_CACHE = "/var/jenkins_home/.cache/trivy"
+        MAVEN_CACHE = "${WORKSPACE}/.m2/repository"
+        NPM_CACHE = "${WORKSPACE}/.npm"
+        TRIVY_CACHE = "${WORKSPACE}/.cache/trivy"
     }
 
     tools {
