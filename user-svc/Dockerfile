@@ -12,7 +12,7 @@ COPY user-svc/pom.xml user-svc/pom.xml
 COPY user-svc/src user-svc/src
 RUN mvn -B clean package -DskipTests -f user-svc/pom.xml
 
-# ---------- Stage 2: Runtime ----------
+# ---------- Stage 2: App ----------
 FROM gcr.io/distroless/java21-debian13:nonroot AS app
 WORKDIR /app
 
@@ -25,10 +25,7 @@ ENTRYPOINT ["java", "-XX:MaxRAMPercentage=75", "-XX:InitialRAMPercentage=50", "-
 
 # ---------- Stage 3: Migration ----------
 # This image is used exclusively by the copy-migrations init container in user.yaml. It is never run as the main application container.
-#
-# Alpine provides /bin/sh so the init container can execute:
-#   cp -r /flyway/sql/. /shared/sql/
-#
+# Alpine provides /bin/sh so the init container can execute: cp -r /flyway/sql/. /shared/sql/
 # SQL files are copied directly from the build source tree (not extracted from the JAR) so they are always identical to what Spring Boot resolves from the classpath at runtime.
 FROM alpine:3.20 AS migrations
 COPY --from=build /app/user-svc/src/main/resources/db/migration/ /flyway/sql/

@@ -209,7 +209,7 @@ pipeline {
                         set -e
 
                         # Build Main Image
-                        docker build --target runtime -f user-svc/Dockerfile -t ${USER_SVC_IMAGE} .
+                        docker build --target app -f user-svc/Dockerfile -t ${USER_SVC_IMAGE} .
 
                         # Build Migrations Image (using the target stage in your Dockerfile)
                         docker build --target migrations -f user-svc/Dockerfile -t ${USER_SVC_MIGRATIONS_IMAGE} .
@@ -232,7 +232,7 @@ pipeline {
                         set -e
 
                         # Build Main Image
-                        docker build --target runtime -f product-svc/Dockerfile -t ${PRODUCT_SVC_IMAGE} .
+                        docker build --target app -f product-svc/Dockerfile -t ${PRODUCT_SVC_IMAGE} .
 
                         # Build Migrations Image (using the target stage in your Dockerfile)
                         docker build --target migrations -f product-svc/Dockerfile -t ${PRODUCT_SVC_MIGRATIONS_IMAGE} .
