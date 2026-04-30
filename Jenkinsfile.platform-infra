@@ -412,10 +412,10 @@ pipeline {
                     sh """
                     set -e
                     terraform state list
-                    terraform state rm 'module.alb.kubernetes_service_account_v1.alb'
-                    terraform state rm 'module.alb.helm_release.alb_controller'
-                    terraform state rm 'module.eso.helm_release.eso'
-                    terraform state rm 'kubernetes_storage_class_v1.gp3'
+                    terraform state rm 'module.alb.kubernetes_service_account_v1.alb' || true
+                    terraform state rm 'module.alb.helm_release.alb_controller' || true
+                    terraform state rm 'module.eso.helm_release.eso' || true
+                    terraform state rm 'kubernetes_storage_class_v1.gp3' || true
                     echo "========================================================"
                     echo "  DESTROY PLAN — resources that WILL be deleted"
                     echo "========================================================"
