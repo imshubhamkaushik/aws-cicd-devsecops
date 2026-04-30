@@ -29,6 +29,11 @@ unclassified:
         serverUrl: "http://${SONARQUBE_HOST}:9000"
         credentialsId: "sonarqube-token"
 
+  simpleTheme:
+    elements:
+      - themeExtension:
+          pluginId: "dark-theme"
+
 tool:
   git:
     installations:

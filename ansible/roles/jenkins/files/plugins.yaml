@@ -9,7 +9,7 @@ plugins:
 
   # PIPELINES
   - artifactId: workflow-aggregator
-  - artifactId: pipeline-stage-view
+  - artifactId: pipeline-graph-view
 
   # SCM
   - artifactId: git
@@ -31,10 +31,3 @@ plugins:
   # UTILS
   - artifactId: timestamper
   - artifactId: ws-cleanup
-
-  # BLUE OCEAN (Pipeline Overview & modern UI)
-  - artifactId: blueocean
-  - artifactId: blueocean-dashboard
-  - artifactId: blueocean-pipeline-editor
-  - artifactId: blueocean-rest
-  - artifactId: pipeline-model-definition
