@@ -104,8 +104,7 @@ resource "helm_release" "eso" {
   }
 
   depends_on = [
-    aws_iam_role_policy_attachment.eso,
-    module.eks
+    aws_iam_role_policy_attachment.eso
   ]
 }
 
