@@ -85,10 +85,6 @@ pipeline {
                     env.USER_SVC_IMAGE     = "${env.ECR_REGISTRY}/user-svc:${env.IMAGE_TAG}"
                     env.PRODUCT_SVC_IMAGE  = "${env.ECR_REGISTRY}/product-svc:${env.IMAGE_TAG}"
                     env.FRONTEND_SVC_IMAGE = "${env.ECR_REGISTRY}/frontend-svc:${env.IMAGE_TAG}"
-
-                    // Migration Images
-                    env.USER_SVC_MIGRATIONS_IMAGE    = "${env.ECR_REGISTRY}/user-svc-migrations:${env.IMAGE_TAG}"
-                    env.PRODUCT_SVC_MIGRATIONS_IMAGE = "${env.ECR_REGISTRY}/product-svc-migrations:${env.IMAGE_TAG}"
                 }
                 
             }   
@@ -211,9 +207,6 @@ pipeline {
                         # Build Main Image
                         docker build --target app -f user-svc/Dockerfile -t ${USER_SVC_IMAGE} .
 
-                        # Build Migrations Image (using the target stage in your Dockerfile)
-                        docker build --target migrations -f user-svc/Dockerfile -t ${USER_SVC_MIGRATIONS_IMAGE} .
-
                         # Scan Main Image
                         docker run --rm \
                           -v /var/run/docker.sock:/var/run/docker.sock \
@@ -224,17 +217,6 @@ pipeline {
                           --ignore-unfixed \
                           --ignorefile /.trivyignore \
                           ${USER_SVC_IMAGE}
-
-                          # Scan Migrations Image
-                          docker run --rm \
-                          -v /var/run/docker.sock:/var/run/docker.sock \
-                          -v \$(pwd)/.trivyignore:/.trivyignore \
-                          ${TRIVY_IMAGE} image \
-                          --severity HIGH,CRITICAL \
-                          --exit-code 1 \
-                          --ignore-unfixed \
-                          --ignorefile /.trivyignore \
-                          ${USER_SVC_MIGRATIONS_IMAGE}
                         """
                     }
                 }
@@ -246,9 +228,6 @@ pipeline {
                         # Build Main Image
                         docker build --target app -f product-svc/Dockerfile -t ${PRODUCT_SVC_IMAGE} .
 
-                        # Build Migrations Image (using the target stage in your Dockerfile)
-                        docker build --target migrations -f product-svc/Dockerfile -t ${PRODUCT_SVC_MIGRATIONS_IMAGE} .
-
                         # Scan Main Image
                         docker run --rm \
                           -v /var/run/docker.sock:/var/run/docker.sock \
@@ -259,17 +238,6 @@ pipeline {
                           --ignore-unfixed \
                           --ignorefile /.trivyignore \
                           ${PRODUCT_SVC_IMAGE}
-                        
-                        # Scan Migrations Image
-                        docker run --rm \
-                          -v /var/run/docker.sock:/var/run/docker.sock \
-                          -v \$(pwd)/.trivyignore:/.trivyignore \
-                          ${TRIVY_IMAGE} image \
-                          --severity HIGH,CRITICAL \
-                          --exit-code 1 \
-                          --ignore-unfixed \
-                          --ignorefile /.trivyignore \
-                          ${PRODUCT_SVC_MIGRATIONS_IMAGE}
                         """
                     }
                 }
@@ -311,10 +279,8 @@ pipeline {
         stage('Push Images to ECR') {
             parallel {
                 stage('Push User Service') { steps { sh "docker push ${USER_SVC_IMAGE}" } }
-                stage('Push User Migrations') { steps { sh "docker push ${USER_SVC_MIGRATIONS_IMAGE}" } }
                 
                 stage('Push Product Service') { steps { sh "docker push ${PRODUCT_SVC_IMAGE}" } }
-                stage('Push Product Migrations') { steps { sh "docker push ${PRODUCT_SVC_MIGRATIONS_IMAGE}" } }
                 
                 stage('Push Frontend Service') { steps { sh "docker push ${FRONTEND_SVC_IMAGE}" } }
             }
@@ -363,9 +329,7 @@ pipeline {
                     -f ${HELM_CHART_DIR}/values-dev.yaml \\
                     --set global.imageRegistry=${ECR_REGISTRY} \\
                     --set userSvc.image.repository=user-svc \\
-                    --set userSvc.migrations.repository=user-svc-migrations \\
                     --set productSvc.image.repository=product-svc \\
-                    --set productSvc.migrations.repository=product-svc-migrations \\
                     --set frontendSvc.image.repository=frontend-svc \\
                     --set global.imageTag=${IMAGE_TAG} \\
                     --set global.cloudProvider=aws \\
