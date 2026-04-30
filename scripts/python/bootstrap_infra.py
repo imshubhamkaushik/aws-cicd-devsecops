@@ -25,7 +25,7 @@ def bootstrap_infra():
         run_command("terraform plan -out main.tfplan", cwd=BOOTSTRAP_INFRA_DIR, env=env)
         
         print("")
-        print("Performing Terraform plan review...")
+        print("Performing Terraform plan review for bootstrap-infra...")
         run_command("terraform show main.tfplan", cwd=BOOTSTRAP_INFRA_DIR, env=env)
         
         print("")

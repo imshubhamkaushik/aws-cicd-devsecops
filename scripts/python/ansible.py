@@ -207,7 +207,7 @@ def run_ansible():
     info("Running Ansible Configuration...")
     
     print("")
-    confirm = input("Ready to run Ansible playbook. Proceed with Ansible configuration? (yes/no): ").strip().lower()
+    confirm = input("Ready to run Ansible playbook on EC2. Proceed with Ansible configuration? (yes/no): ").strip().lower()
     
     if confirm not in ["yes", "y"]:
         info("Ansible configuration aborted by user.")

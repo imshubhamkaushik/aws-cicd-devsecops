@@ -26,7 +26,7 @@ def backend_bootstrap():
         run_command("terraform plan -out main.tfplan", cwd=BACKEND_BOOTSTRAP_DIR, env=env)
         
         print("")
-        print("Performing Terraform plan review...")    
+        print("Performing Terraform plan review for backend-bootstrap...")    
         run_command("terraform show main.tfplan", cwd=BACKEND_BOOTSTRAP_DIR, env=env)
            
         print("")
