@@ -371,6 +371,37 @@ pipeline {
         // Runs only when ACTION=destroy AND CONFIRM_DESTROY=true (gate above).
         // Uses 'terraform plan -destroy' so you see exactly what will be removed
         // before the human approval input.
+
+        stage("Cleanup Kubernetes Resources") {
+            when {
+                expression { params.ACTION == 'destroy' }
+            }
+            steps {
+                // We use set +e (or || true) so the pipeline doesn't fail 
+                // if the cluster is already partially destroyed or unreachable.
+                sh """
+                set +e 
+                echo "Attempting to clean up K8s resources to prevent Terraform timeouts and AWS VPC hangs..."
+                
+                # Ensure we are connected to the cluster
+                aws eks update-kubeconfig --region ${AWS_REGION} --name ${CLUSTER_NAME} --kubeconfig ${KUBECONFIG}
+                
+                echo "Uninstalling App..."
+                helm uninstall catalogix -n catalogix || true
+                
+                echo "Uninstalling Monitoring & Metrics..."
+                helm uninstall monitoring -n monitoring || true
+                helm uninstall metrics-server -n kube-system || true
+
+                echo "Uninstalling AWS Load Balancer Controller (CRITICAL FIX)..."
+                helm uninstall aws-load-balancer-controller -n kube-system || true
+                
+                # Give the AWS Cloud Controller time to detach and delete the physical ELBs/ENIs
+                echo "Waiting 45 seconds for AWS Load Balancers to detach..."
+                sleep 45
+                """
+            }
+        }
  
         stage("Terraform Plan - Destroy Preview") {
             when {
