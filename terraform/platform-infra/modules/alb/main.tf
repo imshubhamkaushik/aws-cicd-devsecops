@@ -74,7 +74,6 @@ resource "kubernetes_service_account_v1" "alb" {
   }
 
   depends_on = [
-    module.eks,
     aws_iam_role_policy_attachment.alb
   ]
 }
