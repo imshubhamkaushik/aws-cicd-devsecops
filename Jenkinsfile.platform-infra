@@ -1,5 +1,6 @@
 // Infrastructure pipeline — trigger manually only, never via webhook.
-// Runs: Terraform fmt → init → validate → plan → human approval → apply → verify EKS → deploy monitoring
+// ACTION=apply  → Terraform fmt → init → validate → plan → human approval → apply → verify EKS → deploy monitoring
+// ACTION=destroy → Checkout → init → plan -destroy → human approval (double-gate) → destroy
 
 pipeline {
     agent any
@@ -16,6 +17,26 @@ pipeline {
     }
 
     parameters { 
+        // ── Action selector ──────────────────────────────────────────────────
+        // 'apply'   → full provisioning flow (default, safe)
+        // 'destroy' → tears down ALL resources — requires CONFIRM_DESTROY=true
+        choice(
+            name: 'ACTION',
+            choices: ['apply', 'destroy'],
+            description: '''What should this pipeline do?
+            apply   → provision / update infrastructure (normal flow)
+            destroy → tear down ALL Terraform-managed resources (IRREVERSIBLE)'''
+        )
+ 
+        // Second safety gate — must be explicitly checked when ACTION=destroy.
+        // Defaults to false so an accidental 'destroy' run without ticking this
+        // will abort at the gate stage before touching any infrastructure.
+        booleanParam(
+            name: 'CONFIRM_DESTROY',
+            defaultValue: false,
+            description: 'REQUIRED when ACTION=destroy. Check this box to confirm you intend to destroy all resources. Has no effect when ACTION=apply.'
+        )
+
         booleanParam( 
             name: 'DEPLOY_APP_AFTER_INFRA', 
             defaultValue: true, 
@@ -46,7 +67,39 @@ pipeline {
             }
         }
 
+        // ── Destroy safety gate ──────────────────────────────────────────────
+        // Runs immediately after checkout so we fail fast before touching AWS.
+        // Prevents accidental destroys when ACTION=destroy but the checkbox was
+        // forgotten (the default).
+        stage("Destroy Safety Gate") {
+            when {
+                expression { params.ACTION == 'destroy' }
+            }
+            steps {
+                script {
+                    if (!params.CONFIRM_DESTROY) {
+                        error("""
+╔══════════════════════════════════════════════════════════════════════╗
+║  DESTROY ABORTED — safety gate not cleared                          ║
+║                                                                      ║
+║  You selected ACTION=destroy but did NOT check CONFIRM_DESTROY.     ║
+║  Re-run the build, set ACTION=destroy AND tick CONFIRM_DESTROY=true ║
+║  to proceed.                                                         ║
+╚══════════════════════════════════════════════════════════════════════╝
+""")
+                    }
+                    echo "Destroy safety gate cleared. Proceeding with destroy flow."
+                }
+            }
+        }
+
+        // ── Apply-only stages ────────────────────────────────────────────────
+
         stage("Precheck Bootstrap State") {
+            when {
+                expression { params.ACTION == 'apply' }
+            }
+
             steps {
                 sh """
                 aws s3 ls s3://catalogix-tfstate/bootstrap-infra/terraform.tfstate
@@ -55,12 +108,18 @@ pipeline {
         }
 
         stage("Terraform Format Check - terraform/platform-infra/"){ 
+            when {
+                expression { params.ACTION == 'apply' }
+            }
             steps { 
                 sh "terraform fmt -check -recursive terraform/platform-infra/"
             } 
         }
 
         stage("Trivy IaC Scan") {
+            when {
+                expression { params.ACTION == 'apply' }
+            }
             steps {
                 sh """
                 set -e
@@ -75,6 +134,8 @@ pipeline {
             }
         }
 
+        // ── Shared stages (apply + destroy) ─────────────────────────────────
+
         stage("Terraform Init") { 
             steps { 
                 dir("${TF_DIR}") { 
@@ -83,7 +144,10 @@ pipeline {
             }
         }
 
-        stage("Terraform Validate")    { 
+        stage("Terraform Validate") {
+            when {
+                expression { params.ACTION == 'apply' }
+            } 
             steps {    
                 dir("${TF_DIR}") { 
                     sh "terraform validate" 
@@ -91,7 +155,12 @@ pipeline {
             } 
         }
 
+        // ── Apply flow ───────────────────────────────────────────────────────
+
         stage("Terraform Plan and Apply - EKS Core") {
+            when {
+                expression { params.ACTION == 'apply' }
+            }
             steps {
                 dir("${TF_DIR}") {
                     sh "terraform plan -target=module.eks -target=module.sg -out eks.tfplan"
@@ -111,6 +180,9 @@ pipeline {
         }
 
         stage('Ensure Kubernetes Access') {
+            when {
+                expression { params.ACTION == 'apply' }
+            }
             steps {
                 sh"""
                 set -e
@@ -157,6 +229,9 @@ pipeline {
         }
 
         stage("Wait for EKS Ready") {
+            when {
+                expression { params.ACTION == 'apply' }
+            }
             steps {
                 sh '''
                 set -e
@@ -211,6 +286,9 @@ pipeline {
         }
 
         stage("Terraform Plan and Apply - Remaining Infra") {
+            when {
+                expression { params.ACTION == 'apply' }
+            }
             steps {
                 dir("${TF_DIR}") {
                     sh "terraform plan -out main.tfplan"
@@ -226,6 +304,9 @@ pipeline {
         }
 
         stage('Install Metrics Server') {
+            when {
+                expression { params.ACTION == 'apply' }
+            }
             steps {
                 sh '''
                 set -e
@@ -250,6 +331,9 @@ pipeline {
         // Monitoring is deployed here — after the cluster and ESO are ready — rather than as a separate manual step. 
         // This makes the platform-infra pipeline the single entry point for all cluster-level infrastructure, with app deployments handled separately.
         stage('Deploy Monitoring Stack') {
+            when {
+                expression { params.ACTION == 'apply' }
+            }
             steps {
                 sh """
                 set -e
@@ -271,6 +355,9 @@ pipeline {
         }
 
         stage('Verify Monitoring Stack') {
+            when {
+                expression { params.ACTION == 'apply' }
+            }
             steps  {
                 sh """
                 set -e
@@ -279,31 +366,102 @@ pipeline {
                 """
             }       
         }
+
+        // ── Destroy flow ─────────────────────────────────────────────────────
+        // Runs only when ACTION=destroy AND CONFIRM_DESTROY=true (gate above).
+        // Uses 'terraform plan -destroy' so you see exactly what will be removed
+        // before the human approval input.
+ 
+        stage("Terraform Plan - Destroy Preview") {
+            when {
+                expression { params.ACTION == 'destroy' }
+            }
+            steps {
+                dir("${TF_DIR}") {
+                    sh """
+                    echo "========================================================"
+                    echo "  DESTROY PLAN — resources that WILL be deleted"
+                    echo "========================================================"
+                    terraform plan -destroy -out destroy.tfplan
+                    """
+                }
+            }
+        }
+
+        stage("Destroy Approval") {
+            when {
+                expression { params.ACTION == 'destroy' }
+            }
+            steps {
+                // input must be at Groovy level — not inside sh.
+                input message: """⚠️  FINAL WARNING — Terraform Destroy
+ 
+You are about to PERMANENTLY DELETE all infrastructure managed by this Terraform workspace:
+  • EKS cluster (${env.CLUSTER_NAME})
+  • All node groups, security groups
+  • ALB, RDS, ESO, Secrets, and everything else in the plan above
+ 
+This action is IRREVERSIBLE. Review the destroy plan in the stage above carefully.
+Are you absolutely sure?""",
+                      ok: "Yes, destroy everything"
+            }
+        }
+
+        stage("Terraform Destroy") {
+            when {
+                expression { params.ACTION == 'destroy' }
+            }
+            steps {
+                dir("${TF_DIR}") {
+                    sh """
+                    set -e
+                    echo "========================================================"
+                    echo "  Running terraform apply destroy.tfplan ..."
+                    echo "========================================================"
+                    terraform apply -auto-approve destroy.tfplan
+                    rm -f destroy.tfplan
+                    echo "========================================================"
+                    echo "  Destroy complete."
+                    echo "========================================================"
+                    """
+                }
+            }
+        }
     }
 
     post {
         success { 
-            echo "Platform infrastructure and monitoring stack applied successfully." 
-
             script {
-                if (params.DEPLOY_APP_AFTER_INFRA) {
-                    echo "Triggering app deployment pipeline..."
-                    build job: 'app-cicd', wait: false
-                    echo "App deployment pipeline triggered."
+                if (params.ACTION == 'apply') {
+                    echo "Platform infrastructure and monitoring stack applied successfully."
+                    if (params.DEPLOY_APP_AFTER_INFRA) {
+                        echo "Triggering app deployment pipeline..."
+                        build job: 'app-cicd', wait: false
+                        echo "App deployment pipeline triggered."
+                    } else {
+                        echo "Skipping app deployment as per parameter."
+                    }
                 } else {
-                    echo "Skipping app deployment as per parameter."
+                    echo "Terraform destroy completed. All managed resources have been removed."
                 }
             }
         }
 
         failure { 
-            echo "Platform infrastructure pipeline failed. Will not proceed with app deployment. Please check the logs and fix the issues."
+            script {
+                if (params.ACTION == 'apply') {
+                    echo "Platform infrastructure pipeline failed. Will not proceed with app deployment. Please check the logs and fix the issues."
+                } else {
+                    echo "Terraform destroy pipeline FAILED. Some resources may still exist — check the AWS console and Terraform state."
+                }
+            }
         }
         
         always  { 
             dir("${TF_DIR}") { 
                 sh "rm -f eks.tfplan || true"
                 sh "rm -f main.tfplan || true" 
+                sh "rm -f destroy.tfplan || true"
             } 
         }
     }
