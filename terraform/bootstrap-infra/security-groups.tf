@@ -60,7 +60,7 @@ resource "aws_security_group" "sonar" {
     cidr_blocks = [local.my_ip_cidr] # need to set this to My IP only
   }
 
-  
+
 
   egress {
     description = "Allow all outbound"
