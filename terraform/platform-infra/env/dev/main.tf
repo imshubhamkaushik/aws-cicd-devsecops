@@ -74,6 +74,7 @@ module "eks" {
   kms_key_arn = aws_kms_key.eks.arn
 
   jenkins_role_arn = data.terraform_remote_state.bootstrap.outputs.jenkins_role_arn
+  jenkins_public_ip = data.terraform_remote_state.bootstrap.outputs.public_ip_jenkins
 }
 
 # EKS DATA (safe, resolves after creation)

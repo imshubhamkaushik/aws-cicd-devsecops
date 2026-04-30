@@ -53,6 +53,11 @@ variable "jenkins_role_arn" {
   type        = string
 }
 
+variable "jenkins_public_ip" {
+  description = "Public IP of the Jenkins server to allowlist on the EKS API"
+  type        = string
+}
+
 variable "aws_region" {
   description = "AWS region"
   type        = string
