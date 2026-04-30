@@ -111,7 +111,7 @@ module "alb" {
     helm       = helm.after_eks
   }
 
-  depends_on = [module.eks]
+  depends_on = [module.eks, module.sg]
 }
 
 # RDS
