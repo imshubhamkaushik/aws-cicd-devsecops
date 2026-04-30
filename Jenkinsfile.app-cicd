@@ -26,6 +26,10 @@ pipeline {
         // Trivy Docker Image
         TRIVY_TAG   = "0.70.0"
         TRIVY_IMAGE = "aquasec/trivy:${TRIVY_TAG}"
+
+        MAVEN_CACHE = "/var/jenkins_home/.m2/repository"
+        NPM_CACHE = "/var/jenkins_home/.npm"
+        TRIVY_CACHE = "/var/jenkins_home/.cache/trivy"
     }
 
     tools {
@@ -43,13 +47,6 @@ pipeline {
     }
 
     stages {
-
-        stage('Clean Workspace') {
-            steps {
-                cleanWs()
-            }
-        }
-
         stage('Checkout') {
             steps {
                 checkout scm
@@ -146,21 +143,44 @@ pipeline {
 
                 stage('User Service JAR') {
                     steps {
-                        dir('user-svc') { sh "mvn -B package -DskipTests" }
+                        dir('user-svc') { 
+                            sh """
+                            # Create cache dir if it doesn't exist
+                            mkdir -p ${MAVEN_CACHE}
+
+                            # Use local repo, download only missing dependencies
+                            mvn -B -Dmaven.repo.local=${MAVEN_CACHE} package -DskipTests
+                            """
+                        }
                     }
                 }
 
                 stage('Product Service JAR') {
                     steps {
-                        dir('product-svc') { sh "mvn -B package -DskipTests" } 
+                        dir('product-svc') { 
+                            sh """
+                            # Create cache dir if it doesn't exist
+                            mkdir -p ${MAVEN_CACHE}
+
+                            # Use local repo, download only missing dependencies
+                            mvn -B -Dmaven.repo.local=${MAVEN_CACHE} package -DskipTests
+                            """
+                        }
                     }
                 }
 
                 stage('Frontend Service Build') {
                     steps {
                         dir('frontend-svc') {
-                            sh "npm ci"
-                            sh "npm run build"
+                            sh """
+                            mkdir -p ${NPM_CACHE}
+
+                            # Use npm cache, will only download missing packages
+                            npm ci --cache ${NPM_CACHE}
+
+                            # Build the project
+                            npm run build
+                            """
                         }
                     }
                 }
@@ -204,12 +224,16 @@ pipeline {
                         sh """
                         set -e
 
+                        # Pull Image
+                        docker pull ${USER_SVC_IMAGE} || true
+
                         # Build Main Image
-                        docker build --target app -f user-svc/Dockerfile -t ${USER_SVC_IMAGE} .
+                        docker build --cache-from ${USER_SVC_IMAGE} --target app -f user-svc/Dockerfile -t ${USER_SVC_IMAGE} .
 
                         # Scan Main Image
                         docker run --rm \
                           -v /var/run/docker.sock:/var/run/docker.sock \
+                          -v ${TRIVY_CACHE}:/root/.cache/ \
                           -v \$(pwd)/.trivyignore:/.trivyignore \
                           ${TRIVY_IMAGE} image \
                           --severity HIGH,CRITICAL \
@@ -225,12 +249,16 @@ pipeline {
                         sh """
                         set -e
 
+                        # Pull Image
+                        docker pull ${PRODUCT_SVC_IMAGE} || true
+
                         # Build Main Image
-                        docker build --target app -f product-svc/Dockerfile -t ${PRODUCT_SVC_IMAGE} .
+                        docker build --cache-from ${PRODUCT_SVC_IMAGE} --target app -f product-svc/Dockerfile -t ${PRODUCT_SVC_IMAGE} .
 
                         # Scan Main Image
                         docker run --rm \
                           -v /var/run/docker.sock:/var/run/docker.sock \
+                          -v ${TRIVY_CACHE}:/root/.cache/ \
                           -v \$(pwd)/.trivyignore:/.trivyignore \
                           ${TRIVY_IMAGE} image \
                           --severity HIGH,CRITICAL \
@@ -246,12 +274,16 @@ pipeline {
                         sh """
                         set -e 
 
+                        # Pull Image
+                        docker pull ${FRONTEND_SVC_IMAGE} || true
+
                         # Build Main Image
-                        docker build -t ${FRONTEND_SVC_IMAGE} frontend-svc
+                        docker build --cache-from ${FRONTEND_SVC_IMAGE} -f frontend-svc/Dockerfile -t ${FRONTEND_SVC_IMAGE} frontend-svc
 
                         # Scan Main Image
                         docker run --rm \
                           -v /var/run/docker.sock:/var/run/docker.sock \
+                          -v ${TRIVY_CACHE}:/root/.cache/ \
                           -v \$(pwd)/.trivyignore:/.trivyignore \
                           ${TRIVY_IMAGE} image \
                           --severity HIGH,CRITICAL \
@@ -265,7 +297,7 @@ pipeline {
             }
         }
 
-        stage('Login to Amazon ECR') {
+        stage('Login to Amazon ECR and Push Images to ECR') {
             steps {
                 sh """
                 set -e
@@ -273,19 +305,15 @@ pipeline {
                 aws ecr get-login-password --region ${AWS_REGION} \
                     | docker login --username AWS --password-stdin ${ECR_REGISTRY}
                 """
+                parallel {
+                    stage('Push User Service') { steps { sh "docker push ${USER_SVC_IMAGE}" } }
+                    
+                    stage('Push Product Service') { steps { sh "docker push ${PRODUCT_SVC_IMAGE}" } }
+                    
+                    stage('Push Frontend Service') { steps { sh "docker push ${FRONTEND_SVC_IMAGE}" } }
+                }
             }
         }
-
-        stage('Push Images to ECR') {
-            parallel {
-                stage('Push User Service') { steps { sh "docker push ${USER_SVC_IMAGE}" } }
-                
-                stage('Push Product Service') { steps { sh "docker push ${PRODUCT_SVC_IMAGE}" } }
-                
-                stage('Push Frontend Service') { steps { sh "docker push ${FRONTEND_SVC_IMAGE}" } }
-            }
-        }   
-
 
         stage('Trivy Scan Helm Charts') {
             steps {
@@ -294,6 +322,7 @@ pipeline {
 
                 docker run --rm \
                   -v \$(pwd):/catalogix \
+                  -v ${TRIVY_CACHE}:/root/.cache/ \
                   ${TRIVY_IMAGE} config \
                   --severity HIGH,CRITICAL --exit-code 1 \
                   --ignorefile /catalogix/.trivyignore \
@@ -334,7 +363,7 @@ pipeline {
                     --set global.imageTag=${IMAGE_TAG} \\
                     --set global.cloudProvider=aws \\
                     --set database.host=${RDS_ENDPOINT} \\
-                    --wait --timeout 420s   
+                    --wait --timeout 300s   
                 """
             }
         }
@@ -355,20 +384,6 @@ pipeline {
 
                     echo "=== Pod status ==="
                     kubectl get pods -n ${K8S_NAMESPACE}
-
-                    echo ""
-                    echo "=== FETCHING USER-SVC CRASH LOGS ==="
-                    # The || true ensures the pipeline doesn't instantly abort if the command fails
-                    kubectl logs deployment/user-svc -n ${K8S_NAMESPACE} --previous || true
-                    kubectl logs deployment/user-svc -n ${K8S_NAMESPACE} || true
-                    echo "======================================="
-
-                    echo ""
-                    echo "=== FETCHING PRODUCT-SVC CRASH LOGS ==="
-                    # The || true ensures the pipeline doesn't instantly abort if the command fails
-                    kubectl logs deployment/product-svc -n ${K8S_NAMESPACE} --previous || true
-                    kubectl logs deployment/product-svc -n ${K8S_NAMESPACE} || true
-                    echo "======================================="
 
                     echo ""
                     echo "=== Services ==="
@@ -401,18 +416,6 @@ pipeline {
 
             echo "=== Events ==="
             kubectl get events -n ${K8S_NAMESPACE} --sort-by='.lastTimestamp' | tail -30 || true
-
-            echo "=== user-svc logs ==="
-            kubectl logs -n ${K8S_NAMESPACE} -l app=user-svc --tail=80 --previous 2>/dev/null || \\
-            kubectl logs -n ${K8S_NAMESPACE} -l app=user-svc --tail=80 2>/dev/null || true
-
-            echo "=== product-svc logs ==="
-            kubectl logs -n ${K8S_NAMESPACE} -l app=product-svc --tail=80 --previous 2>/dev/null || \\
-            kubectl logs -n ${K8S_NAMESPACE} -l app=product-svc --tail=80 2>/dev/null || true
-
-            echo "=== frontend-svc logs ==="
-            kubectl logs -n ${K8S_NAMESPACE} -l app=frontend-svc --tail=80 --previous 2>/dev/null || \\
-            kubectl logs -n ${K8S_NAMESPACE} -l app=frontend-svc --tail=80 2>/dev/null || true
 
             echo "=== ExternalSecret status ==="
             kubectl get externalsecret -n ${K8S_NAMESPACE} || true
