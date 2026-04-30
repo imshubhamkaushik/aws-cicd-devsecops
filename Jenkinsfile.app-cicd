@@ -29,7 +29,6 @@ pipeline {
 
         MAVEN_CACHE = "${WORKSPACE}/.m2/repository"
         NPM_CACHE = "${WORKSPACE}/.npm"
-        TRIVY_CACHE = "${WORKSPACE}/.cache/trivy"
     }
 
     tools {
@@ -233,7 +232,7 @@ pipeline {
                         # Scan Main Image
                         docker run --rm \
                           -v /var/run/docker.sock:/var/run/docker.sock \
-                          -v ${TRIVY_CACHE}:/root/.cache/ \
+                          -v ${WORKSPACE}/.cache/trivy-user:/root/.cache/ \
                           -v \$(pwd)/.trivyignore:/.trivyignore \
                           ${TRIVY_IMAGE} image \
                           --severity HIGH,CRITICAL \
@@ -258,7 +257,7 @@ pipeline {
                         # Scan Main Image
                         docker run --rm \
                           -v /var/run/docker.sock:/var/run/docker.sock \
-                          -v ${TRIVY_CACHE}:/root/.cache/ \
+                          -v ${WORKSPACE}/.cache/trivy-product:/root/.cache/ \
                           -v \$(pwd)/.trivyignore:/.trivyignore \
                           ${TRIVY_IMAGE} image \
                           --severity HIGH,CRITICAL \
@@ -283,7 +282,7 @@ pipeline {
                         # Scan Main Image
                         docker run --rm \
                           -v /var/run/docker.sock:/var/run/docker.sock \
-                          -v ${TRIVY_CACHE}:/root/.cache/ \
+                          -v ${WORKSPACE}/.cache/trivy-frontend:/root/.cache/ \
                           -v \$(pwd)/.trivyignore:/.trivyignore \
                           ${TRIVY_IMAGE} image \
                           --severity HIGH,CRITICAL \
@@ -325,7 +324,7 @@ pipeline {
 
                 docker run --rm \
                   -v \$(pwd):/catalogix \
-                  -v ${TRIVY_CACHE}:/root/.cache/ \
+                  -v ${WORKSPACE}/.cache/trivy-helm:/root/.cache/ \
                   ${TRIVY_IMAGE} config \
                   --severity HIGH,CRITICAL --exit-code 1 \
                   --ignorefile /catalogix/.trivyignore \
