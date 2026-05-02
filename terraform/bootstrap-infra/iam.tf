@@ -176,7 +176,7 @@ resource "aws_iam_role_policy_attachment" "jenkins_asg" {
 
 # Custom policy for Jenkins to manage EKS and ECR
 resource "aws_iam_policy" "jenkins_eks_ecr" {
-  name        = "${var.cluster_name}-jenkins-eks-ecr-policy"
+  name        = "${var.ec2_name}-jenkins-eks-ecr-policy"
   description = "EKS cluster management and ECR push/pull for Jenkins"
 
   policy = jsonencode({
@@ -217,6 +217,26 @@ resource "aws_iam_policy" "jenkins_eks_ecr" {
         Resource = "*"
       },
       {
+        # platform-infra creates aws_eks_access_entry and
+        # aws_eks_access_policy_association resources. These API calls are
+        # separate from the core EKS cluster actions above and must be
+        # explicitly granted — they are NOT included in any AWS managed policy.
+        Sid    = "EKSAccessEntryManagement"
+        Effect = "Allow"
+        Action = [
+          "eks:CreateAccessEntry",
+          "eks:DeleteAccessEntry",
+          "eks:DescribeAccessEntry",
+          "eks:UpdateAccessEntry",
+          "eks:ListAccessEntries",
+          "eks:AssociateAccessPolicy",
+          "eks:DisassociateAccessPolicy",
+          "eks:ListAssociatedAccessPolicies",
+          "eks:ListAccessPolicies"
+        ]
+        Resource = "*"
+      },
+      {
         Sid    = "ECRLogin"
         Effect = "Allow"
         Action = ["ecr:GetAuthorizationToken"]
@@ -253,6 +273,49 @@ resource "aws_iam_policy" "jenkins_eks_ecr" {
 resource "aws_iam_role_policy_attachment" "jenkins_eks_ecr" {
   role       = aws_iam_role.jenkins_ec2_role.name
   policy_arn = aws_iam_policy.jenkins_eks_ecr.arn
+}
+
+# KMS policy — required because platform-infra creates aws_kms_key.eks for
+# EKS secrets encryption. Without these actions, terraform apply in
+# platform-infra fails with AccessDeniedException on the KMS API calls.
+resource "aws_iam_policy" "jenkins_kms" {
+  name        = "${var.ec2_name}-jenkins-kms-policy"
+  description = "KMS key lifecycle management for EKS secrets encryption key"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "KMSKeyManagement"
+        Effect = "Allow"
+        Action = [
+          "kms:CreateKey",
+          "kms:DescribeKey",
+          "kms:GetKeyPolicy",
+          "kms:GetKeyRotationStatus",
+          "kms:ListResourceTags",
+          "kms:ScheduleKeyDeletion",
+          "kms:CancelKeyDeletion",
+          "kms:EnableKeyRotation",
+          "kms:DisableKeyRotation",
+          "kms:PutKeyPolicy",
+          "kms:TagResource",
+          "kms:UntagResource",
+          "kms:ListKeys",
+          "kms:ListAliases",
+          "kms:CreateAlias",
+          "kms:DeleteAlias",
+          "kms:UpdateAlias"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "jenkins_kms" {
+  role       = aws_iam_role.jenkins_ec2_role.name
+  policy_arn = aws_iam_policy.jenkins_kms.arn
 }
 
 # Custom policy for Jenkins to manage IAM
@@ -303,7 +366,10 @@ resource "aws_iam_policy" "jenkins_iam" {
           "iam:TagPolicy",
           "iam:UntagPolicy"
         ]
-        Resource = "arn:aws:iam::*:policy/${var.ec2_name}-*"
+        Resource = [ 
+          "arn:aws:iam::*:policy/${var.ec2_name}-*",
+          "arn:aws:iam::*:policy/${var.cluster_name}-*"
+        ]
       },
       {
         Sid    = "InstanceProfileManagement"
@@ -438,14 +504,13 @@ resource "aws_iam_role_policy_attachment" "jenkins_s3_ops" {
   policy_arn = aws_iam_policy.jenkins_s3_ops.arn
 }
 
-
+# Jenkns IAM instance profile
 resource "aws_iam_instance_profile" "jenkins_profile" {
   name = "${var.ec2_name}-jenkins-instance-profile"
   role = aws_iam_role.jenkins_ec2_role.name
 }
 
-# SonarQube IAM role
-# No policy attachments - SonarQube needs no AWS permission
+# SonarQube IAM role -- No policy attachments - SonarQube needs no AWS permission
 resource "aws_iam_role" "sonar_ec2_role" {
   name = "${var.ec2_name}-sonar-ec2-role"
 
@@ -459,8 +524,8 @@ resource "aws_iam_role" "sonar_ec2_role" {
   })
 }
 
+# SonarQube IAM instance profile
 resource "aws_iam_instance_profile" "sonar_profile" {
   name = "${var.ec2_name}-sonar-instance-profile"
   role = aws_iam_role.sonar_ec2_role.name
 }
-

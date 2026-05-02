@@ -9,11 +9,6 @@ variable "cluster_version" {
   default     = "1.32"
 }
 
-output "cluster_sg_id" {
-  description = "EKS cluster security group ID (AWS-managed) — passed to security-groups module for the Jenkins ingress rule"
-  value       = aws_eks_cluster.cluster.vpc_config[0].cluster_security_group_id
-}
-
 variable "private_subnets" {
   description = "List of private subnet IDs for EKS cluster"
   type        = list(string)
@@ -62,4 +57,9 @@ variable "aws_region" {
   description = "AWS region"
   type        = string
   default     = "ap-south-1"
+}
+
+variable "console_iam_arn" {
+  description = "IAM ARN granted EKS cluster-admin for console access. Passed as data.aws_caller_identity.current.arn from the calling module — automatically the identity running terraform apply."
+  type        = string
 }

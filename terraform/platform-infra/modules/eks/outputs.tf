@@ -19,7 +19,7 @@ output "oidc_provider_arn" {
   value       = aws_iam_openid_connect_provider.oidc_provider.arn
 }
 
-output "cluster_security_group_id" {
+output "cluster_sg_id" {
   description = "EKS cluster security group ID (AWS-managed) — passed to security-groups module for the Jenkins ingress rule"
   value       = aws_eks_cluster.cluster.vpc_config[0].cluster_security_group_id
 }

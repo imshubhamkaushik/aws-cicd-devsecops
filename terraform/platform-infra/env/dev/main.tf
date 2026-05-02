@@ -75,6 +75,10 @@ module "eks" {
 
   jenkins_role_arn  = data.terraform_remote_state.bootstrap.outputs.jenkins_role_arn
   jenkins_public_ip = data.terraform_remote_state.bootstrap.outputs.public_ip_jenkins
+
+  # Whoever runs terraform apply automatically gets console access.
+  # No variable or tfvars entry needed.
+  console_iam_arn = data.aws_caller_identity.current.arn
 }
 
 # EKS DATA (safe, resolves after creation)
