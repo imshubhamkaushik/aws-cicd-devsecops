@@ -372,47 +372,41 @@ pipeline {
             }
         }
 
-        // stage('Wait for Deployment Rollout') {
-        //     steps {
-        //         // Added --timeout=180s so the pipeline doesn't hang indefinitely
-        //         sh "kubectl rollout status deployment/frontend-svc -n ${K8S_NAMESPACE} --timeout=180s"
-        //         sh "kubectl rollout status deployment/user-svc -n ${K8S_NAMESPACE} --timeout=180s"
-        //         sh "kubectl rollout status deployment/product-svc -n ${K8S_NAMESPACE} --timeout=180s"
-        //     }
-        // }
-
         stage('Post-Deployment Verification') {
             steps {
                     sh """
                     set -e
 
-                    echo "=== Application Deployment ==="
-
+                    echo "===== Deployment Rollout Status ====="
                     echo ""
-                    echo "=== Deployment status ==="
+                    kubectl rollout status deployment/frontend-svc -n ${K8S_NAMESPACE} --timeout=300s
+                    kubectl rollout status deployment/user-svc -n ${K8S_NAMESPACE} --timeout=300s
+                    kubectl rollout status deployment/product-svc -n ${K8S_NAMESPACE} --timeout=300s
+
+                    echo "===== Application Deployment ====="
+                    echo ""
+
+                    echo "<---- Deployment status ---->"
                     kubectl get deployment -n ${K8S_NAMESPACE}
-
                     echo ""
-                    echo "=== Pod status ==="
+                    echo "<-- Pod status -->"
                     kubectl get pods -n ${K8S_NAMESPACE}
-
                     echo ""
-                    echo "=== Services ==="
+                    echo "<-- Services -->"
                     kubectl get svc -n ${K8S_NAMESPACE}
-
                     echo ""
-                    echo "=== Ingress ==="
+                    echo "<-- Ingress -->"
                     kubectl get ingress -n ${K8S_NAMESPACE}
 
                     echo ""
                     echo "===== Monitoring Deployment ====="
 
                     echo ""
-                    echo "=== Pod status ==="
+                    echo "<-- Pod status -->"
                     kubectl get pods -n monitoring
 
                     echo ""
-                    echo "=== Services ==="
+                    echo "<-- Services -->"
                     kubectl get svc -n monitoring
 
                     echo ""
@@ -424,7 +418,7 @@ pipeline {
 
     post {
         success {
-            echo "Deployment successful!!! — release ${IMAGE_TAG} is live."
+            echo "Deployment successful!!! — release ${K8S_NAMESPACE} with image tag ${IMAGE_TAG} is live."
         }
 
         failure {
