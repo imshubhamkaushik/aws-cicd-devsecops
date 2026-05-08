@@ -1,6 +1,6 @@
 import sys
 from pathlib import Path
-from utils.command import info, run_command
+from utils.command import info, error, run_command
 
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
@@ -25,22 +25,33 @@ def backend_bootstrap():
         run_command("terraform validate", cwd=BACKEND_BOOTSTRAP_DIR, env=env)
         run_command("terraform plan -out main.tfplan", cwd=BACKEND_BOOTSTRAP_DIR, env=env)
         
-        print("")
-        print("Performing Terraform plan review for backend-bootstrap...")    
-        run_command("terraform show main.tfplan", cwd=BACKEND_BOOTSTRAP_DIR, env=env)
-           
-        print("")
-        confirm = input("Proceed with Terraform apply for backend-bootstrap? (yes/no): ").strip().lower()
-    
-        if confirm not in ["yes", "y"]:
-            print("")
-            info("Backend bootstrap aborted.")
-            sys.exit(0)
+        # Check if apply is needed
+        exit_code = run_command(
+            "terraform plan -detailed-exitcode -out main.tfplan",
+            cwd=BACKEND_BOOTSTRAP_DIR,
+            env=env,
+            check=False
+        )
 
-        run_command("terraform apply main.tfplan", cwd=BACKEND_BOOTSTRAP_DIR, env=env)
-        
-        print("")
-        info("Backend Bootstrap Complete.")
+        if exit_code == 0:
+            info("No Terraform changes detected. Skipping apply.")
+            sys.exit(2)  # Signal to Jenkins: no changes, stage skipped
+        elif exit_code == 2:
+            print("\nTerraform changes detected:")
+            run_command("terraform show main.tfplan", cwd=BACKEND_BOOTSTRAP_DIR, env=env)
+
+            # Only ask for confirmation if changes exist
+            confirm = input("\nProceed with Terraform apply for backend-bootstrap? (yes/no): ").strip().lower()
+            if confirm not in ["yes", "y"]:
+                info("Backend bootstrap aborted by user.")
+                sys.exit(1)
+
+            run_command("terraform apply main.tfplan", cwd=BACKEND_BOOTSTRAP_DIR, env=env)
+            info("Backend Bootstrap Complete.")
+            sys.exit(0)
+        else:
+            error("Terraform plan failed!")
+            sys.exit(1)
 
     finally:
         if tfplan.exists():

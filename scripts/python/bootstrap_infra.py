@@ -24,23 +24,33 @@ def bootstrap_infra():
         run_command("terraform validate", cwd=BOOTSTRAP_INFRA_DIR, env=env)
         run_command("terraform plan -out main.tfplan", cwd=BOOTSTRAP_INFRA_DIR, env=env)
         
-        print("")
-        print("Performing Terraform plan review for bootstrap-infra...")
-        run_command("terraform show main.tfplan", cwd=BOOTSTRAP_INFRA_DIR, env=env)
-        
-        print("")
-        confirm = input("Proceed with Terraform apply for bootstrap-infra? (yes/no): ").strip().lower()
+        # Check if apply is needed
+        exit_code = run_command(
+            "terraform plan -detailed-exitcode -out main.tfplan",
+            cwd=BOOTSTRAP_INFRA_DIR,
+            env=env,
+            check=False
+        )
 
-        if confirm not in ["yes", "y"]:
-            info("Infra bootstrap aborted by user.")
+        if exit_code == 0:
+            info("No Terraform changes detected. Skipping apply.")
+            sys.exit(2)
+        elif exit_code == 2:
+            print("\nTerraform changes detected:")
+            run_command("terraform show main.tfplan", cwd=BOOTSTRAP_INFRA_DIR, env=env)
+
+            # Only ask for confirmation if changes exist
+            confirm = input("\nProceed with Terraform apply for bootstrap-infra? (yes/no): ").strip().lower()
+            if confirm not in ["yes", "y"]:
+                info("Bootstrap infra aborted by user.")
+                sys.exit(1)
+
+            run_command("terraform apply main.tfplan", cwd=BOOTSTRAP_INFRA_DIR, env=env)
+            info("Bootstrap Infrastructure Complete.")
             sys.exit(0)
-        
-        print("")
-        print("Performing Terraform apply...")
-        run_command("terraform apply main.tfplan", cwd=BOOTSTRAP_INFRA_DIR, env=env)
-        
-        print("")
-        info("Infrastructure Bootstrap Complete.")
+        else:
+            error("Terraform plan failed!")
+            sys.exit(1)
 
     finally:
         if tfplan.exists():
