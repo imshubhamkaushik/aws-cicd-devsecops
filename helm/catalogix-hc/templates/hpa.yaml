@@ -55,8 +55,8 @@ spec:
   metrics:
     - type: Resource
       resource:
-        name: memory
+        name: cpu
         target:
           type: Utilization
-          averageUtilization: {{ .Values.frontendSvc.hpa.memoryUtilization }}
+          averageUtilization: {{ .Values.frontendSvc.hpa.cpuUtilization }}
 {{- end }}

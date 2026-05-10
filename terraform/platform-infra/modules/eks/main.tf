@@ -312,6 +312,13 @@ resource "aws_eks_access_policy_association" "jenkins_admin_policy" {
 # }
 
 resource "null_resource" "aws_auth" {
+  triggers = {
+    # Re-apply the aws-auth ConfigMap whenever the node role ARN or cluster name changes. 
+    # Without triggers, a deleted/corrupted ConfigMap cannot be recovered by terraform apply — this resource is a no-op after first apply.
+    node_role_arn = aws_iam_role.node_role.arn
+    cluster_name  = aws_eks_cluster.cluster.name
+  }
+
   provisioner "local-exec" {
     command = <<EOF
 aws eks update-kubeconfig --region ${var.aws_region} --name ${var.cluster_name}

@@ -22,7 +22,6 @@ def bootstrap_infra():
         run_command("terraform init", cwd=BOOTSTRAP_INFRA_DIR, env=env)
         run_command("terraform fmt -check", cwd=BOOTSTRAP_INFRA_DIR, env=env)
         run_command("terraform validate", cwd=BOOTSTRAP_INFRA_DIR, env=env)
-        run_command("terraform plan -out main.tfplan", cwd=BOOTSTRAP_INFRA_DIR, env=env)
         
         # Check if apply is needed
         exit_code = run_command(
@@ -49,8 +48,7 @@ def bootstrap_infra():
             info("Bootstrap Infrastructure Complete.")
             sys.exit(0)
         else:
-            error("Terraform plan failed!")
-            sys.exit(1)
+            error(f"Terraform plan failed with exit code {exit_code}! Check output above!")
 
     finally:
         if tfplan.exists():

@@ -3,7 +3,9 @@
 # Tool versions are defined in ansible/group_vars/all.yaml for single-source control and easy maintenance. 
 # Ensure that the EC2 instances have access to the internet to download these tools
 
+# -----------------------------
 # AWS CLI
+# -----------------------------
 - name: Check AWS CLI installation
   command: aws --version
   register: aws_cli_check
@@ -28,7 +30,9 @@
   command: /tmp/aws/install
   when: aws_cli_check.rc != 0
 
+# ------------------------------
 # Kubernetes CLI (kubectl)
+# ------------------------------
 - name: Check kubectl version
   command: kubectl version --client --output=json
   register: kubectl_check
@@ -43,7 +47,9 @@
     force: true
   when: kubectl_version not in (kubectl_check.stdout | default(''))
 
+# -----------------------------
 # Helm
+# -----------------------------
 - name: Check Helm version
   command: helm version --short
   register: helm_check
@@ -78,7 +84,9 @@
     remote_src: yes
   when: helm_version not in (helm_check.stdout | default(''))
 
+# -----------------------------
 # Trivy
+# -----------------------------
 - name: Check Trivy version
   command: trivy --version
   register: trivy_check
@@ -96,3 +104,58 @@
   apt:
     deb: /tmp/trivy.deb
   when: trivy_version not in (trivy_check.stdout | default(''))
+
+# -----------------------------
+# Install Terraform
+# -----------------------------
+- name: Check if HashiCorp GPG keyring already exists
+  stat:
+    path: /usr/share/keyrings/hashicorp-archive-keyring.gpg
+  register: hashicorp_key_check
+
+- name: Fetch HashiCorp GPG key
+  shell: |
+    set -e
+    GNUPGHOME="$(mktemp -d)"
+    trap "rm -rf $GNUPGHOME" EXIT
+
+    curl -fsSL https://apt.releases.hashicorp.com/gpg \
+      | gpg --homedir "$GNUPGHOME" --batch --import
+
+    gpg --homedir "$GNUPGHOME" --batch \
+      --export \
+      > /tmp/hashicorp-keyring-new.gpg
+
+    test -s /tmp/hashicorp-keyring-new.gpg \
+      || { echo "ERROR: exported keyring is empty"; exit 1; }
+
+    if ! diff -q /tmp/hashicorp-keyring-new.gpg \
+         /usr/share/keyrings/hashicorp-archive-keyring.gpg &>/dev/null; then
+      cp /tmp/hashicorp-keyring-new.gpg /usr/share/keyrings/hashicorp-archive-keyring.gpg
+      echo "KEY_UPDATED"
+    fi
+  register: hashicorp_gpg_result
+  changed_when: "'KEY_UPDATED' in hashicorp_gpg_result.stdout"
+  when: not hashicorp_key_check.stat.exists
+
+- name: Fix HashiCorp key permissions
+  file:
+    path: /usr/share/keyrings/hashicorp-archive-keyring.gpg
+    mode: "0644"
+
+- name: Add HashiCorp apt repository
+  apt_repository:
+    repo: "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg arch=amd64] https://apt.releases.hashicorp.com {{ ansible_distribution_release }} main"
+    state: present
+    filename: hashicorp
+    update_cache: no
+
+- name: Update apt cache for HashiCorp repo
+  apt:
+    update_cache: yes
+    cache_valid_time: 3600
+
+- name: Install Terraform
+  apt:
+    name: terraform
+    state: present

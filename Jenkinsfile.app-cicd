@@ -108,10 +108,25 @@ pipeline {
                     aws sts get-caller-identity || true
 
                     echo "=== Regenerating kubeconfig ==="
-                    aws eks update-kubeconfig \
-                        --region ${AWS_REGION} \
-                        --name ${CLUSTER_NAME} \
-                        --kubeconfig ${KUBECONFIG}
+                    # Retry up to 5 times with 10s backoff — transient EKS API
+                    # hiccups are common immediately after cluster operations.
+                    SUCCESS=0
+                    for i in 1 2 3 4 5; do
+                        if aws eks update-kubeconfig \
+                            --region ${AWS_REGION} \
+                            --name ${CLUSTER_NAME} \
+                            --kubeconfig ${KUBECONFIG}; then
+                            SUCCESS=1
+                            break
+                        fi
+                        echo "Attempt \$i failed — retrying in 10s..."
+                        sleep 10
+                    done
+ 
+                    if [ "\$SUCCESS" -ne 1 ]; then
+                        echo "ERROR: Failed to generate kubeconfig after 5 attempts"
+                        exit 1
+                    fi
                     
                     chmod 600 ${KUBECONFIG}
 
@@ -312,11 +327,49 @@ pipeline {
 
         stage('Push Docker Images to Amazon ECR') {
             parallel {
-                stage('Push User Service') { steps { sh "docker push ${USER_SVC_IMAGE}" } }
+                stage('Push User Service') {
+                    steps {
+                        sh """
+                        set -e
+                        # Retry up to 3 times with 15s backoff — guards against
+                        # transient ECR throttling or network blips on push.
+                        for i in 1 2 3; do
+                            docker push ${USER_SVC_IMAGE} && break
+                            echo "Push attempt \$i failed — retrying in 15s..."
+                            [ \$i -eq 3 ] && exit 1
+                            sleep 15
+                        done
+                        """
+                    }
+                }
                 
-                stage('Push Product Service') { steps { sh "docker push ${PRODUCT_SVC_IMAGE}" } }
+                stage('Push Product Service') {
+                    steps {
+                        sh """
+                        set -e
+                        for i in 1 2 3; do
+                            docker push ${PRODUCT_SVC_IMAGE} && break
+                            echo "Push attempt \$i failed — retrying in 15s..."
+                            [ \$i -eq 3 ] && exit 1
+                            sleep 15
+                        done
+                        """
+                    }
+                }
                 
-                stage('Push Frontend Service') { steps { sh "docker push ${FRONTEND_SVC_IMAGE}" } }
+                stage('Push Frontend Service') {
+                    steps {
+                        sh """
+                        set -e
+                        for i in 1 2 3; do
+                            docker push ${FRONTEND_SVC_IMAGE} && break
+                            echo "Push attempt \$i failed — retrying in 15s..."
+                            [ \$i -eq 3 ] && exit 1
+                            sleep 15
+                        done
+                        """
+                    }
+                }
             }
         }
 
@@ -441,6 +494,7 @@ pipeline {
 
             # Find the last revision with DEPLOYED status — that is the last good release.
             # If no deployed revision exists (first ever deploy failed), skip rollback.
+            
             LAST_GOOD=\$(helm history catalogix \\
                 --namespace ${K8S_NAMESPACE} \\
                 --output json 2>/dev/null \\
@@ -450,10 +504,24 @@ pipeline {
                 echo "No previously deployed revision found — skipping rollback."
             else
                 echo "Rolling back to revision \$LAST_GOOD..."
-                helm rollback catalogix "\$LAST_GOOD" --namespace ${K8S_NAMESPACE} || true
+                
+                if ! helm rollback catalogix "\$LAST_GOOD" --namespace ${K8S_NAMESPACE}; then
+                    echo "========================================================="
+                    echo "  ROLLBACK FAILED — manual intervention required"
+                    echo "  Cluster may be in a partially broken state."
+                    echo "  Revision targeted: \$LAST_GOOD"
+                    echo "========================================================="
+                    echo "=== Current Helm release state ==="
+                    helm status catalogix --namespace ${K8S_NAMESPACE} || true
+                    echo "=== Pod state ==="
+                    kubectl get pods -n ${K8S_NAMESPACE} -o wide || true
+                    exit 1
+                fi
+                echo "Rollback to revision \$LAST_GOOD successful."
             fi
             """ 
         }
+
         always {
             // Clean up local Docker images after every build to prevent the Jenkins agent disk from filling up over time
             sh "docker system prune -f || true"

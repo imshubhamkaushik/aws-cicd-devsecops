@@ -40,7 +40,7 @@ frontendSvc:
   hpa:
     minReplicas: 2
     maxReplicas: 4
-    memoryUtilization: 75
+    cpuUtilization: 75
 
 userSvc:
   image:

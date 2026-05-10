@@ -2,19 +2,23 @@ variable "name" {
   description = "Base name for all resources"
   type        = string
 }
+
 variable "db_name" {
   description = "Name of the database to create"
   type        = string
 }
+
 variable "username" {
   description = "Master username for the database"
   type        = string
 }
+
 variable "password" {
   description = "Master password for the database"
   type        = string
   sensitive   = true
 }
+
 variable "private_subnets" {
   description = "List of private subnet IDs for the RDS instance"
   type        = list(string)
@@ -31,7 +35,11 @@ variable "ssm_parameter_path" {
 }
 
 variable "backup_retention_period" {
-  description = "Days to retain automated backups. Set to 0 to disable (required on free tier accounts)."
+  description = <<-EOT
+    Days to retain automated backups (0-35).
+    Set to 0 to disable — required on AWS free-tier accounts.
+    No default: every environment must set this explicitly.
+    dev/test: 0  |  staging: 3  |  production: 7+
+  EOT
   type        = number
-  default     = 7
 }

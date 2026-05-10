@@ -23,7 +23,6 @@ def backend_bootstrap():
         run_command("terraform init", cwd=BACKEND_BOOTSTRAP_DIR, env=env)
         run_command("terraform fmt -check", cwd=BACKEND_BOOTSTRAP_DIR, env=env)
         run_command("terraform validate", cwd=BACKEND_BOOTSTRAP_DIR, env=env)
-        run_command("terraform plan -out main.tfplan", cwd=BACKEND_BOOTSTRAP_DIR, env=env)
         
         # Check if apply is needed
         exit_code = run_command(
@@ -32,10 +31,14 @@ def backend_bootstrap():
             env=env,
             check=False
         )
+        
+        # exit_code == 0  → no changes, skip apply
+        # exit_code == 2  → changes detected, show plan, ask for confirmation, apply
+        # anything else   → plan itself failed (bad config, auth error), call error()
 
         if exit_code == 0:
             info("No Terraform changes detected. Skipping apply.")
-            sys.exit(2)  # Signal to Jenkins: no changes, stage skipped
+            sys.exit(2)
         elif exit_code == 2:
             print("\nTerraform changes detected:")
             run_command("terraform show main.tfplan", cwd=BACKEND_BOOTSTRAP_DIR, env=env)
@@ -50,8 +53,7 @@ def backend_bootstrap():
             info("Backend Bootstrap Complete.")
             sys.exit(0)
         else:
-            error("Terraform plan failed!")
-            sys.exit(1)
+            error(f"Terraform plan failed with exit code {exit_code}! Check output above!")
 
     finally:
         if tfplan.exists():
