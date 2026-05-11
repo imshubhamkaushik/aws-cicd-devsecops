@@ -161,8 +161,6 @@ def _setup_vault_file():
     secrets = {
         "vault_jenkins_admin_password": _prompt_secret("Jenkins admin password"),
         "vault_github_token":           _prompt_secret("GitHub personal access token"),
-        "vault_aws_access_key_id":      _prompt_secret("AWS access key ID"),
-        "vault_aws_secret_access_key":  _prompt_secret("AWS secret access key"),
         "vault_sonar_admin_password":   _prompt_secret("SonarQube admin password"),
         # Populated automatically by the sonarqube role on first run
         "vault_sonar_token":            "",
