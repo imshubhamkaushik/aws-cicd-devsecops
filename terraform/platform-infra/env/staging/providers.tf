@@ -1,7 +1,7 @@
 terraform {
   backend "s3" {
     bucket       = "catalogix-tfstate"
-    key          = "platform-infra/dev/terraform.tfstate"
+    key          = "platform-infra/staging/terraform.tfstate"
     region       = "ap-south-1"
     encrypt      = true
     use_lockfile = true
@@ -25,11 +25,13 @@ provider "aws" {
     tags = {
       Project     = "Catalogix"
       ManagedBy   = "Terraform"
-      Environment = "dev"
+      Environment = "staging"
     }
   }
 }
 
+# Kubernetes and Helm providers are aliased so they only resolve
+# after module.eks is created and the cluster endpoint is known.
 provider "kubernetes" {
   alias                  = "after_eks"
   host                   = data.aws_eks_cluster.this.endpoint
@@ -53,6 +55,4 @@ provider "helm" {
       args        = ["eks", "get-token", "--cluster-name", data.aws_eks_cluster.this.name]
     }
   }
-
-  alias = "after_eks"
 }

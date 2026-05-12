@@ -1,9 +1,47 @@
-Catalogix microservices successfully deployed!
+Catalogix successfully deployed to {{ .Release.Namespace }}.
 
-To access services inside the cluster:
-  kubectl get pods
-  kubectl get svc
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  VERIFY PODS ARE RUNNING
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  kubectl get pods -n {{ .Release.Namespace }}
 
-Example (port-forward for local testing):
-  kubectl port-forward svc/user-svc 8081:8081
-  kubectl port-forward svc/product-svc 8082:8082
+All three pods (frontend-svc, user-svc, product-svc) should show STATUS: Running.
+If a pod is in CrashLoopBackOff, check logs:
+  kubectl logs -n {{ .Release.Namespace }} <pod-name> --previous
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  CHECK SERVICES AND INGRESS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  kubectl get svc -n {{ .Release.Namespace }}
+  kubectl get ingress -n {{ .Release.Namespace }}
+
+The ALB hostname appears under ADDRESS in the ingress output.
+It can take 2–3 minutes for the ALB to become active after first deploy.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  HEALTH ENDPOINTS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  user-svc    →  http://<ALB>/users/actuator/health
+  product-svc →  http://<ALB>/products/actuator/health
+  frontend    →  http://<ALB>/
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  LOCAL PORT-FORWARD (without ALB)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  kubectl port-forward svc/user-svc     8081:8081 -n {{ .Release.Namespace }}
+  kubectl port-forward svc/product-svc  8082:8082 -n {{ .Release.Namespace }}
+  kubectl port-forward svc/frontend-svc 8080:80   -n {{ .Release.Namespace }}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  CHECK SECRETS SYNC (External Secrets Operator)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  kubectl get externalsecret -n {{ .Release.Namespace }}
+  kubectl get secret catalogix-secrets -n {{ .Release.Namespace }}
+
+STATUS should show Ready=True. If not, ESO has not synced yet — wait 30s and retry.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  ROLLBACK THIS RELEASE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  helm history catalogix-hc -n {{ .Release.Namespace }}
+  helm rollback catalogix-hc <REVISION> -n {{ .Release.Namespace }}

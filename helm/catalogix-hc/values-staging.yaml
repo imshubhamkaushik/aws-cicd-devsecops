@@ -1,0 +1,100 @@
+global:
+  imageRegistry: ""
+  imageTag: "1.0-0"  # overridden by the CI pipeline at deploy time via --set global.imageTag=...
+  cloudProvider: "aws"
+
+database:
+  host: ""  # injected by Jenkins at deploy time from SSM Parameter Store
+  port: 5432
+  name: "catalogix"
+  username: "catalogix"  # must match local.db_username in staging main.tf
+
+# DB password is NOT stored here.
+# ExternalSecret pulls it from Secrets Manager into the 'catalogix-secrets' K8s Secret.
+secretsManager:
+  secretName: "catalogix-staging/db-credentials"  # staging-specific secret path
+
+ingress:
+  enabled: true
+  host: ""  # set to your staging ALB hostname or Route53 record
+  paths:
+    frontend: /
+    users: /users
+    products: /products
+
+frontendSvc:
+  image:
+    repository: "frontend-svc"
+    pullPolicy: "IfNotPresent"
+  replicaCount: 2
+  service:
+    type: "ClusterIP"
+    port: 80
+  resources:
+    # Staging: same requests as dev, slightly higher limits for load testing
+    requests:
+      cpu: "50m"
+      memory: "64Mi"
+    limits:
+      cpu: "300m"
+      memory: "256Mi"
+  hpa:
+    minReplicas: 2
+    maxReplicas: 4
+    cpuUtilization: 75
+
+userSvc:
+  image:
+    repository: "user-svc"
+    pullPolicy: "IfNotPresent"
+  replicaCount: 2
+  service:
+    port: 8081
+    targetPort: 8081
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "128Mi"
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
+  env:
+    # DEV ONLY pattern — restrict to ALB/Route53 hostname in staging and prod
+    ALLOWED_ORIGINS: "*"
+  hpa:
+    minReplicas: 2
+    maxReplicas: 4
+    cpuUtilization: 75
+
+productSvc:
+  image:
+    repository: "product-svc"
+    pullPolicy: "IfNotPresent"
+  replicaCount: 2
+  service:
+    port: 8082
+    targetPort: 8082
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "128Mi"
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
+  env:
+    # DEV ONLY pattern — restrict to ALB/Route53 hostname in staging and prod
+    ALLOWED_ORIGINS: "*"
+  hpa:
+    minReplicas: 2
+    maxReplicas: 4
+    cpuUtilization: 75
+
+hpa:
+  enabled: true
+
+monitoring:
+  enabled: true
+
+aws:
+  accountId: ""
+  region: "ap-south-1"

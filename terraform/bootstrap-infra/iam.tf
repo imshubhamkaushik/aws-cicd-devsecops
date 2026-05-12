@@ -366,7 +366,7 @@ resource "aws_iam_policy" "jenkins_iam" {
           "iam:TagPolicy",
           "iam:UntagPolicy"
         ]
-        Resource = [ 
+        Resource = [
           "arn:aws:iam::*:policy/${var.ec2_name}-*",
           "arn:aws:iam::*:policy/${var.cluster_name}-*"
         ]
