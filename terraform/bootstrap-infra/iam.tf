@@ -344,8 +344,7 @@ resource "aws_iam_policy" "jenkins_iam" {
           "iam:PutRolePolicy",
           "iam:DeleteRolePolicy",
           "iam:GetRolePolicy",
-          "iam:PassRole",
-          "iam:CreateServiceLinkedRole"
+          "iam:PassRole"
         ]
         Resource = [
           "arn:aws:iam::*:role/${var.ec2_name}-*",
@@ -401,9 +400,9 @@ resource "aws_iam_policy" "jenkins_iam" {
         Resource = "*"
       },
       {
-        Sid    = "ServiceLinkedRoleForEKS"
-        Effect = "Allow"
-        Action = ["iam:CreateServiceLinkedRole"]
+        Sid      = "ServiceLinkedRoleForEKS"
+        Effect   = "Allow"
+        Action   = ["iam:CreateServiceLinkedRole"]
         Resource = "arn:aws:iam::*:role/aws-service-role/eks.amazonaws.com/*"
         Condition = {
           StringEquals = {
