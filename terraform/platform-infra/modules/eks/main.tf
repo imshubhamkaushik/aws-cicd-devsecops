@@ -154,12 +154,12 @@ resource "aws_eks_node_group" "node_group" {
 }
 
 # EKS Add-ons — pinned versions so upgrades are deliberate, not silent.
-# To find latest versions: aws eks describe-addon-versions --kubernetes-version 1.32
+# To find latest versions: aws eks describe-addon-versions --kubernetes-version 1.35
 # VPC CNI
 resource "aws_eks_addon" "vpc_cni" {
   cluster_name                = aws_eks_cluster.cluster.name
   addon_name                  = "vpc-cni"
-  addon_version               = "v1.19.2-eksbuild.5"
+  addon_version               = "v1.21.1-eksbuild.8"
   resolve_conflicts_on_update = "OVERWRITE"
 
   depends_on = [aws_eks_node_group.node_group]
@@ -169,7 +169,7 @@ resource "aws_eks_addon" "vpc_cni" {
 resource "aws_eks_addon" "coredns" {
   cluster_name                = aws_eks_cluster.cluster.name
   addon_name                  = "coredns"
-  addon_version               = "v1.11.4-eksbuild.2"
+  addon_version               = "v1.14.2-eksbuild.4"
   resolve_conflicts_on_update = "OVERWRITE"
 
   depends_on = [aws_eks_node_group.node_group]
@@ -179,7 +179,7 @@ resource "aws_eks_addon" "coredns" {
 resource "aws_eks_addon" "kube_proxy" {
   cluster_name                = aws_eks_cluster.cluster.name
   addon_name                  = "kube-proxy"
-  addon_version               = "v1.32.0-eksbuild.2"
+  addon_version               = "v1.35.3-eksbuild.5"
   resolve_conflicts_on_update = "OVERWRITE"
 
   depends_on = [aws_eks_node_group.node_group]
