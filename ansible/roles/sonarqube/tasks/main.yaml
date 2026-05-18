@@ -166,7 +166,7 @@
     - sonar_token is defined
   vars:
     vault_file: "{{ playbook_dir }}/group_vars/all/vault.yaml"
-    vault_pass: "{{ playbook_dir }}/../.vault_pass"
+    vault_pass: "{{ lookup('env', 'HOME') }}/.vault_pass"
   block:
 
     - name: Decrypt vault file
