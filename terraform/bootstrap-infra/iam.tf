@@ -29,7 +29,8 @@ resource "aws_iam_policy" "jenkins_ec2_vpc" {
           "ec2:AuthorizeSecurityGroupEgress", "ec2:RevokeSecurityGroupEgress",
           "ec2:UpdateSecurityGroupRuleDescriptionsIngress",
           "ec2:UpdateSecurityGroupRuleDescriptionsEgress",
-          "ec2:ModifySecurityGroupRules"
+          "ec2:ModifySecurityGroupRules",
+          "ec2:DescribeNetworkInterfaces"
         ]
         Resource = "*"
       },
@@ -382,10 +383,22 @@ resource "aws_iam_policy" "jenkins_iam" {
           "iam:AddRoleToInstanceProfile",
           "iam:RemoveRoleFromInstanceProfile",
           "iam:ListInstanceProfiles",
-          "iam:ListInstanceProfilesForRole",
           "iam:TagInstanceProfile"
         ]
         Resource = "arn:aws:iam::*:instance-profile/${var.ec2_name}-*"
+      },
+      {
+        # iam:ListInstanceProfilesForRole operates on a role ARN, not an
+        # instance-profile ARN, so it must be in its own statement with
+        # role/* resources. Placing it under instance-profile/* causes a
+        # 403 AccessDenied when Terraform destroys EKS node/addon roles.
+        Sid    = "ListInstanceProfilesForRole"
+        Effect = "Allow"
+        Action = ["iam:ListInstanceProfilesForRole"]
+        Resource = [
+          "arn:aws:iam::*:role/${var.ec2_name}-*",
+          "arn:aws:iam::*:role/${var.cluster_name}-*"
+        ]
       },
       {
         Sid    = "OIDCProviderManagement"
