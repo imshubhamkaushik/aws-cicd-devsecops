@@ -336,6 +336,7 @@ resource "aws_iam_policy" "jenkins_iam" {
           "iam:DeleteRole",
           "iam:GetRole",
           "iam:UpdateRole",
+          "iam:UpdateAssumeRolePolicy",
           "iam:TagRole",
           "iam:UntagRole",
           "iam:ListRoleTags",
