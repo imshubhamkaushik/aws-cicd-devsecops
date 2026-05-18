@@ -287,16 +287,14 @@ All bootstrap steps are orchestrated by a Python CLI at `scripts/python/bootstra
  
 ```
 scripts/
-├── python/
-│   ├── bootstrap.py          # CLI entry point — subcommand routing, dependency check, AWS auth check
-│   ├── backend_bootstrap.py  # Terraform backend-bootstrap orchestration
-│   ├── bootstrap_infra.py    # Terraform bootstrap-infra orchestration + EC2 health polling
-│   ├── ansible.py            # Vault setup + ansible-playbook execution
-│   └── utils/
-│       └── command.py        # run_command() — retry logic, friendly error messages, streaming output
-└── bash/
-    ├── backend-bootstrap.sh  # Bash equivalent (simpler, no vault management)
-    └── bootstrap-infra.sh    # Bash equivalent
+└── python/
+    ├── bootstrap.py          # CLI entry point — subcommand routing, dependency check, AWS auth check
+    ├── backend_bootstrap.py  # Terraform backend-bootstrap orchestration
+    ├── bootstrap_infra.py    # Terraform bootstrap-infra orchestration + EC2 health polling
+    ├── ansible.py            # Vault setup + ansible-playbook execution
+    └── utils/
+        └── command.py        # run_command() — retry logic, friendly error messages, streaming output
+
 ```
  
 ### What the CLI handles
@@ -333,7 +331,7 @@ This allows re-running individual phases without repeating the entire flow — u
  
 ### Why Python over Bash
  
-The bash scripts (`scripts/bash/`) are also included. They are simpler and do the same core job. The Python CLI was written to solve problems the bash scripts do not handle:
+The bash scripts are simpler and do the same core job. The Python CLI was written to solve problems the bash scripts do not handle:
  
 - Bash has no structured vault management — the bash script passes `--vault-password-file` but does not create or validate the file
 - Bash has no dependency auto-install — it checks and exits, requiring manual intervention

@@ -38,7 +38,7 @@ def backend_bootstrap():
 
         if exit_code == 0:
             info("No Terraform changes detected. Skipping apply.")
-            sys.exit(2)
+            return
         elif exit_code == 2:
             print("\nTerraform changes detected:")
             run_command("terraform show main.tfplan", cwd=BACKEND_BOOTSTRAP_DIR, env=env)
@@ -51,7 +51,7 @@ def backend_bootstrap():
 
             run_command("terraform apply main.tfplan", cwd=BACKEND_BOOTSTRAP_DIR, env=env)
             info("Backend Bootstrap Complete.")
-            sys.exit(0)
+            return
         else:
             error(f"Terraform plan failed with exit code {exit_code}! Check output above!")
 

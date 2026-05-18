@@ -33,7 +33,7 @@ def bootstrap_infra():
 
         if exit_code == 0:
             info("No Terraform changes detected. Skipping apply.")
-            sys.exit(2)
+            return
         elif exit_code == 2:
             print("\nTerraform changes detected:")
             run_command("terraform show main.tfplan", cwd=BOOTSTRAP_INFRA_DIR, env=env)
@@ -42,7 +42,7 @@ def bootstrap_infra():
             confirm = input("\nProceed with Terraform apply for bootstrap-infra? (yes/no): ").strip().lower()
             if confirm not in ["yes", "y"]:
                 info("Bootstrap infra aborted by user.")
-                sys.exit(1)
+                return
 
             run_command("terraform apply main.tfplan", cwd=BOOTSTRAP_INFRA_DIR, env=env)
             info("Bootstrap Infrastructure Complete.")
