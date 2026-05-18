@@ -372,8 +372,7 @@ resource "aws_iam_policy" "jenkins_iam" {
         ]
         Resource = [
           "arn:aws:iam::*:policy/${var.ec2_name}-*",
-          "arn:aws:iam::*:policy/${var.cluster_name}-*",
-          "arn:aws:iam::*:policy/aws-service-role/*"
+          "arn:aws:iam::*:policy/${var.cluster_name}-*"
         ]
       },
       {
@@ -402,6 +401,16 @@ resource "aws_iam_policy" "jenkins_iam" {
           "arn:aws:iam::*:role/${var.ec2_name}-*",
           "arn:aws:iam::*:role/${var.cluster_name}-*"
         ]
+      },
+      {
+        # EKS calls iam:GetRole on AWSServiceRoleForAmazonEKSNodegroup to check
+        # if the SLR already exists before creating it. Scoping to
+        # aws-service-role/* is insufficient — AWS requires Resource "*" for
+        # this SLR existence check to pass.
+        Sid      = "SLRDescribe"
+        Effect   = "Allow"
+        Action   = ["iam:GetRole"]
+        Resource = "*"
       },
       {
         Sid    = "OIDCProviderManagement"
