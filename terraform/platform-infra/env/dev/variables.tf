@@ -7,7 +7,7 @@ variable "aws_region" {
 variable "cluster_name" {
   description = "Logical name of the cluster — used as a prefix for all resources and tags"
   type        = string
-  default     = "catalogix"
+  default     = "catalogix-cluster"
 }
 
 variable "environment" {
