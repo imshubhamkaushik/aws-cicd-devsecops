@@ -431,8 +431,7 @@ resource "aws_iam_policy" "jenkins_iam" {
         Effect = "Allow"
         Action = ["iam:GetRole"]
         Resource = [
-          "arn:aws:iam::*:role/aws-service-role/eks.amazonaws.com/*",
-          "arn:aws:iam::*:role/aws-service-role/eks-nodegroup.amazonaws.com/*"
+          "arn:aws:iam::*:role/aws-service-role/*"
         ]
       }
     ]
