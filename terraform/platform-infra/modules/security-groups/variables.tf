@@ -16,3 +16,8 @@ variable "eks_cluster_sg_id" {
   description = "EKS cluster SG ID (AWS-managed) — target for the Jenkins ingress rule"
   type        = string
 }
+
+variable "project_name" {
+  description = "Project name prefix"
+  type        = string
+}

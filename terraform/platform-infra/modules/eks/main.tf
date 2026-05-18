@@ -292,6 +292,28 @@ resource "aws_eks_access_policy_association" "jenkins_admin_policy" {
   ]
 }
 
+resource "aws_eks_access_entry" "console_admin" {
+  count         = var.console_iam_arn != var.jenkins_role_arn ? 1 : 0
+  cluster_name  = aws_eks_cluster.cluster.name
+  principal_arn = var.console_iam_arn
+  type          = "STANDARD"
+
+  depends_on = [aws_eks_cluster.cluster]
+}
+
+resource "aws_eks_access_policy_association" "console_admin_policy" {
+  count         = var.console_iam_arn != var.jenkins_role_arn ? 1 : 0
+  cluster_name  = aws_eks_cluster.cluster.name
+  principal_arn = var.console_iam_arn
+  policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+
+  access_scope {
+    type = "cluster"
+  }
+
+  depends_on = [aws_eks_access_entry.console_admin]
+}
+
 # resource "kubernetes_config_map_v1" "aws_auth" {
 #   metadata {
 #     name      = "aws-auth"
@@ -311,8 +333,8 @@ resource "aws_eks_access_policy_association" "jenkins_admin_policy" {
 #   depends_on = [aws_eks_node_group.node_group]
 # }
 
-resource "null_resource" "aws_auth" {
-  triggers = {
+resource "terraform_data" "aws_auth" {
+  triggers_replace = {
     # Re-apply the aws-auth ConfigMap whenever the node role ARN or cluster name changes. 
     # Without triggers, a deleted/corrupted ConfigMap cannot be recovered by terraform apply — this resource is a no-op after first apply.
     node_role_arn = aws_iam_role.node_role.arn

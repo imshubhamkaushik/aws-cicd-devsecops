@@ -55,6 +55,7 @@ locals {
 # Security Groups
 module "sg" {
   source   = "../../modules/security-groups"
+  project_name = local.env_prefix
   vpc_id   = local.vpc_id
   vpc_cidr = local.vpc_cidr
 
@@ -69,7 +70,7 @@ module "eks" {
   source = "../../modules/eks"
 
   cluster_name    = local.env_prefix
-  cluster_version = "1.32"
+  cluster_version = "1.35"
   private_subnets = local.private_subnets
 
   # Staging: larger instance type + higher max to simulate prod-like load

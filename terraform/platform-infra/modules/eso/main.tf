@@ -12,10 +12,6 @@ terraform {
       source  = "hashicorp/helm"
       version = "~> 3.0"
     }
-    null = {
-      source  = "hashicorp/null"
-      version = "~> 3.0"
-    }
   }
 }
 
@@ -113,9 +109,9 @@ resource "helm_release" "eso" {
 # WHY NOT kubernetes_manifest:
 # hashicorp/kubernetes kubernetes_manifest fetches the CRD schema from the live cluster at PLAN time. 
 # On a fresh deploy the cluster doesn't exist yet at plan time, so Terraform fails with "cannot create REST client: no client config".
-# null_resource + local-exec runs only at APPLY time, after the cluster and ESO helm chart (which installs the ClusterSecretStore CRD) are both up.
-resource "null_resource" "cluster_secret_store" {
-  triggers = {
+# terraform_data + local-exec runs only at APPLY time, after the cluster and ESO helm chart (which installs the ClusterSecretStore CRD) are both up.
+resource "terraform_data" "cluster_secret_store" {
+  triggers_replace = {
     # Re-apply if the ESO role ARN or region changes
     eso_role_arn = aws_iam_role.eso.arn
     region       = var.region
