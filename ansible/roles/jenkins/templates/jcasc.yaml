@@ -9,7 +9,7 @@ jenkins:
       users:
         - id: "${JENKINS_ADMIN_USER}"
           password: "${JENKINS_ADMIN_PASSWORD}"
-    
+
   authorizationStrategy:
     loggedInUsersCanDoAnything:
       allowAnonymousRead: false
@@ -29,11 +29,6 @@ unclassified:
         serverUrl: "http://${SONARQUBE_HOST}:9000"
         credentialsId: "sonarqube-token"
 
-  simpleTheme:
-    elements:
-      - themeExtension:
-          pluginId: "dark-theme"
-
 tool:
   git:
     installations:
@@ -48,7 +43,7 @@ tool:
               installers:
                 - maven:
                     id: "3.9.9"
- 
+
   nodejs:
     installations:
       - name: "node"
