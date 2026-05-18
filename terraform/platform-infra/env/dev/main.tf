@@ -63,7 +63,7 @@ module "eks" {
   source = "../../modules/eks"
 
   cluster_name    = local.env_prefix
-  cluster_version = "1.32"
+  cluster_version = "1.35"
   private_subnets = local.private_subnets
 
   min_size     = 1
