@@ -42,11 +42,11 @@ def bootstrap_infra():
             confirm = input("\nProceed with Terraform apply for bootstrap-infra? (yes/no): ").strip().lower()
             if confirm not in ["yes", "y"]:
                 info("Bootstrap infra aborted by user.")
-                return
+                sys.exit(1)
 
             run_command("terraform apply main.tfplan", cwd=BOOTSTRAP_INFRA_DIR, env=env)
             info("Bootstrap Infrastructure Complete.")
-            sys.exit(0)
+            return
         else:
             error(f"Terraform plan failed with exit code {exit_code}! Check output above!")
 
