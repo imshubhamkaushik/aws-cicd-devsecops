@@ -344,7 +344,8 @@ resource "aws_iam_policy" "jenkins_iam" {
           "iam:PutRolePolicy",
           "iam:DeleteRolePolicy",
           "iam:GetRolePolicy",
-          "iam:PassRole"
+          "iam:PassRole",
+          "iam:CreateServiceLinkedRole"
         ]
         Resource = [
           "arn:aws:iam::*:role/${var.ec2_name}-*",
@@ -398,6 +399,17 @@ resource "aws_iam_policy" "jenkins_iam" {
           "iam:ListOpenIDConnectProviders"
         ]
         Resource = "*"
+      },
+      {
+        Sid    = "ServiceLinkedRoleForEKS"
+        Effect = "Allow"
+        Action = ["iam:CreateServiceLinkedRole"]
+        Resource = "arn:aws:iam::*:role/aws-service-role/eks.amazonaws.com/*"
+        Condition = {
+          StringEquals = {
+            "iam:AWSServiceName" = "eks.amazonaws.com"
+          }
+        }
       }
     ]
   })
