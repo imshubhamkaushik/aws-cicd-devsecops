@@ -46,7 +46,7 @@ resource "aws_security_group" "sonar" {
 # -----------------------------------------------------------------------
 
 resource "aws_security_group_rule" "jenkins_ingress_ssh" {
-  description       = "SSH for Ansible provisioning — locked to your IP at apply time"
+  description       = "SSH for Ansible provisioning - locked to your IP at apply time"
   type              = "ingress"
   from_port         = 22
   to_port           = 22
@@ -56,7 +56,7 @@ resource "aws_security_group_rule" "jenkins_ingress_ssh" {
 }
 
 resource "aws_security_group_rule" "jenkins_ingress_ui" {
-  description       = "Jenkins UI and webhook — locked to your IP at apply time"
+  description       = "Jenkins UI and webhook - locked to your IP at apply time"
   type              = "ingress"
   from_port         = 8080
   to_port           = 8080
@@ -76,7 +76,7 @@ resource "aws_security_group_rule" "jenkins_ingress_sonar_webhook" {
 }
 
 resource "aws_security_group_rule" "jenkins_egress_all" {
-  description       = "Allow all outbound — Jenkins pulls plugins, pushes to ECR, calls EKS"
+  description       = "Allow all outbound - Jenkins pulls plugins, pushes to ECR, calls EKS"
   type              = "egress"
   from_port         = 0
   to_port           = 0
@@ -89,7 +89,7 @@ resource "aws_security_group_rule" "jenkins_egress_all" {
 # SonarQube rules
 #
 # SonarQube lives in a private subnet. It has NO inbound path from the
-# internet — the private route table routes 0.0.0.0/0 only to the NAT
+# internet - the private route table routes 0.0.0.0/0 only to the NAT
 # Gateway (outbound only). Rules allowing your public IP (my_ip_cidr) on
 # ports 22 or 9000 would be permanently unreachable and are not included.
 #
@@ -99,7 +99,7 @@ resource "aws_security_group_rule" "jenkins_egress_all" {
 # -----------------------------------------------------------------------
 
 resource "aws_security_group_rule" "sonar_ingress_jenkins_ssh" {
-  description              = "Ansible ProxyJump — SSH from Jenkins to SonarQube in private subnet"
+  description              = "Ansible ProxyJump - SSH from Jenkins to SonarQube in private subnet"
   type                     = "ingress"
   from_port                = 22
   to_port                  = 22
@@ -109,7 +109,7 @@ resource "aws_security_group_rule" "sonar_ingress_jenkins_ssh" {
 }
 
 resource "aws_security_group_rule" "sonar_ingress_jenkins_9000" {
-  description              = "Jenkins pipeline — SonarQube scanner and Quality Gate webhook"
+  description              = "Jenkins pipeline - SonarQube scanner and Quality Gate webhook"
   type                     = "ingress"
   from_port                = 9000
   to_port                  = 9000
@@ -119,7 +119,7 @@ resource "aws_security_group_rule" "sonar_ingress_jenkins_9000" {
 }
 
 resource "aws_security_group_rule" "sonar_egress_all" {
-  description       = "Allow all outbound — SonarQube pulls plugins, sends webhook to Jenkins"
+  description       = "Allow all outbound - SonarQube pulls plugins, sends webhook to Jenkins"
   type              = "egress"
   from_port         = 0
   to_port           = 0
