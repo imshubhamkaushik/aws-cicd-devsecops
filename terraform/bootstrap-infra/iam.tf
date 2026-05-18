@@ -433,6 +433,17 @@ resource "aws_iam_policy" "jenkins_iam" {
         Resource = [
           "arn:aws:iam::*:role/aws-service-role/*"
         ]
+      },
+      {
+        Sid      = "SLRCreate"
+        Effect   = "Allow"
+        Action   = ["iam:CreateServiceLinkedRole"]
+        Resource = "*"
+        Condition = {
+          StringEquals = {
+            "iam:AWSServiceName" = "eks-nodegroup.amazonaws.com"
+          }
+        }
       }
     ]
   })
