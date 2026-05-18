@@ -305,7 +305,8 @@ resource "aws_iam_policy" "jenkins_kms" {
           "kms:ListAliases",
           "kms:CreateAlias",
           "kms:DeleteAlias",
-          "kms:UpdateAlias"
+          "kms:UpdateAlias",
+          "kms:CreateGrant"
         ]
         Resource = "*"
       }
