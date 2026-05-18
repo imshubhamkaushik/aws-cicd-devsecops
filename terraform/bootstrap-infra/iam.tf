@@ -401,15 +401,39 @@ resource "aws_iam_policy" "jenkins_iam" {
         Resource = "*"
       },
       {
-        Sid      = "ServiceLinkedRoleForEKS"
-        Effect   = "Allow"
-        Action   = ["iam:CreateServiceLinkedRole"]
+        Sid    = "ServiceLinkedRoleForEKS"
+        Effect = "Allow"
+        Action = [
+          "iam:CreateServiceLinkedRole"
+        ]
         Resource = "arn:aws:iam::*:role/aws-service-role/eks.amazonaws.com/*"
         Condition = {
           StringEquals = {
             "iam:AWSServiceName" = "eks.amazonaws.com"
           }
         }
+      },
+      {
+        Sid    = "ServiceLinkedRoleForEKSNodegroup"
+        Effect = "Allow"
+        Action = [
+          "iam:CreateServiceLinkedRole"
+        ]
+        Resource = "arn:aws:iam::*:role/aws-service-role/eks-nodegroup.amazonaws.com/*"
+        Condition = {
+          StringEquals = {
+            "iam:AWSServiceName" = "eks-nodegroup.amazonaws.com"
+          }
+        }
+      },
+      {
+        Sid    = "SLRGetRole"
+        Effect = "Allow"
+        Action = ["iam:GetRole"]
+        Resource = [
+          "arn:aws:iam::*:role/aws-service-role/eks.amazonaws.com/*",
+          "arn:aws:iam::*:role/aws-service-role/eks-nodegroup.amazonaws.com/*"
+        ]
       }
     ]
   })
