@@ -169,7 +169,10 @@
       [Service]
       # Load all JCasC environment variables and secrets
       EnvironmentFile=/etc/default/jenkins
-  notify: Reload systemd daemon
+
+- name: Reload systemd daemon
+  systemd:
+    daemon_reload: yes
 
 - name: Install required packages for plugin downloads
   apt:

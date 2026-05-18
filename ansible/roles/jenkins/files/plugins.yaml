@@ -31,3 +31,4 @@ plugins:
   # UTILS
   - artifactId: timestamper
   - artifactId: ws-cleanup
+  - artifactId: dark-theme
