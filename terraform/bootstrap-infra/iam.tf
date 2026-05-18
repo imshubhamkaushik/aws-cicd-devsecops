@@ -351,7 +351,8 @@ resource "aws_iam_policy" "jenkins_iam" {
         ]
         Resource = [
           "arn:aws:iam::*:role/${var.ec2_name}-*",
-          "arn:aws:iam::*:role/${var.cluster_name}-*"
+          "arn:aws:iam::*:role/${var.cluster_name}-*",
+          "arn:aws:iam::*:role/aws-service-role/*"
         ]
       },
       {
@@ -371,7 +372,8 @@ resource "aws_iam_policy" "jenkins_iam" {
         ]
         Resource = [
           "arn:aws:iam::*:policy/${var.ec2_name}-*",
-          "arn:aws:iam::*:policy/${var.cluster_name}-*"
+          "arn:aws:iam::*:policy/${var.cluster_name}-*",
+          "arn:aws:iam::*:policy/aws-service-role/*"
         ]
       },
       {
@@ -442,14 +444,6 @@ resource "aws_iam_policy" "jenkins_iam" {
             "iam:AWSServiceName" = "eks-nodegroup.amazonaws.com"
           }
         }
-      },
-      {
-        Sid    = "SLRGetRole"
-        Effect = "Allow"
-        Action = ["iam:GetRole"]
-        Resource = [
-          "arn:aws:iam::*:role/aws-service-role/*"
-        ]
       }
     ]
   })
