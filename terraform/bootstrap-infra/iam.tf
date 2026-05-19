@@ -543,7 +543,15 @@ resource "aws_iam_policy" "jenkins_s3_ops" {
           "secretsmanager:UpdateSecret",
           "secretsmanager:TagResource",
           "secretsmanager:ListSecretVersionIds",
-          "secretsmanager:RestoreSecret"
+          "secretsmanager:RestoreSecret",
+
+          # Required by Terraform AWS provider during refresh/read
+          "secretsmanager:GetResourcePolicy",
+          "secretsmanager:PutResourcePolicy",
+          "secretsmanager:DeleteResourcePolicy",
+
+          # Often needed by Terraform/provider internals
+          "secretsmanager:ListSecrets"
         ]
         Resource = "arn:aws:secretsmanager:${var.aws_region}:*:secret:catalogix-*"
       }
