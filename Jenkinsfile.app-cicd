@@ -1,3 +1,52 @@
+// Ensures kubectl is working, regenerates kubeconfig if not.
+// Defined here to avoid duplicating the same 20-line shell block in both Jenkinsfiles.
+// The identical function also exists in Jenkinsfile.platform-infra — if you change the logic here, change it there too.
+// TODO: move to a Jenkins shared library once the project scales to more pipelines.
+def ensureKubernetesAccess() {
+    sh"""
+    set -e
+
+    mkdir -p \$(dirname ${env.KUBECONFIG})
+
+    echo "=== Checking Kubernetes access ==="
+
+    if ! kubectl get nodes --request-timeout=10s; then
+        echo "kubectl failed — regenerating kubeconfig..."
+
+        echo "=== AWS Identity ==="
+        aws sts get-caller-identity || true
+
+        echo "=== Regenerating kubeconfig ==="
+        # Retry up to 5 times with 10s backoff — transient EKS API
+        # hiccups are common immediately after cluster operations.
+        SUCCESS=0
+        for i in 1 2 3 4 5; do
+            if aws eks update-kubeconfig \
+                --region ${env.AWS_REGION} \
+                --name ${env.CLUSTER_NAME} \
+                --kubeconfig ${env.KUBECONFIG}; then
+                SUCCESS=1
+                break
+            fi
+            echo "Attempt \$i failed — retrying in 10s..."
+            sleep 10
+        done
+
+        if [ "\$SUCCESS" -ne 1 ]; then
+            echo "ERROR: Failed to generate kubeconfig after 5 attempts"
+            exit 1
+        fi
+        
+        chmod 600 ${env.KUBECONFIG}
+
+        echo "=== Retrying kubectl ==="
+        kubectl get nodes --request-timeout=10s
+    fi
+
+    echo "Kubernetes access verified."
+    """               
+}
+
 pipeline {
     agent any
 
@@ -22,10 +71,6 @@ pipeline {
 
         // SSM Parameter Store
         SSM_RDS_PATH = "/${CLUSTER_NAME}/rds-endpoint"
-
-        // Trivy Docker Image
-        TRIVY_TAG   = "0.70.0"
-        TRIVY_IMAGE = "aquasec/trivy:${TRIVY_TAG}"
 
         MAVEN_CACHE = "${WORKSPACE}/.m2/repository"
         NPM_CACHE = "${WORKSPACE}/.npm"
@@ -76,11 +121,23 @@ pipeline {
         stage('AWS Authentication') {
             steps {
                 script {
+                    // Read Trivy version from Ansible vars — single source of truth.
+                    // ansible/group_vars/all/vars.yaml:trivy_version drives both the
+                    // host install (Ansible devops-tools role) and this Docker image tag.
+                    // Updating the version in one place keeps both in sync automatically.
+                    env.TRIVY_TAG = sh(
+                        script: "grep '^trivy_version:' ansible/group_vars/all/vars.yaml | awk '{print \$2}'",
+                        returnStdout: true
+                    ).trim()
+                    env.TRIVY_IMAGE = "aquasec/trivy:${env.TRIVY_TAG}"
+
+                    // AWS Identity
                     env.AWS_ACCOUNT_ID = sh(
                         script: "aws sts get-caller-identity --query Account --output text",
                         returnStdout: true
                     ).trim()
 
+                    // ECR
                     env.ECR_REGISTRY       = "${env.AWS_ACCOUNT_ID}.dkr.ecr.${env.AWS_REGION}.amazonaws.com"
 
                     // Main Application Images
@@ -94,48 +151,9 @@ pipeline {
 
         stage('Ensure Kubernetes Access') {
             steps {
-                sh"""
-                set -e
-
-                mkdir -p \$(dirname ${KUBECONFIG})
-
-                echo "=== Checking Kubernetes access ==="
-
-                if ! kubectl get nodes --request-timeout=10s; then
-                    echo "kubectl failed — regenerating kubeconfig..."
-
-                    echo "=== AWS Identity ==="
-                    aws sts get-caller-identity || true
-
-                    echo "=== Regenerating kubeconfig ==="
-                    # Retry up to 5 times with 10s backoff — transient EKS API
-                    # hiccups are common immediately after cluster operations.
-                    SUCCESS=0
-                    for i in 1 2 3 4 5; do
-                        if aws eks update-kubeconfig \
-                            --region ${AWS_REGION} \
-                            --name ${CLUSTER_NAME} \
-                            --kubeconfig ${KUBECONFIG}; then
-                            SUCCESS=1
-                            break
-                        fi
-                        echo "Attempt \$i failed — retrying in 10s..."
-                        sleep 10
-                    done
- 
-                    if [ "\$SUCCESS" -ne 1 ]; then
-                        echo "ERROR: Failed to generate kubeconfig after 5 attempts"
-                        exit 1
-                    fi
-                    
-                    chmod 600 ${KUBECONFIG}
-
-                    echo "=== Retrying kubectl ==="
-                    kubectl get nodes --request-timeout=10s
-                fi
-
-                echo "Kubernetes access verified."
-                """               
+                script {
+                    ensureKubernetesAccess()
+                }
             }
         }
 

@@ -109,62 +109,147 @@ kube-prometheus-stack:
       global:
         resolve_timeout: 5m
 
+      # Routing tree:
+      # critical  -> critical-receiver (wire up Slack/PagerDuty/email below)
+      # warning   -> null (logged, not paged — keeps noise low in dev)
+      # catch-all -> null
       route:
-        receiver: "default"
+        receiver: "null"
         group_by: ["alertname", "namespace", "service"]
         group_wait: 30s
         group_interval: 5m
         repeat_interval: 3h
+      routes:
+        - matchers:
+            - name: severity
+              value: critical
+          receiver: "critical-receiver"
+          repeat_interval: 1h
+        - matchers:
+            - name: severity
+              value: warning
+          receiver: "null"
+      
       receivers:
-        - name: "default"
+        # Discards alerts silently. Used for warnings and unmapped alerts in dev.
+        - name: "null"
+ 
+        # Wire this up to Slack, PagerDuty, or email for real alerting.
+        # Slack example (uncomment and fill in):
+        #
+        # - name: "critical-receiver"
+        #   slack_configs:
+        #     - api_url: "https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK"
+        #       channel: "#alerts"
+        #       title: '[{{ .Status | toUpper }}] {{ .GroupLabels.alertname }}'
+        #       text: >-
+        #         {{ range .Alerts }}
+        #           *Service:* {{ .Labels.service }}
+        #           *Namespace:* {{ .Labels.namespace }}
+        #           *Description:* {{ .Annotations.description }}
+        #         {{ end }}
+        #       send_resolved: true
+        #
+        # Email example (uncomment and fill in):
+        #
+        # - name: "critical-receiver"
+        #   email_configs:
+        #     - to: "oncall@yourteam.com"
+        #       from: "alertmanager@yourteam.com"
+        #       smarthost: "smtp.yourprovider.com:587"
+        #       auth_username: "alertmanager@yourteam.com"
+        #       auth_password: "<smtp-password>"
+        #       send_resolved: true
+        #
+        # For now critical-receiver is also null so the chart deploys cleanly in dev.
+        - name: "critical-receiver"
+ 
+      # Inhibit rules suppress downstream alerts when the root cause is already firing.
+      # One outage should fire ONE alert (ServiceUnavailable), not three.
+      # HighErrorRate and HighLatencyP95 are symptoms of the outage, not separate problems.
+      inhibit_rules:
+        - source_matchers:
+            - name: alertname
+              value: ServiceUnavailable
+          target_matchers:
+            - name: alertname
+              value: HighErrorRate
+          equal: ["namespace"]
+        - source_matchers:
+            - name: alertname
+              value: ServiceUnavailable
+          target_matchers:
+            - name: alertname
+              value: HighLatencyP95
+          equal: ["namespace"]
 
   # Custom Alert Rules
-  additionalPrometheusRules:
-    - name: catalogix-alerts
+  additionalPrometheusRulesMap:
+    catalogix-alerts:
       groups:
         - name: service-availability
           rules:
             - alert: ServiceUnavailable
+              # FIX: original expr used up{job="kubernetes-service-endpoints"} — a static
+              # Prometheus scrape job that does not exist in kube-prometheus-stack.
+              # With ServiceMonitor-based discovery, catalogix services have a different
+              # job label. kube_deployment_status_replicas_available comes from
+              # kube-state-metrics (bundled in kube-prometheus-stack) and correctly
+              # targets the catalogix namespace.
               expr: |
-                sum by (service, namespace) (
-                  up{job="kubernetes-service-endpoints"}
-                ) == 0
+                kube_deployment_status_replicas_available{namespace="catalogix"} == 0
               for: 3m
               labels:
                 severity: critical
               annotations:
-                summary: "Service {{ $labels.service }} is unavailable"
-                description: "No active endpoints for service {{ $labels.service }}"
+                summary: "Deployment {{ $labels.deployment }} has no available replicas"
+                description: "Deployment {{ $labels.deployment }} in namespace {{ $labels.namespace }} has had 0 available replicas for more than 3 minutes."
 
         - name: error-rate
           rules:
             - alert: HighErrorRate
+              # FIX 1: added namespace filter so the alert only fires for catalogix services,
+              # not Prometheus/Grafana/Alertmanager internal traffic.
+              # FIX 2: sum by namespace so the ratio is calculated per-namespace.
+              # The original collapsed all namespaces into one ratio, masking which service
+              # was the source and diluting the signal with unrelated traffic.
               expr: |
-                sum(rate(http_server_requests_seconds_count{status=~"5.."}[5m]))
-                /
-                sum(rate(http_server_requests_seconds_count[5m]))
-                > 0.05
+                (
+                  sum by (namespace) (
+                    rate(http_server_requests_seconds_count{status=~"5..",namespace="catalogix"}[5m])
+                  )
+                  /
+                  sum by (namespace) (
+                    rate(http_server_requests_seconds_count{namespace="catalogix"}[5m])
+                  )
+                ) > 0.05
               for: 5m
               labels:
                 severity: critical
               annotations:
-                summary: "High error rate detected"
-                description: "5xx responses exceed 5% of total traffic"
+                summary: "High 5xx error rate in {{ $labels.namespace }}"
+                description: "5xx responses exceed 5% of total traffic in namespace {{ $labels.namespace }} for more than 5 minutes."
 
 
         - name: high-latency
           rules:
             - alert: HighLatencyP95
+              # FIX 1: added namespace filter (same reason as HighErrorRate).
+              # FIX 2: sum by (le, job) not (le, service). Spring Boot Actuator metrics
+              # do not expose a 'service' label — the per-service identifier in
+              # kube-prometheus-stack is the 'job' label set by the ServiceMonitor.
+              # Summing by 'service' collapsed all series into one bucket set and
+              # produced a meaningless quantile across all services combined.
               expr: |
                 histogram_quantile(
                   0.95,
-                  sum by (le, service) (
-                    rate(http_server_requests_seconds_bucket[5m])
+                  sum by (le, job) (
+                    rate(http_server_requests_seconds_bucket{namespace="catalogix"}[5m])
                   )
                 ) > 1.5
               for: 5m
               labels:
                 severity: warning
               annotations:
-                summary: "High latency detected (p95)"
-                description: "95th percentile latency exceeds 1.5s"
+                summary: "High p95 latency for {{ $labels.job }}"
+                description: "95th percentile latency for {{ $labels.job }} exceeds 1.5s for more than 5 minutes."

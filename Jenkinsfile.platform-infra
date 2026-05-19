@@ -1,4 +1,54 @@
 // Infrastructure pipeline — trigger manually only, never via webhook.
+
+// Ensures kubectl is working, regenerates kubeconfig if not.
+// Defined here to avoid duplicating the same 20-line shell block in both Jenkinsfiles.
+// The identical function also exists in Jenkinsfile.platform-infra — if you change the logic here, change it there too.
+// TODO: move to a Jenkins shared library once the project scales to more pipelines.
+def ensureKubernetesAccess() {
+    sh"""
+    set -e
+
+    mkdir -p \$(dirname ${env.KUBECONFIG})
+
+    echo "=== Checking Kubernetes access ==="
+
+    if ! kubectl get nodes --request-timeout=10s; then
+        echo "kubectl failed — regenerating kubeconfig..."
+
+        echo "=== AWS Identity ==="
+        aws sts get-caller-identity || true
+
+        echo "=== Regenerating kubeconfig ==="
+        # Retry up to 5 times with 10s backoff — transient EKS API
+        # hiccups are common immediately after cluster operations.
+        SUCCESS=0
+        for i in 1 2 3 4 5; do
+            if aws eks update-kubeconfig \
+                --region ${env.AWS_REGION} \
+                --name ${env.CLUSTER_NAME} \
+                --kubeconfig ${env.KUBECONFIG}; then
+                SUCCESS=1
+                break
+            fi
+            echo "Attempt \$i failed — retrying in 10s..."
+            sleep 10
+        done
+
+        if [ "\$SUCCESS" -ne 1 ]; then
+            echo "ERROR: Failed to generate kubeconfig after 5 attempts"
+            exit 1
+        fi
+        
+        chmod 600 ${env.KUBECONFIG}
+
+        echo "=== Retrying kubectl ==="
+        kubectl get nodes --request-timeout=10s
+    fi
+
+    echo "Kubernetes access verified."
+    """               
+}
+
 // ACTION=apply  → Terraform fmt → init → validate → plan → human approval → apply → verify EKS → deploy monitoring
 // ACTION=destroy → Checkout → init → plan -destroy → human approval (double-gate) → destroy
 
@@ -184,47 +234,9 @@ pipeline {
                 expression { params.ACTION == 'apply' }
             }
             steps {
-                sh"""
-                set -e
-
-                mkdir -p \$(dirname ${KUBECONFIG})
-
-                echo "=== Checking Kubernetes access ==="
-
-                if ! kubectl get nodes --request-timeout=10s; then
-                    echo "kubectl failed — regenerating kubeconfig..."
-
-                    echo "=== AWS Identity ==="
-                    aws sts get-caller-identity || true
-
-                    echo "=== Regenerating kubeconfig ==="
-                    SUCCESS=0
-                    for i in 1 2 3 4 5; do
-                        if aws eks update-kubeconfig \
-                            --region ${AWS_REGION} \
-                            --name ${CLUSTER_NAME} \
-                            --kubeconfig ${KUBECONFIG}; then
-                            SUCCESS=1
-                            break
-                        fi
-
-                        echo "Retrying kubeconfig setup in 10s..."
-                        sleep 10
-                    done
-
-                    if [ "\$SUCCESS" -ne 1 ]; then
-                        echo "ERROR: Failed to generate kubeconfig after retries"
-                        exit 1
-                    fi
-                    
-                    chmod 600 ${KUBECONFIG}
-
-                    echo "=== Retrying kubectl ==="
-                    kubectl get nodes --request-timeout=10s >/dev/null
-                fi
-
-                echo "Kubernetes access verified."
-                """               
+                script {
+                    ensureKubernetesAccess()
+                }            
             }
         }
 
@@ -467,6 +479,25 @@ Are you absolutely sure?""",
                 if (params.ACTION == 'apply') {
                     echo "Platform infrastructure and monitoring stack applied successfully."
                     if (params.DEPLOY_APP_AFTER_INFRA) {
+                        // ESO was deployed by Terraform (module.eso) in the Remaining Infra
+                        // stage, but the operator pods may still be initializing by the time we reach post { success }. 
+                        // The app pipeline's first Helm deploy creates an ExternalSecret that ESO must process immediately — if
+                        // ESO isn't ready the ExternalSecret stays in a Pending state and
+                        // pods fail to start because the DB password secret never gets created. 
+                        // This wait ensures ESO is actually serving requests before the app pipeline fires.
+                        echo "Waiting for ESO to be ready before triggering app deployment..."
+                        sh """
+                        set -e
+                        kubectl wait deployment/external-secrets \
+                            -n external-secrets \
+                            --for=condition=Available \
+                            --timeout=120s
+                        kubectl wait deployment/external-secrets-webhook \
+                            -n external-secrets \
+                            --for=condition=Available \
+                            --timeout=120s
+                        echo "ESO is ready."
+                        """
                         echo "Triggering app deployment pipeline..."
                         build job: 'app-cicd', wait: false
                         echo "App deployment pipeline triggered."
