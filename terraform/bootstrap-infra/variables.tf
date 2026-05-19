@@ -63,3 +63,9 @@ variable "aws_region" {
   type        = string
   default     = "ap-south-1"
 }
+
+variable "env" {
+  description = "Environment name (e.g., dev, staging, prod)"
+  type        = string
+  default     = "dev"
+}

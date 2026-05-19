@@ -514,7 +514,7 @@ resource "aws_iam_policy" "jenkins_s3_ops" {
         # Scoped to /${var.ec2_name}/ prefix — covers /catalogix/dev/rds-endpoint etc.
         Resource = [
           "arn:aws:ssm:${var.aws_region}:*:parameter/${var.ec2_name}/*",
-          "arn:aws:ssm:${var.aws_region}:*:parameter/${var.cluster_name}-*"
+          "arn:aws:ssm:${var.aws_region}:*:parameter/${var.cluster_name}-${var.env}/*"
         ]
       },
       # STS

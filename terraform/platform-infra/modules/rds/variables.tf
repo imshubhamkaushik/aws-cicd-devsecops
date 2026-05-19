@@ -1,4 +1,4 @@
-variable "name" {
+variable "project_name" {
   description = "Base name for all resources"
   type        = string
 }

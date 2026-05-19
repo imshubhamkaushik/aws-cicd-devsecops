@@ -1,10 +1,10 @@
 resource "aws_db_subnet_group" "this" {
-  name       = "${var.name}-subnet-group"
+  name       = "${var.project_name}-subnet-group"
   subnet_ids = var.private_subnets
 }
 
 resource "aws_db_instance" "postgres" {
-  identifier = var.name
+  identifier = var.project_name
 
   engine         = "postgres"
   engine_version = "17.2"
@@ -38,9 +38,9 @@ resource "aws_ssm_parameter" "rds_endpoint" {
   name        = var.ssm_parameter_path
   type        = "String"
   value       = aws_db_instance.postgres.address
-  description = "RDS endpoint for ${var.name} — written by Terraform, consumed by Jenkins"
+  description = "RDS endpoint for ${var.project_name} — written by Terraform, consumed by Jenkins"
 
   tags = {
-    Name = "${var.name}-rds-endpoint"
+    Name = "${var.project_name}-rds-endpoint"
   }
 }
