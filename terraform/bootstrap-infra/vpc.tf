@@ -25,9 +25,9 @@ resource "aws_subnet" "public" {
   availability_zone       = var.azs[count.index]
 
   tags = {
-    Name                                        = "${var.vpc_name}-public-subnet-${count.index + 1}"
-    "kubernetes.io/role/elb"                    = "1"
-    "kubernetes.io/cluster/${var.cluster_name}" = "shared"
+    Name                                                           = "${var.vpc_name}-public-subnet-${count.index + 1}"
+    "kubernetes.io/role/elb"                                       = "1"
+    "kubernetes.io/cluster/${var.cluster_name}-${var.environment}" = "shared"
   }
 }
 
@@ -39,9 +39,9 @@ resource "aws_subnet" "private" {
   availability_zone = var.azs[count.index]
 
   tags = {
-    Name                                        = "${var.vpc_name}-private-subnet-${count.index + 1}"
-    "kubernetes.io/role/internal-elb"           = "1"
-    "kubernetes.io/cluster/${var.cluster_name}" = "shared"
+    Name                                                           = "${var.vpc_name}-private-subnet-${count.index + 1}"
+    "kubernetes.io/role/internal-elb"                              = "1"
+    "kubernetes.io/cluster/${var.cluster_name}-${var.environment}" = "shared"
   }
 }
 

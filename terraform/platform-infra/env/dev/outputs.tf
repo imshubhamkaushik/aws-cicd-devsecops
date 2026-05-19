@@ -9,8 +9,8 @@ output "cluster_endpoint" {
 }
 
 output "rds_endpoint" {
-  description = "RDS Postgres endpoint — use as SPRING_DATASOURCE_URL host"
-  value       = module.rds.rds_endpoint
+  description = "RDS Postgres endpoint address — use as SPRING_DATASOURCE_URL host"
+  value       = module.rds.rds_address # hostname only, no port — use as database.host in Helm values
 }
 
 output "ecr_registry" {

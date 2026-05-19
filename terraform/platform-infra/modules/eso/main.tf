@@ -119,7 +119,7 @@ resource "terraform_data" "cluster_secret_store" {
 
   provisioner "local-exec" {
     command = <<-EOF
-      aws eks update-kubeconfig --region ${var.region} --name ${var.cluster_name} --kubeconfig $KUBECONFIG
+      aws eks update-kubeconfig --region ${var.region} --name ${var.cluster_name}
       kubectl apply -f - <<YAML
 apiVersion: external-secrets.io/v1beta1
 kind: ClusterSecretStore

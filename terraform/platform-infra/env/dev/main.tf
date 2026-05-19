@@ -127,7 +127,7 @@ module "alb" {
 module "rds" {
   source = "../../modules/rds"
 
-  name                    = "${local.env_prefix}-db"
+  project_name            = "${local.env_prefix}-db"
   db_name                 = "catalogix"
   username                = local.db_username
   password                = random_password.db.result
