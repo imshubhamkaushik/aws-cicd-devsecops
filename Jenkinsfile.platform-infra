@@ -207,24 +207,42 @@ pipeline {
 
         // ── Apply flow ───────────────────────────────────────────────────────
 
-        stage("Terraform Plan and Apply - EKS Core") {
+        // stage("Terraform Plan and Apply - EKS Core") {
+        //     when {
+        //         expression { params.ACTION == 'apply' }
+        //     }
+        //     steps {
+        //         dir("${TF_DIR}") {
+        //             sh "terraform plan -target=module.eks -target=module.sg -out eks.tfplan"
+        //         }
+
+        //         // input is a Jenkins DSL step — CANNOT go inside sh.
+        //         // Must be at Groovy level between shell steps.
+        //         input message: "Review the EKS core plan above. Approve?", ok: "Apply"
+
+        //         dir("${TF_DIR}") {
+        //             sh """
+        //             terraform apply -auto-approve eks.tfplan
+        //             rm -f eks.tfplan
+        //             """
+        //         }
+        //     }
+        // }
+
+        stage("Terraform Plan and Apply - Remaining Infra") {
             when {
                 expression { params.ACTION == 'apply' }
             }
             steps {
                 dir("${TF_DIR}") {
-                    sh "terraform plan -target=module.eks -target=module.sg -out eks.tfplan"
+                    sh "terraform plan -out main.tfplan"
                 }
 
-                // input is a Jenkins DSL step — CANNOT go inside sh.
-                // Must be at Groovy level between shell steps.
-                input message: "Review the EKS core plan above. Approve?", ok: "Apply"
+                // input must be at Groovy level — not inside sh.
+                input message: "Review the remaining infra plan (ALB, ESO, RDS, Secrets). Approve apply?", ok: "Apply"
 
                 dir("${TF_DIR}") {
-                    sh """
-                    terraform apply -auto-approve eks.tfplan
-                    rm -f eks.tfplan
-                    """
+                    sh "terraform apply -auto-approve main.tfplan"
                 }
             }
         }
@@ -297,23 +315,9 @@ pipeline {
             }
         }
 
-        stage("Terraform Plan and Apply - Remaining Infra") {
-            when {
-                expression { params.ACTION == 'apply' }
-            }
-            steps {
-                dir("${TF_DIR}") {
-                    sh "terraform plan -out main.tfplan"
-                }
+        // remaining infra space, might add if needed
 
-                // input must be at Groovy level — not inside sh.
-                input message: "Review the remaining infra plan (ALB, ESO, RDS, Secrets). Approve apply?", ok: "Apply"
-
-                dir("${TF_DIR}") {
-                    sh "terraform apply -auto-approve main.tfplan"
-                }
-            }
-        }
+        // Metrics Server is a cluster-level component that the monitoring stack depends on, so we install it here in the infra pipeline rather than the app pipeline.
 
         stage('Install Metrics Server') {
             when {

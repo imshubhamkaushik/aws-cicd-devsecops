@@ -12,6 +12,10 @@ data "terraform_remote_state" "bootstrap" {
 
 data "aws_caller_identity" "current" {}
 
+data "aws_iam_session_context" "current" {
+  arn = data.aws_caller_identity.current.arn
+}
+
 resource "random_password" "db" {
   length  = 24
   special = false # avoids JDBC URL encoding issues with special characters 
@@ -79,7 +83,7 @@ module "eks" {
 
   # Whoever runs terraform apply automatically gets console access.
   # No variable or tfvars entry needed.
-  console_iam_arn = data.aws_caller_identity.current.arn
+  console_iam_arn = data.aws_iam_session_context.current.issuer_arn
 }
 
 # EKS DATA (safe, resolves after creation)
@@ -171,13 +175,9 @@ module "eso" {
 
 # gp3 StorageClass — moved here from modules/eks/main.tf.
 #
-# This resource uses the kubernetes provider. Keeping it inside module.eks
-# caused it to be included in the targeted apply (-target=module.eks),
-# where the kubernetes provider resolves to localhost:80 because
-# local.cluster_endpoint was "(known after apply)" at plan time.
-# Placing it in the root module ensures it runs only in (full apply),
-# when module.eks is in state, the endpoint is known, and the provider
-# connects to the real cluster.
+# This resource uses the kubernetes provider. Keeping it inside module.eks caused it to be included in the targeted apply (-target=module.eks),
+# where the kubernetes provider resolves to localhost:80 because local.cluster_endpoint was "(known after apply)" at plan time.
+# Placing it in the root module ensures it runs only in (full apply), when module.eks is in state, the endpoint is known, and the provider connects to the real cluster.
 #
 # WaitForFirstConsumer ensures the EBS volume is created in the same AZ as
 # the pod that claims it — required for single-AZ deployments.
