@@ -450,6 +450,17 @@ resource "aws_iam_policy" "jenkins_iam" {
             "iam:AWSServiceName" = "eks-nodegroup.amazonaws.com"
           }
         }
+      },
+      {
+        Sid      = "ServiceLinkedRoleForRDS"
+        Effect   = "Allow"
+        Action   = ["iam:CreateServiceLinkedRole", "iam:GetRole"]
+        Resource = "*"
+        Condition = {
+          StringEquals = {
+            "iam:AWSServiceName" = "rds.amazonaws.com"
+          }
+        }
       }
     ]
   })
