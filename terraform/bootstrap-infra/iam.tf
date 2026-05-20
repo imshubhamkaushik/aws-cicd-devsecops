@@ -500,13 +500,20 @@ resource "aws_iam_policy" "jenkins_s3_ops" {
         Resource = "arn:aws:s3:::catalogix-tfstate/*"
       },
       # SSM Parameter Store
+      # ssm:DescribeParameters must be Resource = "*" — it is a service-level
+      # listing action that AWS evaluates against the account root, not a parameter path.
+      {
+        Sid      = "SSMDescribeParameters"
+        Effect   = "Allow"
+        Action   = ["ssm:DescribeParameters"]
+        Resource = "*"
+      },
       {
         Sid    = "SSMParameterReadWrite"
         Effect = "Allow"
         Action = [
           "ssm:GetParameter", "ssm:GetParameters",
           "ssm:PutParameter", "ssm:DeleteParameter",
-          "ssm:DescribeParameters",
           "ssm:AddTagsToResource", "ssm:ListTagsForResource"
         ]
         # Scoped to /${var.ec2_name}/ prefix — covers /catalogix/dev/rds-endpoint etc.
