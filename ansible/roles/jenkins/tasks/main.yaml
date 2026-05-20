@@ -131,6 +131,7 @@
     src: jenkins_defaults.j2
     dest: /etc/default/jenkins
     mode: "0644"
+  notify: restart jenkins
 
 # JCasC (Jenkins Configuration as Code) setup
 # Deploy JCasC config file to Jenkins server
@@ -141,6 +142,7 @@
     owner: jenkins
     group: jenkins
     mode: "0644"
+  notify: restart jenkins
 
 # Ensure correct permissions
 - name: Fix Jenkins home directory permissions
