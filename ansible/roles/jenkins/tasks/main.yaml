@@ -290,36 +290,33 @@
   delay: 5
   until: jenkins_ui.status == 200
 
-# Fetch CSRF crumb from Jenkins
-- name: Get Jenkins CSRF crumb
-  uri:
-    url: "http://localhost:8080/crumbIssuer/api/json"
-    user: "{{ jenkins_admin_user }}"
-    password: "{{ vault_jenkins_admin_password }}"
-    force_basic_auth: yes
-    return_content: yes
-  register: jenkins_crumb
-  retries: 5
-  delay: 5
-  until: jenkins_crumb.status == 200
-
-# ONLY NOW reload — Jenkins is up with new token in memory
+# Fetch CSRF crumb and reload JCasC in one shell task — avoids uri module quirks
 - name: Reload JCasC configuration
-  uri:
-    url: "http://localhost:8080/reload-configuration-as-code/"
-    method: POST
-    user: "{{ jenkins_admin_user }}"
-    password: "{{ vault_jenkins_admin_password }}"
-    force_basic_auth: yes
-    headers:
-      "{{ jenkins_crumb.json.crumbRequestField }}": "{{ jenkins_crumb.json.crumb }}"
-    body: ""
-    body_format: form-urlencoded
-    status_code: 200
+  shell: |
+    set -e
+    CRUMB_JSON=$(curl -s -u "{{ jenkins_admin_user }}:{{ vault_jenkins_admin_password }}" \
+      http://localhost:8080/crumbIssuer/api/json)
+
+    CRUMB_FIELD=$(echo "$CRUMB_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['crumbRequestField'])")
+    CRUMB_VALUE=$(echo "$CRUMB_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['crumb'])")
+
+    HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+      -u "{{ jenkins_admin_user }}:{{ vault_jenkins_admin_password }}" \
+      -X POST \
+      -H "$CRUMB_FIELD: $CRUMB_VALUE" \
+      -H "Content-Type: application/x-www-form-urlencoded" \
+      --data "" \
+      http://localhost:8080/reload-configuration-as-code/)
+
+    echo "HTTP_CODE=$HTTP_CODE"
+
+    # 200 or 302 (redirect after reload) both mean success
+    if [[ "$HTTP_CODE" != "200" && "$HTTP_CODE" != "302" ]]; then
+      echo "ERROR: unexpected status $HTTP_CODE"
+      exit 1
+    fi
   register: jcasc_reload
-  retries: 5
-  delay: 5
-  until: jcasc_reload.status == 200
+  changed_when: false
 
 # -----------------------------
 # Strong JCasC verification (auth = success)
