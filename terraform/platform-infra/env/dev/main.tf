@@ -32,7 +32,7 @@ resource "aws_kms_key" "eks" {
   description             = "EKS secrets encryption key - dev"
   deletion_window_in_days = 7
   # enable_key_rotation is a best practice for long-lived keys, but not required for this demo since the key is only used to encrypt EKS secrets and doesn't have any direct human access or permissions attached to it. Enabling rotation adds complexity by creating new key versions every year, which would require updating the eks module with the new key ARN to avoid breaking changes.
-  enable_key_rotation = true 
+  enable_key_rotation = true
 }
 
 locals {

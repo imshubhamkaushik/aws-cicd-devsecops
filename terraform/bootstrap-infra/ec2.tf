@@ -28,7 +28,7 @@ resource "aws_instance" "jenkins_catalogix" {
 
 resource "aws_eip" "jenkins_eip" {
   instance = aws_instance.jenkins_catalogix.id
-  domain  = "vpc"
+  domain   = "vpc"
 
   tags = {
     Name    = "Jenkins EIP - Catalogix"
@@ -36,8 +36,8 @@ resource "aws_eip" "jenkins_eip" {
     Role    = "jenkins"
   }
 
-  depends_on = [ aws_internet_gateway.igw ]
-  
+  depends_on = [aws_internet_gateway.igw]
+
 }
 
 # EC2 Instances for SonarQube
