@@ -262,6 +262,7 @@ resource "aws_iam_policy" "jenkins_eks_ecr" {
           "ecr:DescribeImages",
           "ecr:PutLifecyclePolicy",
           "ecr:GetLifecyclePolicy",
+          "ecr:DeleteLifecyclePolicy",
           "ecr:TagResource",
           "ecr:ListTagsForResource"
         ]

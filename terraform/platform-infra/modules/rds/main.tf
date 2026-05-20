@@ -28,7 +28,7 @@ resource "aws_db_instance" "postgres" {
   skip_final_snapshot = true # Fine for dev, but not for production
 
   # DEV NOTE: lifecycle { prevent_destroy=true } prevents accidental deletion via a mistyped terraform destroy or workspace destroy. 
-  # To intentionally delete: comment this bock out, apply, then destroy .
+  # To intentionally delete: comment this block out, apply, then destroy .
   # lifecycle {
   #   prevent_destroy = true
   # }

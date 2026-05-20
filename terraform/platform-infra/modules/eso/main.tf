@@ -95,10 +95,6 @@ resource "helm_release" "eso" {
     }
   ]
 
-  lifecycle {
-    prevent_destroy = false
-  }
-
   depends_on = [
     aws_iam_role_policy_attachment.eso
   ]
