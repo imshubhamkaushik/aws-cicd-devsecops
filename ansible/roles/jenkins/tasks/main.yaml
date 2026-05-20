@@ -311,6 +311,8 @@
     user: "{{ jenkins_admin_user }}"
     password: "{{ vault_jenkins_admin_password }}"
     force_basic_auth: yes
+    headers:
+      "{{ jenkins_crumb.json.crumbRequestField }}": "{{ jenkins_crumb.json.crumb }}"
     status_code: 200
   register: jcasc_reload
   retries: 5
