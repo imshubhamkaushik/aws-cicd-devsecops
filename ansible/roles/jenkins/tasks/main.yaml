@@ -290,6 +290,19 @@
   delay: 5
   until: jenkins_ui.status == 200
 
+# Fetch CSRF crumb from Jenkins
+- name: Get Jenkins CSRF crumb
+  uri:
+    url: "http://localhost:8080/crumbIssuer/api/json"
+    user: "{{ jenkins_admin_user }}"
+    password: "{{ vault_jenkins_admin_password }}"
+    force_basic_auth: yes
+    return_content: yes
+  register: jenkins_crumb
+  retries: 5
+  delay: 5
+  until: jenkins_crumb.status == 200
+
 # ONLY NOW reload — Jenkins is up with new token in memory
 - name: Reload JCasC configuration
   uri:
