@@ -516,7 +516,7 @@ resource "aws_iam_policy" "jenkins_s3_ops" {
           "ssm:PutParameter", "ssm:DeleteParameter",
           "ssm:AddTagsToResource", "ssm:ListTagsForResource"
         ]
-        # Scoped to /${var.ec2_name}/ prefix — covers /catalogix/dev/rds-endpoint etc.
+        # Scoped to /${var.project_name} prefix — covers /catalogix-cluster-dev/rds-endpoint etc.
         Resource = [
           "arn:aws:ssm:${var.aws_region}:*:parameter/${var.project_name}-*"
         ]

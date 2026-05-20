@@ -14,7 +14,7 @@ resource "terraform_data" "force_delete_pending_secret" {
       set -e
       DELETED_DATE=$(aws secretsmanager describe-secret \
         --secret-id "${var.secret_name}" \
-        --region "${data.aws_region.current.name}" \
+        --region "${data.aws_region.current.region}" \
         --query 'DeletedDate' \
         --output text 2>/dev/null || echo "NOT_FOUND")
 
@@ -25,7 +25,7 @@ resource "terraform_data" "force_delete_pending_secret" {
         aws secretsmanager delete-secret \
           --secret-id "${var.secret_name}" \
           --force-delete-without-recovery \
-          --region "${data.aws_region.current.name}"
+          --region "${data.aws_region.current.region}"
         sleep 5
       fi
     EOF

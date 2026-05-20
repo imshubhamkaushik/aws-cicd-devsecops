@@ -155,6 +155,11 @@ module "secrets" {
   }
 }
 
+import {
+  to = module.eks.aws_access_entry.jenkins_admin
+  id = "${local.env_prefix}:${data.terraform_remote_state.bootstrap.outputs.jenkins_role_arn}"
+}
+
 # External Secrets Operator - syncs Secrets Manager secrets into K8s Secrets
 # This replaces the manual process of creating K8s Secrets wth `kubectl create secrets` in the Jenkins pipeline
 module "eso" {
