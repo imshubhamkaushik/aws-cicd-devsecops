@@ -58,7 +58,7 @@ configuration-as-code:
   version: 1
   deprecated: warn
   restricted: reject
-  unknownRoot: reject
+  unknown: reject
 
 credentials:
   system:
