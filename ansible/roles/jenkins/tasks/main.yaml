@@ -142,7 +142,6 @@
     owner: jenkins
     group: jenkins
     mode: "0644"
-  notify: restart jenkins
 
 # Ensure correct permissions
 - name: Fix Jenkins home directory permissions
@@ -261,7 +260,7 @@
 # -----------------------------
 # Start Jenkins after full setup
 # -----------------------------
-- name: Start Jenkins
+- name: Start Jenkins after full setup
   service:
     name: jenkins
     state: started
@@ -290,6 +289,20 @@
   retries: 30
   delay: 5
   until: jenkins_ui.status == 200
+
+# ONLY NOW reload — Jenkins is up with new token in memory
+- name: Reload JCasC configuration
+  uri:
+    url: "http://localhost:8080/reload-configuration-as-code/"
+    method: POST
+    user: "{{ jenkins_admin_user }}"
+    password: "{{ vault_jenkins_admin_password }}"
+    force_basic_auth: yes
+    status_code: 200
+  register: jcasc_reload
+  retries: 5
+  delay: 5
+  until: jcasc_reload.status == 200
 
 # -----------------------------
 # Strong JCasC verification (auth = success)
