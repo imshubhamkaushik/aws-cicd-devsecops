@@ -313,6 +313,8 @@
     force_basic_auth: yes
     headers:
       "{{ jenkins_crumb.json.crumbRequestField }}": "{{ jenkins_crumb.json.crumb }}"
+      body: ""
+      body_format: form-urlencoded
     status_code: 200
   register: jcasc_reload
   retries: 5
