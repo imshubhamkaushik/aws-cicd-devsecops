@@ -4,7 +4,7 @@ regions:
   - ap-south-1
 
 filters:
-  tag:Project: catalogix-bootstrap
+  tag:Project: catalogix
   # must match var.project_tag in terraform.tfvars
   instance-state-name: running
   # This prevent Ansible from targeting stopped or termminated instances
