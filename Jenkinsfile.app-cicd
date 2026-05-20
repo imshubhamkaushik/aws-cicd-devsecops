@@ -271,7 +271,7 @@ pipeline {
                         docker pull ${USER_SVC_IMAGE} || true
 
                         # Build Main Image
-                        docker build --cache-from ${USER_SVC_IMAGE} --target app -f user-svc/Dockerfile -t ${USER_SVC_IMAGE} user-svc
+                        docker build --cache-from ${USER_SVC_IMAGE} --target app -f user-svc/Dockerfile -t ${USER_SVC_IMAGE} .
 
                         # Scan Main Image
                         docker run --rm \
@@ -295,7 +295,7 @@ pipeline {
                         docker pull ${PRODUCT_SVC_IMAGE} || true
 
                         # Build Main Image
-                        docker build --cache-from ${PRODUCT_SVC_IMAGE} --target app -f product-svc/Dockerfile -t ${PRODUCT_SVC_IMAGE} product-svc
+                        docker build --cache-from ${PRODUCT_SVC_IMAGE} --target app -f product-svc/Dockerfile -t ${PRODUCT_SVC_IMAGE} .
 
                         # Scan Main Image
                         docker run --rm \
