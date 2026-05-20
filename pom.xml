@@ -20,6 +20,7 @@
     <properties>
         <java.version>21</java.version>
         <spring.boot.version>3.5.14</spring.boot.version>
+        <tomcat.version>10.1.55</tomcat.version>
     </properties>
 
     <!-- Dependency Management -->
@@ -38,7 +39,7 @@
             <dependency>
                 <groupId>org.postgresql</groupId>
                 <artifactId>postgresql</artifactId>
-                <version>42.7.7</version>
+                <version>42.7.11</version>
             </dependency>
 
             <!-- Testcontainers (centralized) -->
