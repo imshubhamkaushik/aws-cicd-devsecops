@@ -216,9 +216,15 @@ resource "aws_iam_role_policy_attachment" "ebs_csi" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy"
 }
 
+# to check for version update:
+# aws eks describe-addon-versions 
+#   --kubernetes-version 1.35 
+#   --addon-name aws-ebs-csi-driver 
+#   --query 'addons[0].addonVersions[0].addonVersion'
 resource "aws_eks_addon" "ebs_csi" {
   cluster_name                = aws_eks_cluster.cluster.name
   addon_name                  = "aws-ebs-csi-driver"
+  addon_version               = "v1.60.0-eksbuild.1"
   service_account_role_arn    = aws_iam_role.ebs_csi.arn
   resolve_conflicts_on_update = "OVERWRITE"
 
@@ -343,7 +349,7 @@ resource "terraform_data" "aws_auth" {
 
   provisioner "local-exec" {
     command = <<EOF
-aws eks update-kubeconfig --region ${var.aws_region} --name ${var.cluster_name}
+aws eks update-kubeconfig --region ${var.aws_region} --name ${aws_eks_cluster.cluster.name}
 
 kubectl apply -f - <<YAML
 apiVersion: v1

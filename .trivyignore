@@ -41,6 +41,25 @@ CVE-2026-22801
 # Why ignored : png_set_quantize() is a colour-reduction function used by image editors and display applications. None of the workloads deployed to the EKS cluster — user-svc, product-svc, frontend-svc, Postgres StatefulSet, Prometheus, Grafana, Alertmanager — call this function. The vulnerability is triggered only by an application explicitly invoking png_set_quantize() on a malformed palette image, which no service in this project does.
 
 # Revisit   : When base image is next updated; remove once distro ships libpng >= 1.6.55-r0 (Alpine) or equivalent Debian/Ubuntu patch.
+
 CVE-2026-25646
 
+# ----------------------------------------------------------------------------------------------
+
+# AWS-0040
+
+# Check     : RDS instance does not have deletion protection enabled
+#             (deletion_protection = false on aws_db_instance)
+#
+# Why ignored : Intentional for the development environment only.
+#               deletion_protection = true blocks `terraform destroy`,
+#               which requires a manual AWS console step before every teardown.
+#               The dev RDS instance holds no real or sensitive data — only
+#               seed records created by the Spring Boot services on startup.
+#               skip_final_snapshot = true is also set intentionally for the
+#               same reason: ephemeral dev data needs no backup on destroy.
+#
+# Revisit   : MUST be removed and deletion_protection enabled for any
+#             environment with real user data. This suppression is
+#             dev-only and must not carry into staging or production.
 AWS-0040

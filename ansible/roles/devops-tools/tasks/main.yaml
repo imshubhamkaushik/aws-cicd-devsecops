@@ -95,7 +95,7 @@
 
 - name: Download Trivy {{ trivy_version }} .deb package
   get_url:
-    url: https://github.com/aquasecurity/trivy/releases/download/v{{ trivy_version }}/trivy_{{ trivy_version }}_Linux-64bit.deb
+    url: "https://github.com/aquasecurity/trivy/releases/download/v{{ trivy_version }}/trivy_{{ trivy_version }}_{{ 'Linux-ARM64.deb' if ansible_architecture == 'aarch64' else 'Linux-64bit.deb' }}"
     dest: /tmp/trivy.deb
     force: true
   when: trivy_version not in (trivy_check.stdout | default(''))
@@ -145,7 +145,7 @@
 
 - name: Add HashiCorp apt repository
   apt_repository:
-    repo: "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg arch=amd64] https://apt.releases.hashicorp.com {{ ansible_distribution_release }} main"
+    repo: "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg arch={{ 'arm64' if ansible_architecture == 'aarch64' else 'amd64' }}] https://apt.releases.hashicorp.com {{ ansible_distribution_release }} main"
     state: present
     filename: hashicorp
     update_cache: no

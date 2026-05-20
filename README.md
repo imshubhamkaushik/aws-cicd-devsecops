@@ -103,7 +103,7 @@ flowchart TD
  
     Jenkins --> CI
  
-    subgraph EKS["Amazon EKS Cluster — Kubernetes 1.32"]
+    subgraph EKS["Amazon EKS Cluster — Kubernetes 1.35"]
         subgraph AppNS["ns: catalogix"]
             FE[frontend-svc\nReact + Nginx]
             US[user-svc\nSpring Boot :8081]
@@ -141,7 +141,7 @@ terraform/
 └── platform-infra/
     └── env/dev/            # Reads bootstrap outputs via terraform_remote_state.
         └── modules/
-            ├── eks/        # EKS 1.32, managed node group, OIDC, IRSA, gp3 StorageClass
+            ├── eks/        # EKS 1.35, managed node group, OIDC, IRSA, gp3 StorageClass
             ├── ecr/        # 3 private repositories (user-svc, product-svc, frontend-svc)
             ├── rds/        # PostgreSQL 18.1, encrypted, private subnet, random password
             ├── alb/        # AWS Load Balancer Controller via Helm + IRSA
@@ -240,7 +240,7 @@ Provisions the network foundation. Designed to be applied once.
 ### platform-infra modules
  
 **EKS:**
-- Kubernetes 1.32, ON_DEMAND managed node group (min 1 / max 2 / desired 2)
+- Kubernetes 1.35, ON_DEMAND managed node group (min 1 / max 2 / desired 2)
 - Add-ons pinned to specific versions (`vpc-cni`, `coredns`, `kube-proxy`, `aws-ebs-csi-driver`) — prevents silent upgrades
 - OIDC provider for IRSA
 - EBS CSI driver with its own IRSA role scoped to only EBS provisioning permissions

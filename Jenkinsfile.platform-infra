@@ -38,12 +38,12 @@ def ensureKubernetesAccess() {
             echo "ERROR: Failed to generate kubeconfig after 5 attempts"
             exit 1
         fi
-        
-        chmod 600 ${env.KUBECONFIG}
 
         echo "=== Retrying kubectl ==="
         kubectl get nodes --request-timeout=10s
     fi
+
+    chmod 600 ${env.KUBECONFIG}
 
     echo "Kubernetes access verified."
     """               
@@ -57,7 +57,7 @@ pipeline {
 
     environment {
         AWS_REGION   = "ap-south-1"
-        CLUSTER_NAME = "catalogix-dev"
+        CLUSTER_NAME = "catalogix-cluster-dev"
         TF_DIR       = "terraform/platform-infra/env/dev"
         // GIT_REPO_URL is injected by JCasC from /etc/default/jenkins — update group_vars/all/jenkins.yaml
         GIT_REPO_URL = "${env.GIT_REPO_URL}"
@@ -96,7 +96,7 @@ pipeline {
 
     options {
         timestamps()
-        disableConcurrentBuilds()
+        disableConcurrentBuilds(abortPrevious: true)
         timeout(time: 90, unit: 'MINUTES')
     }
 
@@ -189,7 +189,7 @@ pipeline {
         stage("Terraform Init") { 
             steps { 
                 dir("${TF_DIR}") { 
-                    sh "terraform init" 
+                    sh "terraform init -reconfigure" 
                 } 
             }
         }
@@ -238,7 +238,7 @@ pipeline {
                     sh "terraform plan -out main.tfplan"
                 }
 
-                // input must be at Groovy level — not inside sh.
+                // input is a Jenkins DSL step, must be at Groovy level — CANNOT go inside sh.
                 input message: "Review the remaining infra plan (ALB, ESO, RDS, Secrets). Approve apply?", ok: "Apply"
 
                 dir("${TF_DIR}") {
@@ -526,7 +526,7 @@ Are you absolutely sure?""",
         
         always  { 
             dir("${TF_DIR}") { 
-                sh "rm -f eks.tfplan || true"
+                // sh "rm -f eks.tfplan || true"
                 sh "rm -f main.tfplan || true" 
                 sh "rm -f destroy.tfplan || true"
             } 

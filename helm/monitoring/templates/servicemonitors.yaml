@@ -16,6 +16,8 @@ spec:
         values:
           - user-svc
           - product-svc
+          # frontend-svc is excluded: nginx does not expose /actuator/prometheus.
+          # Add it here if a metrics endpoint is added to the frontend image.
   endpoints:
     - port: http
       path: /actuator/prometheus

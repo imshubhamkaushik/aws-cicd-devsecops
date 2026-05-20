@@ -9,8 +9,6 @@
 # Jenkins
 vault_jenkins_admin_password: "adminadmin"
 vault_github_token:           ""
-vault_aws_access_key_id:      ""
-vault_aws_secret_access_key:  ""
 
 # SonarQube
 vault_sonar_admin_password:   "adminadmin"

@@ -2,10 +2,10 @@
 # It defines versions for key tools like kubectl, helm, trivy, and sonar-scanner, ensuring consistency across all playbooks that reference these variables.
 # Note: The directory should be named group_vars to align with Ansible's variable loading convention.
 
-kubectl_version: "v1.32.0"
+kubectl_version: "v1.35.0"
 helm_version: "v3.17.0"
 trivy_version: "0.70.0"
 
 # variables
 aws_region: "ap-south-1"
-cluster_name: "catalogix"
+cluster_name: "catalogix-cluster-dev"

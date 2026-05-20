@@ -36,12 +36,12 @@ def ensureKubernetesAccess() {
             echo "ERROR: Failed to generate kubeconfig after 5 attempts"
             exit 1
         fi
-        
-        chmod 600 ${env.KUBECONFIG}
 
         echo "=== Retrying kubectl ==="
         kubectl get nodes --request-timeout=10s
     fi
+
+    chmod 600 ${env.KUBECONFIG}
 
     echo "Kubernetes access verified."
     """               
@@ -55,7 +55,7 @@ pipeline {
         AWS_REGION = "ap-south-1"
         
         // Cluster Name
-        CLUSTER_NAME = "catalogix-dev"
+        CLUSTER_NAME = "catalogix-cluster-dev"
         
         // Image tags
         MAJOR_VERSION = "1.0"
@@ -72,8 +72,8 @@ pipeline {
         // SSM Parameter Store
         SSM_RDS_PATH = "/${CLUSTER_NAME}/rds-endpoint"
 
-        MAVEN_CACHE = "${WORKSPACE}/.m2/repository"
-        NPM_CACHE = "${WORKSPACE}/.npm"
+        MAVEN_CACHE = "/var/lib/jenkins/.m2/repository"
+        NPM_CACHE = "/var/lib/jenkins/.npm"
     }
 
     tools {
@@ -86,7 +86,7 @@ pipeline {
 
     options {
         timestamps()
-        disableConcurrentBuilds()
+        disableConcurrentBuilds(abortPrevious: true)
         timeout(time: 45, unit: 'MINUTES')
     }
 
@@ -129,6 +129,11 @@ pipeline {
                         script: "grep '^trivy_version:' ansible/group_vars/all/vars.yaml | awk '{print \$2}'",
                         returnStdout: true
                     ).trim()
+
+                    if (!env.TRIVY_TAG) {
+                        error("TRIVY_TAG is empty — 'trivy_version' key not found in ansible/group_vars/all/vars.yaml. Check the key name and file path.")
+                    }
+
                     env.TRIVY_IMAGE = "aquasec/trivy:${env.TRIVY_TAG}"
 
                     // AWS Identity
@@ -162,14 +167,14 @@ pipeline {
                 stage('User Service') {
                     steps {
                         dir('user-svc') {
-                            sh "mvn -B clean test"
+                            sh "mvn -B clean test -Dmaven.repo.local=${MAVEN_CACHE}"
                         }
                     }
                 }
                 stage('Product Service') {
                     steps {
                         dir('product-svc') {
-                            sh "mvn -B clean test"
+                            sh "mvn -B clean test -Dmaven.repo.local=${MAVEN_CACHE}"
                         }
                     }
                 }
@@ -266,7 +271,7 @@ pipeline {
                         docker pull ${USER_SVC_IMAGE} || true
 
                         # Build Main Image
-                        docker build --cache-from ${USER_SVC_IMAGE} --target app -f user-svc/Dockerfile -t ${USER_SVC_IMAGE} .
+                        docker build --cache-from ${USER_SVC_IMAGE} --target app -f user-svc/Dockerfile -t ${USER_SVC_IMAGE} user-svc
 
                         # Scan Main Image
                         docker run --rm \
@@ -290,7 +295,7 @@ pipeline {
                         docker pull ${PRODUCT_SVC_IMAGE} || true
 
                         # Build Main Image
-                        docker build --cache-from ${PRODUCT_SVC_IMAGE} --target app -f product-svc/Dockerfile -t ${PRODUCT_SVC_IMAGE} .
+                        docker build --cache-from ${PRODUCT_SVC_IMAGE} --target app -f product-svc/Dockerfile -t ${PRODUCT_SVC_IMAGE} product-svc
 
                         # Scan Main Image
                         docker run --rm \
@@ -406,8 +411,7 @@ pipeline {
             }
         }
 
-        // Fetch the RDS endpoint from Terraform output
-        // add --set database.host=${RDS_ENDPOINT} at the end of helm upgrade command in "Deploy to EKS using Helm" stage when use this block
+        // Fetch the RDS endpoint from Terraform output stored in SSM Parameter Store, so we can inject it into the Helm chart for the application to connect to the database.
         stage('Fetch RDS Endpoint') {
             steps {
                 script {
@@ -448,11 +452,11 @@ pipeline {
                     sh """
                     set -e
 
-                    echo "===== Deployment Rollout Status ====="
-                    echo ""
-                    kubectl rollout status deployment/frontend-svc -n ${K8S_NAMESPACE} --timeout=300s
-                    kubectl rollout status deployment/user-svc -n ${K8S_NAMESPACE} --timeout=300s
-                    kubectl rollout status deployment/product-svc -n ${K8S_NAMESPACE} --timeout=300s
+                    # NOTE: kubectl rollout status calls have been removed.
+                    # helm upgrade --wait (previous stage) already blocks until all
+                    # Deployments report Ready. Adding rollout status on top doubles
+                    # the potential wait time (3 × 300s = 900s extra) for a check
+                    # that is already guaranteed by Helm before reaching this stage.
 
                     echo "===== Application Deployment ====="
                     echo ""
@@ -468,6 +472,34 @@ pipeline {
                     echo ""
                     echo "<-- Ingress -->"
                     kubectl get ingress -n ${K8S_NAMESPACE}
+
+                    echo ""
+                    echo "===== Smoke Test ====="
+
+                    # Fetch the ALB hostname from the frontend ingress and hit it.
+                    # This is the only end-to-end check that proves the application
+                    # actually responds — pod Ready just means probes pass, not that
+                    # the app serves traffic correctly.
+                    ALB_HOST=\$(kubectl get ingress catalogix -n ${K8S_NAMESPACE} \
+                        -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)
+
+                    if [ -z "\$ALB_HOST" ]; then
+                        echo "WARNING: ALB hostname not yet assigned — skipping smoke test."
+                    else
+                        echo "ALB hostname: \$ALB_HOST"
+                        # Retry for up to 60s — ALB DNS takes a moment to propagate.
+                        for i in \$(seq 1 6); do
+                            HTTP_CODE=\$(curl -s -o /dev/null -w "%{http_code}" \
+                                --max-time 10 "http://\$ALB_HOST/" || echo "000")
+                            if [ "\$HTTP_CODE" = "200" ] || [ "\$HTTP_CODE" = "301" ] || [ "\$HTTP_CODE" = "302" ]; then
+                                echo "Smoke test passed — HTTP \$HTTP_CODE from frontend."
+                                break
+                            fi
+                            echo "Attempt \$i — got HTTP \$HTTP_CODE, retrying in 10s..."
+                            [ \$i -eq 6 ] && echo "WARNING: Smoke test did not get 2xx/3xx after 60s. Check ALB target group health." && exit 1
+                            sleep 10
+                        done
+                    fi
 
                     echo ""
                     echo "===== Monitoring Deployment ====="

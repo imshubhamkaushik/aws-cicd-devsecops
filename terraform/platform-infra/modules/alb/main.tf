@@ -69,10 +69,6 @@ resource "kubernetes_service_account_v1" "alb" {
     }
   }
 
-  lifecycle {
-    prevent_destroy = false
-  }
-
   depends_on = [
     aws_iam_role_policy_attachment.alb
   ]
@@ -97,10 +93,6 @@ resource "helm_release" "alb_controller" {
       }
     })
   ]
-
-  lifecycle {
-    prevent_destroy = false
-  }
 
   depends_on = [
     kubernetes_service_account_v1.alb,

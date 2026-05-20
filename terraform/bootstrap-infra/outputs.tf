@@ -10,7 +10,7 @@ output "instance_id_sonarqube" {
 
 output "public_ip_jenkins" {
   description = "Public IP of the Jenkins Server — open http://<ip>:8080 in browser"
-  value       = aws_instance.jenkins_catalogix.public_ip
+  value       = aws_eip.jenkins_eip.public_ip
 }
 
 output "private_ip_sonarqube" {

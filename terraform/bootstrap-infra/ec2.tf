@@ -26,6 +26,20 @@ resource "aws_instance" "jenkins_catalogix" {
   }
 }
 
+resource "aws_eip" "jenkins_eip" {
+  instance = aws_instance.jenkins_catalogix.id
+  domain  = "vpc"
+
+  tags = {
+    Name    = "Jenkins EIP - Catalogix"
+    Project = var.project_tag
+    Role    = "jenkins"
+  }
+
+  depends_on = [ aws_internet_gateway.igw ]
+  
+}
+
 # EC2 Instances for SonarQube
 resource "aws_instance" "sonarqube_catalogix" {
   ami                    = var.ami
