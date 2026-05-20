@@ -54,6 +54,12 @@ tool:
                     id: "22.15.0"
                     npmPackagesRefreshHours: 72
 
+configuration-as-code:
+  version: 1
+  deprecated: warn
+  restricted: reject
+  unknownRoot: reject
+
 credentials:
   system:
     domainCredentials:
