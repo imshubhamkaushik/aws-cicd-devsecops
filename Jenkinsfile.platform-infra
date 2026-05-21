@@ -422,7 +422,8 @@ pipeline {
                     echo "========================================================"
                     echo " DESTROY PLAN — RESOURCES THAT WILL BE DESTROYED"
                     echo "========================================================"
-                    terraform plan -destroy -out destroy.tfplan
+                    terraform plan -destroy -out destroy.tfplan -refresh=false
+                    echo "========================================================"
                     """
                 }
             }
