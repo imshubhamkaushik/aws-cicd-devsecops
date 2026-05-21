@@ -1,4 +1,4 @@
-{{- if or .Values.hpa.enabled (gt (.Values.userSvc.replicaCount | int) 1) }}
+{{- if or (and .Values.hpa .Values.hpa.enabled) (gt (.Values.userSvc.replicaCount | int) 1) }}
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
@@ -11,7 +11,7 @@ spec:
       app: user-svc
 {{- end }}
 ---
-{{- if or .Values.hpa.enabled (gt (.Values.productSvc.replicaCount | int) 1) }}
+{{- if or (and .Values.hpa .Values.hpa.enabled) (gt (.Values.productSvc.replicaCount | int) 1) }}
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
@@ -24,7 +24,7 @@ spec:
       app: product-svc
 {{- end }}
 ---
-{{- if or .Values.hpa.enabled (gt (.Values.frontendSvc.replicaCount | int) 1) }}
+{{- if or (and .Values.hpa .Values.hpa.enabled) (gt (.Values.frontendSvc.replicaCount | int) 1) }}
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
