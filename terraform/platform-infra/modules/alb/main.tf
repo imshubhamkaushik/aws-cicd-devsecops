@@ -91,7 +91,7 @@ resource "helm_release" "alb_controller" {
         create = true
         name   = "aws-load-balancer-controller"
         annotations = {
-          "eks.amazonaws.com/role-arn" = aws_iam_role.alb.arn   # ← IRSA annotation
+          "eks.amazonaws.com/role-arn" = aws_iam_role.alb.arn # ← IRSA annotation
         }
       }
     })
