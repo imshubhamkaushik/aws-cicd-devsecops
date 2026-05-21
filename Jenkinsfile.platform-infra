@@ -194,34 +194,32 @@ pipeline {
             }
         }
 
-        stage("Terraform Validate and Plan") {
+        stage("Terraform Validate") {
             when {
                 expression { params.ACTION == 'apply' }
             } 
             steps {    
                 dir("${TF_DIR}") { 
-                    sh """
-                    set -e
-                    # Validate will check if terraform files are valid
-                    terraform validate 
-
-                    # terraform plan
-                    echo "========================================================"
-                    echo " APPLY PLAN — RESOURCES THAT WILL BE CREATED or UPDATED"
-                    echo "========================================================"
-                    terraform plan -out main.tfplan
-                    """
-                }     
-                stash name: 'tfplan', includes: "${TF_DIR}/main.tfplan"          
+                    // terraform validate is not strictly required because terraform plan will fail if the config is invalid, but it provides faster feedback on syntax errors before the more time-consuming plan step.
+                    sh "terraform validate"
+                }         
             } 
         }
 
-        stage("Terraform Apply"){
+        stage("Terraform Plan andApply"){
             steps {
+                dir("${TF_DIR}") {
+                    sh """
+                    set -e
+                    echo "========================================================"
+                    echo "  Running terraform plan ..."
+                    echo "========================================================"
+                    terraform plan -out main.tfplan
+                    echo "========================================================"
+                    """
+                }
                 // input is a Jenkins DSL step, must be at Groovy level — CANNOT go inside sh.
                 input message: "Review the terraform plan in the last stage. Approve apply?", ok: "Apply"
-
-                unstash 'tfplan'
 
                 dir("${TF_DIR}") {
                     sh """
@@ -231,7 +229,7 @@ pipeline {
                     echo "========================================================"
                     terraform apply -auto-approve main.tfplan
                     echo "========================================================"
-                    echo "  Destroy complete."
+                    echo "  Apply complete."
                     echo "========================================================"
                     """
                 }
