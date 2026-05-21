@@ -206,7 +206,10 @@ pipeline {
             } 
         }
 
-        stage("Terraform Plan andApply"){
+        stage("Terraform Plan and Apply"){
+            when {
+                expression { params.ACTION == 'apply' }
+            }
             steps {
                 dir("${TF_DIR}") {
                     sh """
