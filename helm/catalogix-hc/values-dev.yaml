@@ -12,7 +12,7 @@ database:
 # DB password is NOT stored here. It is pulled from AWS Secrets Manager by the
 # ExternalSecret template and placed into the 'catalogix-secrets' Kubernetes Secret.
 secretsManager:
-  secretName: "catalogix-dev/db-credentials"
+  secretName: "catalogix-cluster-dev/db-credentials"
 
 ingress:
   enabled: true
