@@ -211,7 +211,8 @@ pipeline {
                     echo "========================================================"
                     terraform plan -out main.tfplan
                     """
-                }               
+                }     
+                stash name: 'tfplan', includes: "${TF_DIR}/main.tfplan"          
             } 
         }
 
@@ -219,6 +220,8 @@ pipeline {
             steps {
                 // input is a Jenkins DSL step, must be at Groovy level — CANNOT go inside sh.
                 input message: "Review the terraform plan in the last stage. Approve apply?", ok: "Apply"
+
+                unstash 'tfplan'
 
                 dir("${TF_DIR}") {
                     sh """
