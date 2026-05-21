@@ -182,48 +182,68 @@ pipeline {
         }
 
         stage('Build Artifacts') {
-            parallel {
-
-                stage('User Service JAR') {
+            stages {
+                stage('Cache') {
                     steps {
-                        dir('user-svc') { 
-                            sh """
-                            # Create cache dir if it doesn't exist
-                            mkdir -p ${MAVEN_CACHE}
+                        script {
+                            def clearCache = input(
+                                message: 'Clear Maven cache before building?',
+                                ok: 'Continue',
+                                parameters: [
+                                    booleanParam(
+                                        name: 'CLEAR_MAVEN_CACHE',
+                                        defaultValue: false,
+                                        description: 'Wipe the local Maven cache — use when a dependency change is not being picked up.'
+                                    )
+                                ]
+                            )
 
-                            # Use local repo, download only missing dependencies
-                            mvn -B -Dmaven.repo.local=${MAVEN_CACHE} package -DskipTests
-                            """
+                            if (clearCache) {
+                                echo "Clearing Maven cache at ${MAVEN_CACHE}..."
+                                sh "rm -rf ${MAVEN_CACHE}"
+                                // Re-install parent POM after wipe so submodule builds resolve the current parent rather than re-downloading a potentially stale release version from remote.
+                                sh "mvn -B install -N -Dmaven.repo.local=${MAVEN_CACHE}"
+                            } else {
+                                echo "Maven cache preserved — skipping parent POM reinstall."
+                            }
                         }
                     }
                 }
 
-                stage('Product Service JAR') {
-                    steps {
-                        dir('product-svc') { 
-                            sh """
-                            # Create cache dir if it doesn't exist
-                            mkdir -p ${MAVEN_CACHE}
-
-                            # Use local repo, download only missing dependencies
-                            mvn -B -Dmaven.repo.local=${MAVEN_CACHE} package -DskipTests
-                            """
+                stage('Build') {
+                    parallel {
+                        stage('User Service JAR') {
+                            steps {
+                                dir('user-svc') {
+                                    sh """
+                                    mkdir -p ${MAVEN_CACHE}
+                                    mvn -B -Dmaven.repo.local=${MAVEN_CACHE} package -DskipTests
+                                    """
+                                }
+                            }
                         }
-                    }
-                }
 
-                stage('Frontend Service Build') {
-                    steps {
-                        dir('frontend-svc') {
-                            sh """
-                            mkdir -p ${NPM_CACHE}
+                        stage('Product Service JAR') {
+                            steps {
+                                dir('product-svc') {
+                                    sh """
+                                    mkdir -p ${MAVEN_CACHE}
+                                    mvn -B -Dmaven.repo.local=${MAVEN_CACHE} package -DskipTests
+                                    """
+                                }
+                            }
+                        }
 
-                            # Use npm cache, will only download missing packages
-                            npm ci --cache ${NPM_CACHE}
-
-                            # Build the project
-                            npm run build
-                            """
+                        stage('Frontend Service Build') {
+                            steps {
+                                dir('frontend-svc') {
+                                    sh """
+                                    mkdir -p ${NPM_CACHE}
+                                    npm ci --cache ${NPM_CACHE}
+                                    npm run build
+                                    """
+                                }
+                            }
                         }
                     }
                 }
