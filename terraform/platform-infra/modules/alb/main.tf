@@ -59,20 +59,20 @@ resource "aws_iam_role_policy_attachment" "alb" {
   policy_arn = aws_iam_policy.alb.arn
 }
 
-# Service account for IRSA
-resource "kubernetes_service_account_v1" "alb" {
-  metadata {
-    name      = "aws-load-balancer-controller"
-    namespace = "kube-system"
-    annotations = {
-      "eks.amazonaws.com/role-arn" = aws_iam_role.alb.arn
-    }
-  }
+# # Service account for IRSA
+# resource "kubernetes_service_account_v1" "alb" {
+#   metadata {
+#     name      = "aws-load-balancer-controller"
+#     namespace = "kube-system"
+#     annotations = {
+#       "eks.amazonaws.com/role-arn" = aws_iam_role.alb.arn
+#     }
+#   }
 
-  depends_on = [
-    aws_iam_role_policy_attachment.alb
-  ]
-}
+#   depends_on = [
+#     aws_iam_role_policy_attachment.alb
+#   ]
+# }
 
 # Install ALB controller
 resource "helm_release" "alb_controller" {
@@ -88,8 +88,11 @@ resource "helm_release" "alb_controller" {
       region      = var.region
       vpcId       = var.vpc_id
       serviceAccount = {
-        create = false
+        create = true
         name   = "aws-load-balancer-controller"
+        annotations = {
+          "eks.amazonaws.com/role-arn" = aws_iam_role.alb.arn   # ← IRSA annotation
+        }
       }
     })
   ]
