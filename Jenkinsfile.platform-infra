@@ -202,10 +202,10 @@ pipeline {
                 dir("${TF_DIR}") { 
                     sh """
                     set -e
-                    // Validate will check if terraform files are valid
+                    # Validate will check if terraform files are valid
                     terraform validate 
 
-                    // terraform plan
+                    # terraform plan
                     echo "========================================================"
                     echo " APPLY PLAN — RESOURCES THAT WILL BE CREATED or UPDATED"
                     echo "========================================================"

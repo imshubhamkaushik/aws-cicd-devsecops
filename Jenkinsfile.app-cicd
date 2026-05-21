@@ -422,11 +422,11 @@ pipeline {
                 set -e
 
                 docker run --rm \
-                  -v \$(pwd):/catalogix \
+                  -v \$(pwd):/ \
                   ${TRIVY_IMAGE} config \
                   --severity HIGH,CRITICAL --exit-code 1 \
-                  --ignorefile /catalogix/.trivyignore \
-                  /catalogix/${HELM_CHART_DIR}
+                  --ignorefile /.trivyignore \
+                  /${HELM_CHART_DIR}
                 """
             }
         }
