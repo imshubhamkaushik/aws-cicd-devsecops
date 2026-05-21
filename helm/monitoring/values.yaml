@@ -119,16 +119,16 @@ kube-prometheus-stack:
         group_wait: 30s
         group_interval: 5m
         repeat_interval: 3h
-      routes:
-        - matchers:
-            - name: severity
-              value: critical
-          receiver: "critical-receiver"
-          repeat_interval: 1h
-        - matchers:
-            - name: severity
-              value: warning
-          receiver: "null"
+        routes:
+          - matchers:
+              - name: severity
+                value: critical
+            receiver: "null"
+            repeat_interval: 1h
+          - matchers:
+              - name: severity
+                value: warning
+            receiver: "null"
       
       receivers:
         # Discards alerts silently. Used for warnings and unmapped alerts in dev.

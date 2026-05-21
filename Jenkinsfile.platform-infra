@@ -194,55 +194,43 @@ pipeline {
             }
         }
 
-        stage("Terraform Validate") {
+        stage("Terraform Validate and Plan") {
             when {
                 expression { params.ACTION == 'apply' }
             } 
             steps {    
                 dir("${TF_DIR}") { 
-                    sh "terraform validate" 
+                    sh """
+                    set -e
+                    // Validate will check if terraform files are valid
+                    terraform validate 
+
+                    // terraform plan
+                    echo "========================================================"
+                    echo " APPLY PLAN — RESOURCES THAT WILL BE CREATED or UPDATED"
+                    echo "========================================================"
+                    terraform plan -out main.tfplan
+                    """
                 }               
             } 
         }
 
-        // ── Apply flow ───────────────────────────────────────────────────────
-
-        // stage("Terraform Plan and Apply - EKS Core") {
-        //     when {
-        //         expression { params.ACTION == 'apply' }
-        //     }
-        //     steps {
-        //         dir("${TF_DIR}") {
-        //             sh "terraform plan -target=module.eks -target=module.sg -out eks.tfplan"
-        //         }
-
-        //         // input is a Jenkins DSL step — CANNOT go inside sh.
-        //         // Must be at Groovy level between shell steps.
-        //         input message: "Review the EKS core plan above. Approve?", ok: "Apply"
-
-        //         dir("${TF_DIR}") {
-        //             sh """
-        //             terraform apply -auto-approve eks.tfplan
-        //             rm -f eks.tfplan
-        //             """
-        //         }
-        //     }
-        // }
-
-        stage("Terraform Plan and Apply - Remaining Infra") {
-            when {
-                expression { params.ACTION == 'apply' }
-            }
+        stage("Terraform Apply"){
             steps {
-                dir("${TF_DIR}") {
-                    sh "terraform plan -out main.tfplan"
-                }
-
                 // input is a Jenkins DSL step, must be at Groovy level — CANNOT go inside sh.
-                input message: "Review the remaining infra plan (ALB, ESO, RDS, Secrets). Approve apply?", ok: "Apply"
+                input message: "Review the terraform plan in the last stage. Approve apply?", ok: "Apply"
 
                 dir("${TF_DIR}") {
-                    sh "terraform apply -auto-approve main.tfplan"
+                    sh """
+                    set -e
+                    echo "========================================================"
+                    echo "  Running terraform apply main.tfplan ..."
+                    echo "========================================================"
+                    terraform apply -auto-approve main.tfplan
+                    echo "========================================================"
+                    echo "  Destroy complete."
+                    echo "========================================================"
+                    """
                 }
             }
         }
@@ -428,7 +416,7 @@ pipeline {
                     sh """
                     set -e
                     echo "========================================================"
-                    echo "  DESTROY PLAN — resources that WILL be deleted"
+                    echo " DESTROY PLAN — RESOURCES THAT WILL BE DESTROYED"
                     echo "========================================================"
                     terraform plan -destroy -out destroy.tfplan
                     """
@@ -467,7 +455,6 @@ Are you absolutely sure?""",
                     echo "  Running terraform apply destroy.tfplan ..."
                     echo "========================================================"
                     terraform apply -auto-approve destroy.tfplan
-                    rm -f destroy.tfplan
                     echo "========================================================"
                     echo "  Destroy complete."
                     echo "========================================================"

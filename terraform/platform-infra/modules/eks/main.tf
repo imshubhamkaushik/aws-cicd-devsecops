@@ -323,6 +323,29 @@ resource "aws_eks_access_policy_association" "console_admin_policy" {
   ]
 }
 
+# Root account always gets console admin access.
+# This is a permanent fix so the AWS Console never shows the
+# "IAM principal doesn't have access" banner regardless of who runs apply.
+resource "aws_eks_access_entry" "root_admin" {
+  cluster_name  = aws_eks_cluster.cluster.name
+  principal_arn = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"
+  type          = "STANDARD"
+
+  depends_on = [aws_eks_cluster.cluster]
+}
+
+resource "aws_eks_access_policy_association" "root_admin_policy" {
+  cluster_name  = aws_eks_cluster.cluster.name
+  principal_arn = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"
+  policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+
+  access_scope {
+    type = "cluster"
+  }
+
+  depends_on = [aws_eks_access_entry.root_admin]
+}
+
 # Idempotent access entry + policy for Jenkins.
 # Using terraform_data + local-exec instead of aws_eks_access_entry because
 # the access entry survives terraform destroy (EKS cluster-creator entries are

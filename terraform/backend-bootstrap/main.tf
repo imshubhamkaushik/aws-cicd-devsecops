@@ -13,12 +13,12 @@ provider "aws" {
 resource "aws_s3_bucket" "tf_state" {
   bucket = "catalogix-tfstate"
 
-  lifecycle {
-    prevent_destroy = true # 
-  }
+  # lifecycle {
+  #   prevent_destroy = true # 
+  # }
 
   tags = {
-    Name = "Terraform State Bucket"
+    Name = "Terraform State Bucket - Catalogix (aws-cicd-devsecops)"
   }
 }
 
