@@ -117,11 +117,6 @@ module "alb" {
   oidc_provider_arn = module.eks.oidc_provider_arn
   oidc_provider     = trimprefix(module.eks.oidc_provider_arn, "arn:aws:iam::${data.aws_caller_identity.current.account_id}:oidc-provider/")
 
-  providers = {
-    kubernetes = kubernetes.after_eks
-    helm       = helm.after_eks
-  }
-
   depends_on = [module.eks, module.sg]
 }
 
@@ -216,4 +211,30 @@ resource "kubernetes_storage_class_v1" "gp3" {
     module.sg,
     module.eso
   ]
+}
+
+resource "helm_release" "alb_controller" {
+  provider   = helm.after_eks
+  name       = "aws-load-balancer-controller"
+  namespace  = "kube-system"
+  repository = "https://aws.github.io/eks-charts"
+  chart      = "aws-load-balancer-controller"
+  version    = "1.11.0"
+
+  values = [
+    yamlencode({
+      clusterName = module.eks.cluster_name
+      region      = var.aws_region
+      vpcId       = local.vpc_id
+      serviceAccount = {
+        create = true
+        name   = "aws-load-balancer-controller"
+        annotations = {
+          "eks.amazonaws.com/role-arn" = module.alb.alb_role_arn
+        }
+      }
+    })
+  ]
+
+  depends_on = [module.eks, module.alb]
 }
