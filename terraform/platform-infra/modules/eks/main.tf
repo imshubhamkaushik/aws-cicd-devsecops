@@ -50,14 +50,17 @@ resource "aws_eks_cluster" "cluster" {
     # DEV NOTE: public access is on so you can run kubectl from your laptop.
     # For production set this to false and access only from within the VPC.
     endpoint_public_access = true # for production, set to false
-    public_access_cidrs = [
-      "${var.jenkins_public_ip}/32",
-    local.my_ip_cidr] # auto-locked to your IP at apply time | use this if endpoint_public_access = true
+    public_access_cidrs    = ["${var.jenkins_public_ip}/32", local.my_ip_cidr]
+    # auto-locked to your IP at apply time | use this if endpoint_public_access = true
   }
 
   access_config {
-    authentication_mode                         = "API_AND_CONFIG_MAP"
-    bootstrap_cluster_creator_admin_permissions = true
+    authentication_mode = "API_AND_CONFIG_MAP"
+    # Set to false — we manage ALL access entries explicitly below.
+    # With true, AWS silently creates a Jenkins entry outside Terraform's state,
+    # which causes ResourceInUseException when Terraform also tries to create it.
+    bootstrap_cluster_creator_admin_permissions = false
+    # DEV NOTE: for security, this is set to false.  If you want to allow cluster creation via the AWS Console, set to true.
   }
 
   enabled_cluster_log_types = ["api", "audit", "authenticator"]
@@ -300,6 +303,27 @@ resource "aws_eks_addon" "ebs_csi" {
 #   ]
 # }
 
+# Access Entry + Policy for Jenkins
+resource "aws_eks_access_entry" "jenkins_admin" {
+  cluster_name  = aws_eks_cluster.cluster.name
+  principal_arn = var.jenkins_role_arn
+  type          = "STANDARD"
+
+  depends_on = [aws_eks_cluster.cluster]
+}
+
+resource "aws_eks_access_policy_association" "jenkins_admin" {
+  cluster_name  = aws_eks_cluster.cluster.name
+  principal_arn = var.jenkins_role_arn
+  policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+
+  access_scope {
+    type = "cluster"
+  }
+
+  depends_on = [aws_eks_access_entry.jenkins_admin]
+}
+
 resource "aws_eks_access_entry" "console_admin" {
   count         = var.console_iam_arn != var.jenkins_role_arn ? 1 : 0
   cluster_name  = aws_eks_cluster.cluster.name
@@ -351,63 +375,64 @@ resource "aws_eks_access_policy_association" "root_admin_policy" {
 # Idempotent access entry + policy for Jenkins.
 # Using terraform_data + local-exec instead of aws_eks_access_entry because
 # the access entry survives terraform destroy (EKS cluster-creator entries are
-# preserved by AWS) and causes ResourceInUseException on re-apply when state
-# is wiped. This check-before-create pattern is safe to run on every apply.
-resource "terraform_data" "jenkins_access_entry" {
-  triggers_replace = {
-    cluster_name  = aws_eks_cluster.cluster.name
-    principal_arn = var.jenkins_role_arn
-    region        = var.aws_region
-  }
+# preserved by AWS) and causes ResourceInUseException on re-apply when state is wiped. 
+# This check-before-create pattern is safe to run on every apply.
+# resource "terraform_data" "jenkins_access_entry" {
+#   triggers_replace = {
+#     cluster_name  = aws_eks_cluster.cluster.name
+#     principal_arn = var.jenkins_role_arn
+#     region        = var.aws_region
+#   }
 
-  provisioner "local-exec" {
-    command = <<-EOF
-      set -e
+#   provisioner "local-exec" {
+#     when = destroy
+#     command = <<-EOF
+#       set -e
 
-      EXISTING=$(aws eks describe-access-entry \
-        --cluster-name "${aws_eks_cluster.cluster.name}" \
-        --principal-arn "${var.jenkins_role_arn}" \
-        --region "${var.aws_region}" \
-        --query 'accessEntry.principalArn' \
-        --output text 2>/dev/null || echo "NOT_FOUND")
+#       EXISTING=$(aws eks describe-access-entry \
+#         --cluster-name "${aws_eks_cluster.cluster.name}" \
+#         --principal-arn "${var.jenkins_role_arn}" \
+#         --region "${var.aws_region}" \
+#         --query 'accessEntry.principalArn' \
+#         --output text 2>/dev/null || echo "NOT_FOUND")
 
-      if [ "$EXISTING" = "NOT_FOUND" ]; then
-        echo "Creating Jenkins access entry..."
-        aws eks create-access-entry \
-          --cluster-name "${aws_eks_cluster.cluster.name}" \
-          --principal-arn "${var.jenkins_role_arn}" \
-          --type STANDARD \
-          --region "${var.aws_region}"
-      else
-        echo "Jenkins access entry already exists — skipping create."
-      fi
+#       if [ "$EXISTING" = "NOT_FOUND" ]; then
+#         echo "Creating Jenkins access entry..."
+#         aws eks create-access-entry \
+#           --cluster-name "${aws_eks_cluster.cluster.name}" \
+#           --principal-arn "${var.jenkins_role_arn}" \
+#           --type STANDARD \
+#           --region "${var.aws_region}"
+#       else
+#         echo "Jenkins access entry already exists — skipping create."
+#       fi
 
-      POLICY_EXISTING=$(aws eks list-associated-access-policies \
-        --cluster-name "${aws_eks_cluster.cluster.name}" \
-        --principal-arn "${var.jenkins_role_arn}" \
-        --region "${var.aws_region}" \
-        --query 'associatedAccessPolicies[?policyArn==`arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy`].policyArn' \
-        --output text 2>/dev/null || echo "NOT_FOUND")
+#       POLICY_EXISTING=$(aws eks list-associated-access-policies \
+#         --cluster-name "${aws_eks_cluster.cluster.name}" \
+#         --principal-arn "${var.jenkins_role_arn}" \
+#         --region "${var.aws_region}" \
+#         --query 'associatedAccessPolicies[?policyArn==`arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy`].policyArn' \
+#         --output text 2>/dev/null || echo "NOT_FOUND")
 
-      if [ -z "$POLICY_EXISTING" ] || [ "$POLICY_EXISTING" = "NOT_FOUND" ]; then
-        echo "Associating AmazonEKSClusterAdminPolicy to Jenkins..."
-        aws eks associate-access-policy \
-          --cluster-name "${aws_eks_cluster.cluster.name}" \
-          --principal-arn "${var.jenkins_role_arn}" \
-          --policy-arn arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy \
-          --access-scope type=cluster \
-          --region "${var.aws_region}"
-      else
-        echo "Jenkins policy association already exists — skipping."
-      fi
-    EOF
-  }
+#       if [ -z "$POLICY_EXISTING" ] || [ "$POLICY_EXISTING" = "NOT_FOUND" ]; then
+#         echo "Associating AmazonEKSClusterAdminPolicy to Jenkins..."
+#         aws eks associate-access-policy \
+#           --cluster-name "${aws_eks_cluster.cluster.name}" \
+#           --principal-arn "${var.jenkins_role_arn}" \
+#           --policy-arn arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy \
+#           --access-scope type=cluster \
+#           --region "${var.aws_region}"
+#       else
+#         echo "Jenkins policy association already exists — skipping."
+#       fi
+#     EOF
+#   }
 
-  depends_on = [
-    aws_eks_cluster.cluster,
-    aws_eks_node_group.node_group
-  ]
-}
+#   depends_on = [
+#     aws_eks_cluster.cluster,
+#     aws_eks_node_group.node_group
+#   ]
+# }
 
 # resource "kubernetes_config_map_v1" "aws_auth" {
 #   metadata {
