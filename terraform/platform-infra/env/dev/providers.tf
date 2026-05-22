@@ -13,6 +13,7 @@ terraform {
     aws        = { source = "hashicorp/aws", version = "~> 6.0" }
     kubernetes = { source = "hashicorp/kubernetes", version = "~> 3.0" }
     helm       = { source = "hashicorp/helm", version = "~> 3.0" }
+    kubectl    = { source = "gavinbunney/kubectl",  version = "~> 1.14" }
     tls        = { source = "hashicorp/tls", version = "~> 4.0" }
     random     = { source = "hashicorp/random", version = "~> 3.0" }
   }
@@ -43,6 +44,8 @@ provider "kubernetes" {
 }
 
 provider "helm" {
+  alias = "after_eks"
+
   kubernetes = {
     host                   = data.aws_eks_cluster.this.endpoint
     cluster_ca_certificate = base64decode(data.aws_eks_cluster.this.certificate_authority[0].data)
@@ -53,6 +56,21 @@ provider "helm" {
       args        = ["eks", "get-token", "--cluster-name", data.aws_eks_cluster.this.name]
     }
   }
+}
 
+provider "kubectl" {
   alias = "after_eks"
+  host                   = module.eks.cluster_endpoint
+  cluster_ca_certificate = base64decode(module.eks.cluster_certificate_authority_data)
+  load_config_file       = false  # never reads ~/.kube/config — fully self-contained
+
+  exec {
+    api_version = "client.authentication.k8s.io/v1beta1"
+    command     = "aws"
+    args = [
+      "eks", "get-token",
+      "--cluster-name", var.cluster_name,
+      "--region", var.aws_region
+    ]
+  }
 }

@@ -12,6 +12,13 @@ terraform {
       source  = "hashicorp/helm"
       version = "~> 3.0"
     }
+    # Replaces local-exec for CRD-based resources.
+    # Unlike hashicorp/kubernetes, this does NOT validate CRD schemas at plan time.
+    # Safe to use on fresh deploys where the cluster doesn't exist yet at plan time.
+    kubectl = {
+      source  = "gavinbunney/kubectl"
+      version = "~> 1.14"
+    }
   }
 }
 
@@ -106,36 +113,62 @@ resource "helm_release" "eso" {
 # hashicorp/kubernetes kubernetes_manifest fetches the CRD schema from the live cluster at PLAN time. 
 # On a fresh deploy the cluster doesn't exist yet at plan time, so Terraform fails with "cannot create REST client: no client config".
 # terraform_data + local-exec runs only at APPLY time, after the cluster and ESO helm chart (which installs the ClusterSecretStore CRD) are both up.
-resource "terraform_data" "cluster_secret_store" {
-  triggers_replace = {
-    # Re-apply if the ESO role ARN or region changes
-    eso_role_arn = aws_iam_role.eso.arn
-    region       = var.region
-  }
+# resource "terraform_data" "cluster_secret_store" {
+#   triggers_replace = {
+#     # Re-apply if the ESO role ARN or region changes
+#     eso_role_arn = aws_iam_role.eso.arn
+#     region       = var.region
+#   }
 
-  provisioner "local-exec" {
-    command = <<-EOF
-      aws eks update-kubeconfig --region ${var.region} --name ${var.cluster_name}
-      kubectl apply -f - <<YAML
-apiVersion: external-secrets.io/v1beta1
-kind: ClusterSecretStore
-metadata:
-  name: aws-secrets-manager
-spec:
-  provider:
-    aws:
-      service: SecretsManager
-      region: ${var.region}
-      auth:
-        jwt:
-          serviceAccountRef:
-            name: external-secrets
-            namespace: external-secrets
-YAML
-    EOF
-  }
+#   provisioner "local-exec" {
+#     command = <<-EOF
+#       aws eks update-kubeconfig --region ${var.region} --name ${var.cluster_name}
+#       kubectl apply -f - <<YAML
+# apiVersion: external-secrets.io/v1beta1
+# kind: ClusterSecretStore
+# metadata:
+#   name: aws-secrets-manager
+# spec:
+#   provider:
+#     aws:
+#       service: SecretsManager
+#       region: ${var.region}
+#       auth:
+#         jwt:
+#           serviceAccountRef:
+#             name: external-secrets
+#             namespace: external-secrets
+# YAML
+#     EOF
+#   }
 
-  # ESO helm chart must be fully deployed first — it installs the
-  # ClusterSecretStore CRD that kubectl apply depends on.
+#   # ESO helm chart must be fully deployed first — it installs the
+#   # ClusterSecretStore CRD that kubectl apply depends on.
+#   depends_on = [helm_release.eso]
+# }
+
+# DELETE terraform_data.cluster_secret_store entirely.
+# Replace with this.
+
+resource "kubectl_manifest" "cluster_secret_store" {
+  yaml_body = <<-YAML
+    apiVersion: external-secrets.io/v1beta1
+    kind: ClusterSecretStore
+    metadata:
+      name: aws-secrets-manager
+    spec:
+      provider:
+        aws:
+          service: SecretsManager
+          region: ${var.region}
+          auth:
+            jwt:
+              serviceAccountRef:
+                name: external-secrets
+                namespace: external-secrets
+  YAML
+
+  # helm_release.eso installs the ClusterSecretStore CRD.
+  # kubectl_manifest can only apply an instance of it after the CRD exists.
   depends_on = [helm_release.eso]
 }

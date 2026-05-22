@@ -312,7 +312,7 @@ resource "aws_eks_access_entry" "jenkins_admin" {
   depends_on = [aws_eks_cluster.cluster]
 }
 
-resource "aws_eks_access_policy_association" "jenkins_admin" {
+resource "aws_eks_access_policy_association" "jenkins_admin_policy" {
   cluster_name  = aws_eks_cluster.cluster.name
   principal_arn = var.jenkins_role_arn
   policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
@@ -343,10 +343,7 @@ resource "aws_eks_access_policy_association" "console_admin_policy" {
     type = "cluster"
   }
 
-  depends_on = [
-    aws_eks_access_entry.console_admin,
-    terraform_data.jenkins_access_entry
-  ]
+  depends_on = [aws_eks_access_entry.console_admin]
 }
 
 # Root account always gets console admin access.

@@ -163,6 +163,7 @@ module "eso" {
   providers = {
     kubernetes = kubernetes.after_eks
     helm       = helm.after_eks
+    kubectl    = kubectl.after_eks
   }
 
   # ESO must come after EKS nodes and ALB controller so the cluster is stable
