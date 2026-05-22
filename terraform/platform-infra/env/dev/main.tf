@@ -222,6 +222,9 @@ resource "helm_release" "alb_controller" {
   chart      = "aws-load-balancer-controller"
   version    = "1.11.0"
 
+  wait    = true
+  timeout = 300 # Good practice so it doesn't hang forever if it fails
+
   values = [
     yamlencode({
       clusterName = module.eks.cluster_name
