@@ -61,7 +61,7 @@ provider "helm" {
 provider "kubectl" {
   alias                  = "after_eks"
   host                   = module.eks.cluster_endpoint
-  cluster_ca_certificate = base64decode(module.eks.cluster_certificate_authority_data)
+  cluster_ca_certificate = base64decode(data.aws_eks_cluster.this.certificate_authority[0].data)
   load_config_file       = false # never reads ~/.kube/config — fully self-contained
 
   exec {
