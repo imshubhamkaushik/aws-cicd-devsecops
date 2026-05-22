@@ -69,7 +69,7 @@ provider "kubectl" {
     command     = "aws"
     args = [
       "eks", "get-token",
-      "--cluster-name", var.cluster_name,
+      "--cluster-name", data.aws_eks_cluster.this.name,
       "--region", var.aws_region
     ]
   }
