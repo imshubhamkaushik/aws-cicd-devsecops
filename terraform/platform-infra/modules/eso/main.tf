@@ -5,22 +5,19 @@ terraform {
       version = "~> 6.0"
     }
     kubernetes = {
-      source                = "hashicorp/kubernetes"
-      version               = "~> 3.0"
-      configuration_aliases = [kubernetes.after_eks]
+      source  = "hashicorp/kubernetes"
+      version = "~> 3.0"
     }
     helm = {
-      source                = "hashicorp/helm"
-      version               = "~> 3.0"
-      configuration_aliases = [helm.after_eks]
+      source  = "hashicorp/helm"
+      version = "~> 3.0"
     }
     # Replaces local-exec for CRD-based resources.
     # Unlike hashicorp/kubernetes, this does NOT validate CRD schemas at plan time.
     # Safe to use on fresh deploys where the cluster doesn't exist yet at plan time.
     kubectl = {
-      source                = "gavinbunney/kubectl"
-      version               = "~> 1.14"
-      configuration_aliases = [kubectl.after_eks]
+      source  = "gavinbunney/kubectl"
+      version = "~> 1.14"
     }
   }
 }
@@ -89,7 +86,6 @@ resource "aws_iam_role_policy_attachment" "eso" {
 # wait = true ensures all CRDs (including ClusterSecretStore) are registered
 # before the kubernetes_manifest below tries to create an instance of one.
 resource "helm_release" "eso" {
-  provider = helm.after_eks
 
   name             = "external-secrets"
   namespace        = "external-secrets"
@@ -156,7 +152,6 @@ resource "helm_release" "eso" {
 # Replace with this.
 
 resource "kubectl_manifest" "cluster_secret_store" {
-  provider = kubectl.after_eks
 
   yaml_body = <<-YAML
     apiVersion: external-secrets.io/v1beta1
