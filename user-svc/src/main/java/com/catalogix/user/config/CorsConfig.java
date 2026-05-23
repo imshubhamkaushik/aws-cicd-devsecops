@@ -1,6 +1,7 @@
 package com.catalogix.user.config;
 
 import java.util.Arrays;
+import java.util.Objects;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -18,9 +19,12 @@ public class CorsConfig {
     @Bean
     public WebMvcConfigurer corsConfigurer() {
 
-        String[] origins = Arrays.stream(allowedOrigins.split(","))
-                                  .map(String::trim)
-                                  .toArray(String[]::new);
+        String[] origins = Objects.requireNonNull(
+            Arrays.stream(allowedOrigins.split(","))
+                  .map(String::trim)
+                  .toArray(String[]::new),
+            "origins array must not be null"
+        );
         
         return new WebMvcConfigurer() {
 

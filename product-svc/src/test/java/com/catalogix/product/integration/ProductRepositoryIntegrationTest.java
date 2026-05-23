@@ -15,6 +15,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
+import java.util.Objects;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -52,11 +53,12 @@ public class ProductRepositoryIntegrationTest {
         Product p = new Product("Laptop", "A fast laptop", new BigDecimal("55000.00"));
         Product saved = productRepository.save(p);
 
+        Long savedId = Objects.requireNonNull(saved.getId(), "saved ID must not be null");
         assertThat(saved.getId()).isNotNull();
         assertThat(saved.getName()).isEqualTo("Laptop");
         assertThat(saved.getPrice()).isEqualByComparingTo(new BigDecimal("55000.00"));
 
-        Optional<Product> found = productRepository.findById(saved.getId());
+        Optional<Product> found = productRepository.findById(savedId);
         assertThat(found).isPresent();
         assertThat(found.get().getName()).isEqualTo("Laptop");
     }
@@ -75,7 +77,8 @@ public class ProductRepositoryIntegrationTest {
     void deleteProduct() {
         Product p = productRepository.save(
                 new Product("Headphones", "Wireless", new BigDecimal("3000.00")));
-        productRepository.deleteById(p.getId());
-        assertThat(productRepository.findById(p.getId())).isEmpty();
+        Long id = Objects.requireNonNull(p.getId(), "Saved product ID should not be null");
+        productRepository.deleteById(id);
+        assertThat(productRepository.findById(id)).isEmpty();
     }
 }

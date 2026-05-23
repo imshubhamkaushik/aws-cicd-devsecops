@@ -40,6 +40,7 @@ class UserControllerTest {
 
     // POST /users/register tests
     @Test
+    @SuppressWarnings("null")
     void registerReturnsCreated() throws Exception {
         CreateUserRequest req = new CreateUserRequest();
         req.setName("John");
@@ -60,6 +61,7 @@ class UserControllerTest {
     }
 
     @Test
+    @SuppressWarnings("null")
     void registerDuplicateEmailReturns409() throws Exception {
         CreateUserRequest req = new CreateUserRequest();
         req.setName("John");
@@ -76,6 +78,7 @@ class UserControllerTest {
 
     // POST /users/login tests
     @Test
+    @SuppressWarnings("null")
     void loginReturnsOkWithUserData() throws Exception {
         LoginRequest req = new LoginRequest();
         req.setEmail("john@example.com");
@@ -93,6 +96,7 @@ class UserControllerTest {
     }
 
     @Test
+    @SuppressWarnings("null")
     void loginFailureReturns401() throws Exception {
         LoginRequest req = new LoginRequest();
         req.setEmail("x@x.com");
@@ -109,6 +113,7 @@ class UserControllerTest {
     // GET /users tests
 
     @Test
+    @SuppressWarnings("null")
     void getAllReturnsListOfUsers() throws Exception {
         when(svc.listAll()).thenReturn(List.of(
                 new UserResponse(1L, "Alice", "alice@example.com"),
@@ -123,6 +128,7 @@ class UserControllerTest {
     }
 
     @Test
+    @SuppressWarnings("null")
     void getAllReturnsEmptyListWhenNoUsers() throws Exception {
         when(svc.listAll()).thenReturn(List.of());
 

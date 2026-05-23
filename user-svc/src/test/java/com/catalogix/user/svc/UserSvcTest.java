@@ -13,6 +13,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.Objects;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -59,6 +60,7 @@ class UserSvcTest {
     }
 
     @Test
+    @SuppressWarnings("null")
     void registerDuplicateEmailThrows() {
         CreateUserRequest req = new CreateUserRequest();
         req.setName("A");
@@ -87,7 +89,10 @@ class UserSvcTest {
 
         UserResponse resp = svc.login(req);
         assertNotNull(resp);
-        assertEquals(u.getId(), resp.getId());
+        
+        long expectedId = Objects.requireNonNull(u.getId(),    "user ID must not be null");
+        long actualId   = Objects.requireNonNull(resp.getId(), "response ID must not be null");
+        assertEquals(expectedId, actualId);
     }
 
     @Test
@@ -149,14 +154,14 @@ class UserSvcTest {
     void deleteByIdReturnsFalseWhenUserNotFound() {
         when(repo.existsById(99L)).thenReturn(false);
         assertFalse(svc.deleteById(99L));
-        verify(repo, never()).deleteById(any());
+        verify(repo, never()).deleteById(anyLong());
     }
 
     @Test
     void deleteByIdReturnsFalseForNullId() {
         assertFalse(svc.deleteById(null));
-        verify(repo, never()).existsById(any());
-        verify(repo, never()).deleteById(any());
+        verify(repo, never()).existsById(anyLong());
+        verify(repo, never()).deleteById(anyLong());
     }
 }
 
