@@ -43,3 +43,8 @@ variable "backup_retention_period" {
   EOT
   type        = number
 }
+
+variable "db_engine_version" {
+  description = "Version of the database engine to use"
+  type        = string
+}

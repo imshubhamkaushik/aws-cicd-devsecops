@@ -75,7 +75,7 @@ Developer git push
                     ├─▶ SonarQube EC2 (static analysis)
                     ├─▶ Amazon ECR (image push)
                     └─▶ Amazon EKS (Helm deploy)
-                            ├─▶ ns: catalogix   (frontend, user-svc, product-svc)
+                            ├─▶ ns: catalogix   (frontend-svc, user-svc, product-svc)
                             ├─▶ ns: monitoring  (Prometheus, Grafana, Alertmanager)
                             └─▶ ns: external-secrets (ESO → Secrets Manager)
 ```
@@ -122,7 +122,7 @@ flowchart TD
     J9 --> EKS
  
     ALB[AWS ALB Ingress] --> AppNS
-    AppNS --> RDS[(Amazon RDS\nPostgreSQL 18.1)]
+    AppNS --> RDS[(Amazon RDS\nPostgreSQL)]
     ESO --> SM[AWS Secrets Manager\ncatalogix-dev/db-credentials]
     ESO -->|syncs K8s secret| AppNS
     AppNS -->|/actuator/prometheus| Prom
@@ -143,7 +143,7 @@ terraform/
         └── modules/
             ├── eks/        # EKS 1.35, managed node group, OIDC, IRSA, gp3 StorageClass
             ├── ecr/        # 3 private repositories (user-svc, product-svc, frontend-svc)
-            ├── rds/        # PostgreSQL 18.1, encrypted, private subnet, random password
+            ├── rds/        # PostgreSQL, encrypted, private subnet, random password
             ├── alb/        # AWS Load Balancer Controller via Helm + IRSA
             ├── eso/        # External Secrets Operator via Helm + ClusterSecretStore
             ├── secrets-manager/  # Stores DB credentials; accessed only by ESO IRSA role
@@ -172,7 +172,7 @@ Two pipelines — one per Jenkinsfile:
  
 | Stage | What it does |
 |---|---|
-| Secret scanning | Gitleaks v8.21.2 scans the full git history; exits with code 1 on any finding |
+| Secret scanning | Gitleaks scans the full git history; exits with code 1 on any finding |
 | AWS authentication | `aws sts get-caller-identity` resolves account ID; sets ECR registry and image tag env vars |
 | Unit + integration tests | Maven runs in parallel for both backend services; Testcontainers spins up PostgreSQL for integration tests |
 | Build JARs + frontend | `mvn package` and `npm run build` run in parallel |
@@ -240,7 +240,7 @@ Provisions the network foundation. Designed to be applied once.
 ### platform-infra modules
  
 **EKS:**
-- Kubernetes 1.35, ON_DEMAND managed node group (min 1 / max 2 / desired 2)
+- Kubernetes, ON_DEMAND managed node group (min 1 / max 2 / desired 2)
 - Add-ons pinned to specific versions (`vpc-cni`, `coredns`, `kube-proxy`, `aws-ebs-csi-driver`) — prevents silent upgrades
 - OIDC provider for IRSA
 - EBS CSI driver with its own IRSA role scoped to only EBS provisioning permissions
@@ -421,7 +421,12 @@ docker compose up --build
  
 ## How to run
  
-> **Prerequisites:** AWS account (ap-south-1 by default — change `AWS_REGION` and `CLUSTER_NAME` in both Jenkinsfiles), Terraform >= 1.12.0, Ansible, AWS CLI configured with sufficient IAM permissions.
+> **Prerequisites:** 
+- AWS account (ap-south-1 by default — change `AWS_REGION` and `CLUSTER_NAME` in both Jenkinsfiles accordingly)
+- Terraform >= 1.12.0 
+- Ansible
+- Python >=3.0
+- AWS CLI configured with sufficient IAM permissions.
 
 ### Option A — Python CLI (recommended)
  

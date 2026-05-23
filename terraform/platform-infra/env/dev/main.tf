@@ -130,6 +130,7 @@ module "rds" {
   password                = random_password.db.result
   private_subnets         = local.private_subnets
   security_group_id       = module.sg.rds_sg
+  db_engine_version       = "18.1"
   backup_retention_period = 0
 
   ssm_parameter_path = "/${local.env_prefix}/rds-endpoint"
