@@ -240,7 +240,7 @@ Provisions the network foundation. Designed to be applied once.
 ### platform-infra modules
  
 **EKS:**
-- Kubernetes, ON_DEMAND managed node group (min 1 / max 2 / desired 2)
+- Kubernetes 1.35, ON_DEMAND managed node group (min 1 / max 2 / desired 2)
 - Add-ons pinned to specific versions (`vpc-cni`, `coredns`, `kube-proxy`, `aws-ebs-csi-driver`) — prevents silent upgrades
 - OIDC provider for IRSA
 - EBS CSI driver with its own IRSA role scoped to only EBS provisioning permissions
@@ -272,7 +272,7 @@ Jenkins is not manually configured. Running `ansible-playbook playbook.yaml` fro
 **JCasC (`roles/jenkins/files/jcasc.yaml`) configures on first boot:**
 - Admin user (credentials from environment variables — no hardcoded passwords)
 - SonarQube server connection pointing to the SonarQube EC2
-- Maven 3.9.9 and Node.js 20.18.0 tool installations
+- Maven 3.9.9 and Node.js 22.15.0 tool installations
 - AWS credentials, GitHub token, and SonarQube token loaded from environment variables as Jenkins credentials
 - Both pipeline jobs (`platform-infra` and `app-cicd`) created automatically — Jenkins starts with both jobs already present
 **Dynamic inventory:** `ansible/aws_ec2.yaml` discovers Jenkins and SonarQube instances by their EC2 tags. The inventory stays valid when instances stop and restart with new IPs — no hardcoded IP addresses.
