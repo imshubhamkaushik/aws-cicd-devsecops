@@ -303,7 +303,7 @@ resource "aws_eks_addon" "ebs_csi" {
 #   ]
 # }
 
-# Access Entry + Policy for Jenkins
+# Access Entry + Policy for Jenkins IAM user/role. This is the main way to access the cluster — the root user access entry is just a fallback to prevent lockout from the console.
 resource "aws_eks_access_entry" "jenkins_admin" {
   cluster_name  = aws_eks_cluster.cluster.name
   principal_arn = var.jenkins_role_arn
@@ -324,6 +324,7 @@ resource "aws_eks_access_policy_association" "jenkins_admin_policy" {
   depends_on = [aws_eks_access_entry.jenkins_admin]
 }
 
+# Access Entry + Policy for Console IAM user/role (if different from Jenkins)
 resource "aws_eks_access_entry" "console_admin" {
   count         = var.console_iam_arn != var.jenkins_role_arn ? 1 : 0
   cluster_name  = aws_eks_cluster.cluster.name
@@ -450,34 +451,34 @@ resource "aws_eks_access_policy_association" "root_admin_policy" {
 #   depends_on = [aws_eks_node_group.node_group]
 # }
 
-resource "terraform_data" "aws_auth" {
-  triggers_replace = {
-    # Re-apply the aws-auth ConfigMap whenever the node role ARN or cluster name changes. 
-    # Without triggers, a deleted/corrupted ConfigMap cannot be recovered by terraform apply — this resource is a no-op after first apply.
-    node_role_arn = aws_iam_role.node_role.arn
-    cluster_name  = aws_eks_cluster.cluster.name
-  }
+# resource "terraform_data" "aws_auth" {
+#   triggers_replace = {
+#     # Re-apply the aws-auth ConfigMap whenever the node role ARN or cluster name changes. 
+#     # Without triggers, a deleted/corrupted ConfigMap cannot be recovered by terraform apply — this resource is a no-op after first apply.
+#     node_role_arn = aws_iam_role.node_role.arn
+#     cluster_name  = aws_eks_cluster.cluster.name
+#   }
 
-  provisioner "local-exec" {
-    command = <<EOF
-aws eks update-kubeconfig --region ${var.aws_region} --name ${aws_eks_cluster.cluster.name}
+#   provisioner "local-exec" {
+#     command = <<EOF
+# aws eks update-kubeconfig --region ${var.aws_region} --name ${aws_eks_cluster.cluster.name}
 
-kubectl apply -f - <<YAML
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: aws-auth
-  namespace: kube-system
-data:
-  mapRoles: |
-    - rolearn: ${aws_iam_role.node_role.arn}
-      username: system:node:{{EC2PrivateDNSName}}
-      groups:
-        - system:bootstrappers
-        - system:nodes
-YAML
-EOF
-  }
+# kubectl apply -f - <<YAML
+# apiVersion: v1
+# kind: ConfigMap
+# metadata:
+#   name: aws-auth
+#   namespace: kube-system
+# data:
+#   mapRoles: |
+#     - rolearn: ${aws_iam_role.node_role.arn}
+#       username: system:node:{{EC2PrivateDNSName}}
+#       groups:
+#         - system:bootstrappers
+#         - system:nodes
+# YAML
+# EOF
+#   }
 
-  depends_on = [aws_eks_node_group.node_group]
-}
+#   depends_on = [aws_eks_node_group.node_group]
+# }

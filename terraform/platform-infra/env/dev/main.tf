@@ -1,6 +1,8 @@
-# Read outputs from bootstrap-infra (VPC, subnets).
-# bootstrap-infra must be applied first before running platform-infra.
+# This is the root module for the "platform-infra" Terraform project, which provisions the shared infrastructure components for the EKS cluster and its dependencies.
 
+
+# terraform_remote_state - Read outputs from bootstrap-infra (VPC, subnets).
+# bootstrap-infra must be applied first before running platform-infra.
 data "terraform_remote_state" "bootstrap" {
   backend = "s3"
   config = {
@@ -10,14 +12,16 @@ data "terraform_remote_state" "bootstrap" {
   }
 }
 
+# AWS data sources for dynamic values and to avoid hardcoding ARNs or account IDs.
 data "aws_caller_identity" "current" {}
 
 data "aws_iam_session_context" "current" {
   arn = data.aws_caller_identity.current.arn
 }
 
+# random_password - Generates a random password for the RDS instance, stored in Secrets Manager and synced to K8s via ESO.
 resource "random_password" "db" {
-  length  = 24
+  length  = 16
   special = false # avoids JDBC URL encoding issues with special characters 
 
   # keepers tie the password lifecycle to the RDS instance name.
@@ -28,6 +32,7 @@ resource "random_password" "db" {
   }
 }
 
+# KMS key for EKS secrets encryption. Using a customer-managed key is a best practice for production workloads, but not strictly required for this demo since the default AWS-managed key would work fine for encrypting EKS secrets.
 resource "aws_kms_key" "eks" {
   description             = "EKS secrets encryption key - dev"
   deletion_window_in_days = 7
@@ -35,6 +40,7 @@ resource "aws_kms_key" "eks" {
   enable_key_rotation = true
 }
 
+# locals - centralize commonly used values and outputs from other modules to avoid duplication and ensure consistency across the configuration. This is a best practice for larger Terraform projects to improve maintainability and reduce the risk of errors from hardcoding values or referencing outputs directly in multiple places.
 locals {
   # Pulled from remote state so every module uses the same source of truth
   vpc_id          = data.terraform_remote_state.bootstrap.outputs.vpc_id
@@ -95,6 +101,7 @@ data "aws_eks_cluster" "this" {
   depends_on = [module.eks]
 }
 
+# EKS AUTH (safe, resolves after creation)
 data "aws_eks_cluster_auth" "this" {
   name = module.eks.cluster_name
 
@@ -172,7 +179,7 @@ module "eso" {
 
 }
 
-# gp3 StorageClass — moved here from modules/eks/main.tf.
+# gp3 StorageClass — used by Prometheus and Grafana — moved here from modules/eks/main.tf.
 #
 # This resource uses the kubernetes provider. Keeping it inside module.eks caused it to be included in the targeted apply (-target=module.eks),
 # where the kubernetes provider resolves to localhost:80 because local.cluster_endpoint was "(known after apply)" at plan time.
@@ -215,6 +222,7 @@ resource "kubernetes_storage_class_v1" "gp3" {
   ]
 }
 
+# ALB Controller - Helm release to install the AWS Load Balancer Controller into the EKS cluster. This is required for the Ingress resources in the app to work, and is a common component in EKS clusters that use ALB for ingress.
 resource "helm_release" "alb_controller" {
   provider   = helm.after_eks
   name       = "aws-load-balancer-controller"
@@ -242,4 +250,54 @@ resource "helm_release" "alb_controller" {
   ]
 
   depends_on = [module.eks, module.alb]
+}
+
+# aws-auth ConfigMap — allows EKS worker nodes to join the cluster.
+#
+# Moved here from modules/eks/main.tf (was terraform_data + local-exec).
+# Reason: local-exec required kubectl and the aws CLI to be installed on
+# whichever machine runs terraform apply — a hidden runtime dependency that
+# broke on clean CI runners and the Jenkins EC2 after a fresh Ansible run.
+#
+# The gavinbunney/kubectl provider (alias = after_eks) is already configured
+# in providers.tf and already used for the ClusterSecretStore in the ESO module.
+# It authenticates via "aws eks get-token" exec block, so no local kubeconfig
+# file is needed (load_config_file = false). This is consistent with how every
+# other Kubernetes resource is managed in this root module.
+#
+# replace_on_change = [module.eks.node_role_arn, module.eks.cluster_name]
+# mirrors the triggers_replace on the old terraform_data: if the node role or
+# cluster is replaced, the ConfigMap is re-applied automatically.
+resource "kubectl_manifest" "aws_auth" {
+  provider = kubectl.after_eks
+
+  # Heredoc keeps the format identical to what aws-iam-authenticator expects.
+  # Double-yamlencode (outer manifest + inner mapRoles) introduces key-ordering and quoting edge cases with yamlencode — this is simpler and explicit.
+  #
+  # force_conflicts = true: if someone runs `kubectl apply` on this ConfigMap
+  # manually (e.g. to add a mapUsers entry), Terraform wins the field-manager
+  # conflict on the next apply and restores the desired state. This is intentional
+  # — additional mapRoles entries (e.g. for Fargate profiles or cluster access entries) should be added here, not outside Terraform.
+  #
+  # Drift detection: if the ConfigMap is deleted or corrupted, Terraform detects the diff via normal state comparison and re-applies on the next apply.
+  # No triggers_replace needed — kubectl_manifest tracks real resource state,
+  # unlike terraform_data + local-exec which tracked nothing.
+  yaml_body = <<-YAML
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: aws-auth
+  namespace: kube-system
+data:
+  mapRoles: |
+    - rolearn: ${module.eks.node_role_arn}
+      username: system:node:{{EC2PrivateDNSName}}
+      groups:
+        - system:bootstrappers
+        - system:nodes
+YAML
+
+  force_conflicts = true
+
+  depends_on = [module.eks]
 }

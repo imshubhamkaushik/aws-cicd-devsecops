@@ -23,3 +23,8 @@ output "cluster_sg_id" {
   description = "EKS cluster security group ID (AWS-managed) — passed to security-groups module for the Jenkins ingress rule"
   value       = aws_eks_cluster.cluster.vpc_config[0].cluster_security_group_id
 }
+
+output "node_role_arn" {
+  description = "ARN of the EKS node IAM role — used in aws-auth ConfigMap to allow nodes to join the cluster"
+  value       = aws_iam_role.node_role.arn
+}
