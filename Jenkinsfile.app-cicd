@@ -1,3 +1,5 @@
+// Application CI/CD pipeline Jenkinsfile. Builds, tests, and deploys the Catalogix application to EKS whenever changes are pushed to the main branch.
+
 // Ensures kubectl is working, regenerates kubeconfig if not.
 // Defined here to avoid duplicating the same 20-line shell block in both Jenkinsfiles.
 // The identical function also exists in Jenkinsfile.platform-infra — if you change the logic here, change it there too.
@@ -86,7 +88,7 @@ pipeline {
 
     options {
         timestamps()
-        disableConcurrentBuilds(abortPrevious: true)
+        disableConcurrentBuilds()
         timeout(time: 45, unit: 'MINUTES')
     }
 

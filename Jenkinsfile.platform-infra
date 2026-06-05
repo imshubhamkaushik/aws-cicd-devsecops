@@ -307,9 +307,7 @@ pipeline {
             }
         }
 
-        // remaining infra space, might add if needed
-
-        // Metrics Server is a cluster-level component that the monitoring stack depends on, so we install it here in the infra pipeline rather than the app pipeline.
+        // Metrics Server is a cluster-level component that the monitoring stack depends on, so we install it here in the infra pipeline rather than the app pipeline. 
 
         stage('Install Metrics Server') {
             when {
@@ -422,10 +420,6 @@ pipeline {
                     [ \$ELAPSED -ge \$MAX_WAIT ] && echo "WARNING: ALBs did not delete in \${MAX_WAIT}s — proceeding anyway" && break
                 done
                 helm uninstall aws-load-balancer-controller -n kube-system || true
-                
-                # Give the AWS Cloud Controller time to detach and delete the physical ELBs/ENIs
-                echo "Waiting 45 seconds for AWS Load Balancers to detach..."
-                sleep 45
                 """
             }
         }
@@ -494,10 +488,9 @@ Are you absolutely sure?""",
                 if (params.ACTION == 'apply') {
                     echo "Platform infrastructure and monitoring stack applied successfully."
                     if (params.DEPLOY_APP_AFTER_INFRA) {
-                        // ESO was deployed by Terraform (module.eso) in the Remaining Infra
-                        // stage, but the operator pods may still be initializing by the time we reach post { success }. 
-                        // The app pipeline's first Helm deploy creates an ExternalSecret that ESO must process immediately — if
-                        // ESO isn't ready the ExternalSecret stays in a Pending state and
+                        // ESO was deployed by Terraform (module.eso), but the operator pods may still be initializing by the time we reach post { success }. 
+                        // The app pipeline's first Helm deploy creates an ExternalSecret that ESO must process immediately — 
+                        // if ESO isn't ready, the ExternalSecret stays in a Pending state and
                         // pods fail to start because the DB password secret never gets created. 
                         // This wait ensures ESO is actually serving requests before the app pipeline fires.
                         echo "Waiting for ESO to be ready before triggering app deployment..."
@@ -537,7 +530,6 @@ Are you absolutely sure?""",
         
         always  { 
             dir("${TF_DIR}") { 
-                // sh "rm -f eks.tfplan || true"
                 sh "rm -f main.tfplan || true" 
                 sh "rm -f destroy.tfplan || true"
             } 

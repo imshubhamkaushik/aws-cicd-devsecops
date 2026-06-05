@@ -29,9 +29,6 @@ resource "aws_db_instance" "postgres" {
 
   # DEV NOTE: lifecycle { prevent_destroy=true } prevents accidental deletion via a mistyped terraform destroy or workspace destroy. 
   # To intentionally delete: comment this block out, apply, then destroy .
-  # lifecycle {
-  #   prevent_destroy = true
-  # }
 }
 
 resource "aws_ssm_parameter" "rds_endpoint" {

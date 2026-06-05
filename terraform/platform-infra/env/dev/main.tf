@@ -1,6 +1,5 @@
 # This is the root module for the "platform-infra" Terraform project, which provisions the shared infrastructure components for the EKS cluster and its dependencies.
 
-
 # terraform_remote_state - Read outputs from bootstrap-infra (VPC, subnets).
 # bootstrap-infra must be applied first before running platform-infra.
 data "terraform_remote_state" "bootstrap" {

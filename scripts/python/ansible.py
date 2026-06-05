@@ -11,7 +11,6 @@ VAULT_FILE = ANSIBLE_DIR / "group_vars" / "all" / "vault.yaml"
 
 
 # Internal Helpers
-
 def _write_vault_password_file(password: str) -> None:
     """Write password to ~/.vault_pass with owner-read-only permissions."""
     VAULT_PASSWORD_FILE.write_text(password)
@@ -30,6 +29,7 @@ def _is_vault_encrypted() -> bool:
     if not VAULT_FILE.exists():
         return False
     return VAULT_FILE.read_text(errors="replace").startswith("$ANSIBLE_VAULT")
+
 def _is_vault_password_valid() -> bool:
     """
     Return True when ~/.vault_pass can decrypt vault.yaml.
@@ -48,8 +48,8 @@ def _is_vault_password_valid() -> bool:
     )
     return result.returncode == 0
 
-# Vault Password File Setup
 
+# Vault Password File Setup
 def _prompt_for_vault_password() -> None:
     """
     Prompt for a non-empty vault password and persist it to ~/.vault_pass.

@@ -239,69 +239,18 @@ resource "aws_eks_addon" "ebs_csi" {
   ]
 }
 
-# gp3 StorageClass — used by Prometheus and Grafana PVC requests.
-# WaitForFirstConsumer ensures the volume is created in the same AZ as the pod.
-# resource "kubernetes_storage_class_v1" "gp3" {
-#   metadata {
-#     name = "gp3-sc"
-#     annotations = {
-#       # Not set as default to avoid silently provisioning volumes for other workloads
-#       "storageclass.kubernetes.io/is-default-class" = "false"
-#     }
-#   }
+# 
 
-#   storage_provisioner    = "ebs.csi.aws.com"
-#   reclaim_policy         = "Retain"
-#   volume_binding_mode    = "WaitForFirstConsumer"
-#   allow_volume_expansion = true
-
-#   parameters = {
-#     type = "gp3"
-#   }
-
-#   depends_on = [aws_eks_addon.ebs_csi]
-# }
-
-# NOTE: kubernetes_storage_class_v1.gp3 was intentionally moved to env/dev/main.tf.
-#
+# NOTE: kubernetes_storage_class_v1.gp3 resource for gp3 StorageClass — used by Prometheus and Grafana PVC requests. This was intentionally moved to env/dev/main.tf.
 # Reason: this resource uses the kubernetes provider, which is configured with
-# local.cluster_endpoint = module.eks.cluster_endpoint. During 
-# (terraform apply -target=module.eks), the endpoint is not yet in provider
-# config — it was "(known after apply)" at plan time, so Terraform initialises
-# the kubernetes provider pointing at localhost:80. The StorageClass apply then
-# fails immediately with "dial tcp 127.0.0.1:80: connection refused".
+# local.cluster_endpoint = module.eks.cluster_endpoint. 
+# During (terraform apply -target=module.eks), the endpoint is not yet in provider config — 
+# it was "(known after apply)" at plan time, so Terraform initialises the kubernetes provider pointing at localhost:80. 
+# The StorageClass apply then fails immediately with "dial tcp 127.0.0.1:80: connection refused".
 #
-# Moving it to the root module means it only runs in (full apply), by
-# which time module.eks is already in state, the endpoint is known, and the
-# kubernetes provider connects to the real cluster.
-
-# Allow your Jenkins EC2 instance (and terminal) to run kubectl commands
-# resource "aws_eks_access_entry" "jenkins_admin" {
-#   cluster_name  = aws_eks_cluster.cluster.name
-#   principal_arn = var.jenkins_role_arn
-#   type          = "STANDARD"
-
-#   depends_on = [
-#     aws_eks_cluster.cluster,
-#     aws_eks_node_group.node_group
-#   ]
-# }
-
-# resource "aws_eks_access_policy_association" "jenkins_admin_policy" {
-#   cluster_name  = aws_eks_cluster.cluster.name
-#   principal_arn = var.jenkins_role_arn
-#   policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
-
-#   access_scope {
-#     type = "cluster"
-#   }
-
-#   depends_on = [
-#     aws_eks_cluster.cluster,
-#     aws_eks_node_group.node_group,
-#     aws_eks_access_entry.jenkins_admin
-#   ]
-# }
+# Moving it to the root module means it only runs in (full apply), 
+# by which time module.eks is already in state, the endpoint is known, 
+# and the kubernetes provider connects to the real cluster.
 
 # Access Entry + Policy for Jenkins IAM user/role. This is the main way to access the cluster — the root user access entry is just a fallback to prevent lockout from the console.
 resource "aws_eks_access_entry" "jenkins_admin" {
@@ -369,116 +318,3 @@ resource "aws_eks_access_policy_association" "root_admin_policy" {
 
   depends_on = [aws_eks_access_entry.root_admin]
 }
-
-# Idempotent access entry + policy for Jenkins.
-# Using terraform_data + local-exec instead of aws_eks_access_entry because
-# the access entry survives terraform destroy (EKS cluster-creator entries are
-# preserved by AWS) and causes ResourceInUseException on re-apply when state is wiped. 
-# This check-before-create pattern is safe to run on every apply.
-# resource "terraform_data" "jenkins_access_entry" {
-#   triggers_replace = {
-#     cluster_name  = aws_eks_cluster.cluster.name
-#     principal_arn = var.jenkins_role_arn
-#     region        = var.aws_region
-#   }
-
-#   provisioner "local-exec" {
-#     when = destroy
-#     command = <<-EOF
-#       set -e
-
-#       EXISTING=$(aws eks describe-access-entry \
-#         --cluster-name "${aws_eks_cluster.cluster.name}" \
-#         --principal-arn "${var.jenkins_role_arn}" \
-#         --region "${var.aws_region}" \
-#         --query 'accessEntry.principalArn' \
-#         --output text 2>/dev/null || echo "NOT_FOUND")
-
-#       if [ "$EXISTING" = "NOT_FOUND" ]; then
-#         echo "Creating Jenkins access entry..."
-#         aws eks create-access-entry \
-#           --cluster-name "${aws_eks_cluster.cluster.name}" \
-#           --principal-arn "${var.jenkins_role_arn}" \
-#           --type STANDARD \
-#           --region "${var.aws_region}"
-#       else
-#         echo "Jenkins access entry already exists — skipping create."
-#       fi
-
-#       POLICY_EXISTING=$(aws eks list-associated-access-policies \
-#         --cluster-name "${aws_eks_cluster.cluster.name}" \
-#         --principal-arn "${var.jenkins_role_arn}" \
-#         --region "${var.aws_region}" \
-#         --query 'associatedAccessPolicies[?policyArn==`arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy`].policyArn' \
-#         --output text 2>/dev/null || echo "NOT_FOUND")
-
-#       if [ -z "$POLICY_EXISTING" ] || [ "$POLICY_EXISTING" = "NOT_FOUND" ]; then
-#         echo "Associating AmazonEKSClusterAdminPolicy to Jenkins..."
-#         aws eks associate-access-policy \
-#           --cluster-name "${aws_eks_cluster.cluster.name}" \
-#           --principal-arn "${var.jenkins_role_arn}" \
-#           --policy-arn arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy \
-#           --access-scope type=cluster \
-#           --region "${var.aws_region}"
-#       else
-#         echo "Jenkins policy association already exists — skipping."
-#       fi
-#     EOF
-#   }
-
-#   depends_on = [
-#     aws_eks_cluster.cluster,
-#     aws_eks_node_group.node_group
-#   ]
-# }
-
-# resource "kubernetes_config_map_v1" "aws_auth" {
-#   metadata {
-#     name      = "aws-auth"
-#     namespace = "kube-system"
-#   }
-
-#   data = {
-#     mapRoles = <<EOF
-# - rolearn: ${aws_iam_role.node_role.arn}
-#   username: system:node:{{EC2PrivateDNSName}}
-#   groups:
-#     - system:bootstrappers
-#     - system:nodes
-# EOF
-#   }
-
-#   depends_on = [aws_eks_node_group.node_group]
-# }
-
-# resource "terraform_data" "aws_auth" {
-#   triggers_replace = {
-#     # Re-apply the aws-auth ConfigMap whenever the node role ARN or cluster name changes. 
-#     # Without triggers, a deleted/corrupted ConfigMap cannot be recovered by terraform apply — this resource is a no-op after first apply.
-#     node_role_arn = aws_iam_role.node_role.arn
-#     cluster_name  = aws_eks_cluster.cluster.name
-#   }
-
-#   provisioner "local-exec" {
-#     command = <<EOF
-# aws eks update-kubeconfig --region ${var.aws_region} --name ${aws_eks_cluster.cluster.name}
-
-# kubectl apply -f - <<YAML
-# apiVersion: v1
-# kind: ConfigMap
-# metadata:
-#   name: aws-auth
-#   namespace: kube-system
-# data:
-#   mapRoles: |
-#     - rolearn: ${aws_iam_role.node_role.arn}
-#       username: system:node:{{EC2PrivateDNSName}}
-#       groups:
-#         - system:bootstrappers
-#         - system:nodes
-# YAML
-# EOF
-#   }
-
-#   depends_on = [aws_eks_node_group.node_group]
-# }

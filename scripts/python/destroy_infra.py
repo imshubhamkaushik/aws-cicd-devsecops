@@ -33,6 +33,7 @@ def destroy_infra():
 
         if confirm not in ["yes", "y"]:
             info("Destroy aborted by user.")
+            error("Infrastructure destroy cancelled. No changes have been made.")
             sys.exit(0)
 
         run_command("terraform apply destroy.tfplan", cwd=BOOTSTRAP_INFRA_DIR, env=env)
