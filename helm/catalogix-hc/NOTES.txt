@@ -15,6 +15,8 @@ If a pod is in CrashLoopBackOff, check logs:
   kubectl get svc -n {{ .Release.Namespace }}
   kubectl get ingress -n {{ .Release.Namespace }}
 
+Two ingress resources exist: catalogix-frontend-ingress and catalogix-backend-ingress.
+Both share the same ALB via the group.name annotation (catalogix).
 The ALB hostname appears under ADDRESS in the ingress output.
 It can take 2–3 minutes for the ALB to become active after first deploy.
 
@@ -39,9 +41,11 @@ It can take 2–3 minutes for the ALB to become active after first deploy.
   kubectl get secret catalogix-secrets -n {{ .Release.Namespace }}
 
 STATUS should show Ready=True. If not, ESO has not synced yet — wait 30s and retry.
+If it stays NotReady, check ESO pod logs:
+  kubectl logs -n external-secrets deployment/external-secrets
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   ROLLBACK THIS RELEASE
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  helm history catalogix-hc -n {{ .Release.Namespace }}
-  helm rollback catalogix-hc <REVISION> -n {{ .Release.Namespace }}
+  helm history catalogix -n {{ .Release.Namespace }}
+  helm rollback catalogix <REVISION> -n {{ .Release.Namespace }}

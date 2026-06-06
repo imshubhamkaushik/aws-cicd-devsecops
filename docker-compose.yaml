@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: postgres:16-alpine
+    image: postgres:18-alpine
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -30,11 +30,11 @@ services:
       - ALLOWED_ORIGINS=http://localhost:3000
     ports:
       - "8081:8081"
-    healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8081/actuator/health || exit 1"]
-      interval: 20s
-      timeout: 5s
-      retries: 3
+    # NOTE: healthcheck removed intentionally.
+    # The production Dockerfile uses gcr.io/distroless/java21-debian13:nonroot as its
+    # final stage. Distroless images contain no shell, no curl, no wget — CMD-SHELL
+    # healthchecks always fail in distroless containers. The original healthcheck
+    # caused frontend-svc (depends_on: condition: service_healthy) to never start.
 
   product-svc:
     build:
@@ -51,26 +51,30 @@ services:
       - ALLOWED_ORIGINS=http://localhost:3000
     ports:
       - "8082:8082"
-    healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8082/actuator/health || exit 1"]
-      interval: 20s
-      timeout: 5s
-      retries: 3
+    # NOTE: healthcheck removed intentionally. See user-svc comment for details.
 
   frontend-svc:
     build: ./frontend-svc
     container_name: frontend-svc
+    # FIX: changed condition: service_healthy → service_started for backend services.
+    # service_healthy requires the healthcheck to pass. Since the backend containers
+    # are distroless (no shell/curl), healthchecks can never pass, so frontend-svc
+    # would never start. service_started only requires the container to be running.
+    # The frontend's Nginx will show API errors until the backends are ready — this
+    # is acceptable for local development. Retry on the frontend side is handled
+    # by the React app's error handling.
     depends_on:
       user-svc:
-        condition: service_healthy
+        condition: service_started
       product-svc:
-        condition: service_healthy
+        condition: service_started
     ports:
       - "3000:80"
     cap_add:
       - NET_BIND_SERVICE
     user: "1000"
     healthcheck:
+      # Nginx (non-distroless) has wget — this healthcheck works correctly.
       test: ["CMD-SHELL", "wget -qO /dev/null http://localhost:80/ || exit 1"]
       interval: 20s
       timeout: 5s

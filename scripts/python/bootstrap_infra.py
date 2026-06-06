@@ -4,9 +4,10 @@ from utils.command import info, error, run_command
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
 
+# Path Constants for bootstrap_infra terraform directory.
 BOOTSTRAP_INFRA_DIR = ROOT_DIR / "terraform" / "bootstrap-infra"
 
-# Terraform
+# Terraform Execution with plan check and user confirmation.
 def bootstrap_infra():
     print("")
     info("Running Bootstrap Infrastructure Terraform...")
@@ -66,6 +67,7 @@ def wait_for_ec2():
     print("")
     print("Terraform outputs:")
     
+    # Using terraform output to get instance IDs ensures we get the correct ones even if they change due to re-creation, and avoids hardcoding any IDs in the script.
     jenkins_id = run_command(
         "terraform output -raw instance_id_jenkins",
         cwd=BOOTSTRAP_INFRA_DIR,
@@ -85,8 +87,18 @@ def wait_for_ec2():
     print(f"  SonarQube Instance ID: {sonarqube_id}")
 
     instance_ids = f"{jenkins_id} {sonarqube_id}"
-
+    
+    # Wait for both instances to be in the 'ok' status before proceeding.
+    print("")
+    print("Waiting for EC2 instances status to be 'ok'...")
     run_command(f"aws ec2 wait instance-status-ok --instance-ids {instance_ids}")
+    print("EC2 instances 'OK' status checks passed.")
+    
+    # Wait for both instances to be in the 'running' status before proceeding. This ensures that when we SSH in later to run Ansible, the instances are fully up and running.
+    print("")
+    print("Waiting for EC2 instances status to be 'running'...")
+    run_command(f"aws ec2 wait instance-running --instance-ids {instance_ids}")
+    print("EC2 instance running checks passed.")
 
     print("")
-    info("EC2 instances healthy.")
+    info("EC2 instances are healthy. Ready for Ansible configuration.")

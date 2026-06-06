@@ -49,8 +49,8 @@ def ensureKubernetesAccess() {
     """               
 }
 
-// ACTION=apply  → Terraform fmt → init → validate → plan → human approval → apply → verify EKS → deploy monitoring
-// ACTION=destroy → Checkout → init → plan -destroy → human approval (double-gate) → destroy
+// ACTION=Apply  → Terraform fmt → init → validate → plan → human approval → apply → verify EKS → deploy monitoring
+// ACTION=Destroy → Checkout → init → plan -destroy → human approval (double-gate) → destroy
 
 pipeline {
     agent any
@@ -68,23 +68,23 @@ pipeline {
 
     parameters { 
         // ── Action selector ──────────────────────────────────────────────────
-        // 'apply'   → full provisioning flow (default, safe)
-        // 'destroy' → tears down ALL resources — requires CONFIRM_DESTROY=true
+        // 'Apply'   → full provisioning flow (default, safe)
+        // 'Destroy' → tears down ALL resources — requires CONFIRM_DESTROY=true
         choice(
             name: 'ACTION',
-            choices: ['apply', 'destroy'],
+            choices: ['Apply', 'Destroy'],
             description: '''What should this pipeline do?
-            apply   → provision / update infrastructure (normal flow)
-            destroy → tear down ALL Terraform-managed resources (IRREVERSIBLE)'''
+            Apply   → Provision / update infrastructure (normal flow)
+            Destroy → Tear down ALL Terraform-managed resources (IRREVERSIBLE)'''
         )
  
-        // Second safety gate — must be explicitly checked when ACTION=destroy.
+        // Second safety gate — must be explicitly checked when ACTION=Destroy.
         // Defaults to false so an accidental 'destroy' run without ticking this
         // will abort at the gate stage before touching any infrastructure.
         booleanParam(
             name: 'CONFIRM_DESTROY',
             defaultValue: false,
-            description: 'REQUIRED when ACTION=destroy. Check this box to confirm you intend to destroy all resources. Has no effect when ACTION=apply.'
+            description: 'REQUIRED when ACTION=Destroy. Check this box to confirm you intend to destroy all resources. Has no effect when ACTION=Apply.'
         )
 
         booleanParam( 
@@ -119,11 +119,11 @@ pipeline {
 
         // ── Destroy safety gate ──────────────────────────────────────────────
         // Runs immediately after checkout so we fail fast before touching AWS.
-        // Prevents accidental destroys when ACTION=destroy but the checkbox was
+        // Prevents accidental destroys when ACTION=Destroy but the checkbox was
         // forgotten (the default).
         stage("Destroy Safety Gate") {
             when {
-                expression { params.ACTION == 'destroy' }
+                expression { params.ACTION == 'Destroy' }
             }
             steps {
                 script {
@@ -132,8 +132,8 @@ pipeline {
 ╔══════════════════════════════════════════════════════════════════════╗
 ║  DESTROY ABORTED — safety gate not cleared                          ║
 ║                                                                      ║
-║  You selected ACTION=destroy but did NOT check CONFIRM_DESTROY.     ║
-║  Re-run the build, set ACTION=destroy AND tick CONFIRM_DESTROY=true ║
+║  You selected ACTION=Destroy but did NOT check CONFIRM_DESTROY.     ║
+║  Re-run the build, set ACTION=Destroy AND tick CONFIRM_DESTROY=true ║
 ║  to proceed.                                                         ║
 ╚══════════════════════════════════════════════════════════════════════╝
 """)
@@ -147,7 +147,7 @@ pipeline {
 
         stage("Precheck Bootstrap State") {
             when {
-                expression { params.ACTION == 'apply' }
+                expression { params.ACTION == 'Apply' }
             }
 
             steps {
@@ -159,7 +159,7 @@ pipeline {
 
         stage("Terraform Format Check - terraform/platform-infra/"){ 
             when {
-                expression { params.ACTION == 'apply' }
+                expression { params.ACTION == 'Apply' }
             }
             steps { 
                 sh "terraform fmt -check -recursive terraform/platform-infra/"
@@ -168,7 +168,7 @@ pipeline {
 
         stage("Trivy IaC Scan") {
             when {
-                expression { params.ACTION == 'apply' }
+                expression { params.ACTION == 'Apply' }
             }
             steps {
                 sh """
@@ -196,7 +196,7 @@ pipeline {
 
         stage("Terraform Validate") {
             when {
-                expression { params.ACTION == 'apply' }
+                expression { params.ACTION == 'Apply' }
             } 
             steps {    
                 dir("${TF_DIR}") { 
@@ -208,7 +208,7 @@ pipeline {
 
         stage("Terraform Plan and Apply"){
             when {
-                expression { params.ACTION == 'apply' }
+                expression { params.ACTION == 'Apply' }
             }
             steps {
                 dir("${TF_DIR}") {
@@ -241,7 +241,7 @@ pipeline {
 
         stage('Ensure Kubernetes Access') {
             when {
-                expression { params.ACTION == 'apply' }
+                expression { params.ACTION == 'Apply' }
             }
             steps {
                 script {
@@ -252,7 +252,7 @@ pipeline {
 
         stage("Wait for EKS Ready") {
             when {
-                expression { params.ACTION == 'apply' }
+                expression { params.ACTION == 'Apply' }
             }
             steps {
                 sh '''
@@ -311,7 +311,7 @@ pipeline {
 
         stage('Install Metrics Server') {
             when {
-                expression { params.ACTION == 'apply' }
+                expression { params.ACTION == 'Apply' }
             }
             steps {
                 sh '''
@@ -338,7 +338,7 @@ pipeline {
         // This makes the platform-infra pipeline the single entry point for all cluster-level infrastructure, with app deployments handled separately.
         stage('Deploy Monitoring Stack') {
             when {
-                expression { params.ACTION == 'apply' }
+                expression { params.ACTION == 'Apply' }
             }
             steps {
                 sh """
@@ -362,7 +362,7 @@ pipeline {
 
         stage('Verify Monitoring Stack') {
             when {
-                expression { params.ACTION == 'apply' }
+                expression { params.ACTION == 'Apply' }
             }
             steps  {
                 sh """
@@ -374,13 +374,13 @@ pipeline {
         }
 
         // ── Destroy flow ─────────────────────────────────────────────────────
-        // Runs only when ACTION=destroy AND CONFIRM_DESTROY=true (gate above).
+        // Runs only when ACTION=Destroy AND CONFIRM_DESTROY=true (gate above).
         // Uses 'terraform plan -destroy' so you see exactly what will be removed
         // before the human approval input.
 
         stage("Cleanup Kubernetes Resources") {
             when {
-                expression { params.ACTION == 'destroy' }
+                expression { params.ACTION == 'Destroy' }
             }
             steps {
                 // We use set +e (or || true) so the pipeline doesn't fail 
@@ -426,7 +426,7 @@ pipeline {
  
         stage("Terraform Plan - Destroy Preview") {
             when {
-                expression { params.ACTION == 'destroy' }
+                expression { params.ACTION == 'Destroy' }
             }
             steps {
                 dir("${TF_DIR}") {
@@ -444,7 +444,7 @@ pipeline {
 
         stage("Destroy Approval") {
             when {
-                expression { params.ACTION == 'destroy' }
+                expression { params.ACTION == 'Destroy' }
             }
             steps {
                 // input must be at Groovy level — not inside sh.
@@ -463,7 +463,7 @@ Are you absolutely sure?""",
 
         stage("Terraform Destroy") {
             when {
-                expression { params.ACTION == 'destroy' }
+                expression { params.ACTION == 'Destroy' }
             }
             steps {
                 dir("${TF_DIR}") {
@@ -485,7 +485,7 @@ Are you absolutely sure?""",
     post {
         success { 
             script {
-                if (params.ACTION == 'apply') {
+                if (params.ACTION == 'Apply') {
                     echo "Platform infrastructure and monitoring stack applied successfully."
                     if (params.DEPLOY_APP_AFTER_INFRA) {
                         // ESO was deployed by Terraform (module.eso), but the operator pods may still be initializing by the time we reach post { success }. 
@@ -520,7 +520,7 @@ Are you absolutely sure?""",
 
         failure { 
             script {
-                if (params.ACTION == 'apply') {
+                if (params.ACTION == 'Apply') {
                     echo "Platform infrastructure pipeline failed. Will not proceed with app deployment. Please check the logs and fix the issues."
                 } else {
                     echo "Terraform destroy pipeline FAILED. Some resources may still exist — check the AWS console and Terraform state."

@@ -54,7 +54,6 @@ product-svc/target/
 *.zip
 /jenkinsfiles
 .github/
-Notes.txt
 kubeconfig
 
 # ====== Terraform ======

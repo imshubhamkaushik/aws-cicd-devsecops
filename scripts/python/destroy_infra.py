@@ -4,6 +4,7 @@ from utils.command import info, error, run_command
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
 
+# Path Constants for bootstrap_infra terraform directory.
 BOOTSTRAP_INFRA_DIR = ROOT_DIR / "terraform" / "bootstrap-infra"
 
 

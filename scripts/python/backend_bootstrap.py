@@ -3,8 +3,24 @@ from pathlib import Path
 from utils.command import info, error, run_command
 
 
+# __file__ is the path of the current Python file.
+# Path(__file__) - Converts the string path into a pathlib.Path object. Result: PosixPath('/home/shubham/project/app/utils/helper.py')
+# .resolve() - Converts the path into an absolute canonical path. Result: /home/shubham/project/app/utils/helper.py
+# .parents - parents is a sequence of parent directories.
+# .parent      # single immediate parent directory
+# .parents[0]  # same as .parent
+# .parents[1]  # one more level up
+# .parents[2]  # two more levels up
+# Suppose: /home/shubham/project/app/utils/helper.py --> Then: Path(__file__).resolve().parent --> gives: /home/shubham/project/app/utils
+# parents[0] = /home/user/project/app/utils
+# parents[1] = /home/user/project/app
+# parents[2] = /home/user/project
+# parents[3] = /home/user
+# parents[4] = /home
+# parents[5] = /
 ROOT_DIR = Path(__file__).resolve().parents[2]
 
+# Path Constants for backend_bootstrap terraform directory
 BACKEND_BOOTSTRAP_DIR = ROOT_DIR / "terraform" / "backend-bootstrap"
 
 

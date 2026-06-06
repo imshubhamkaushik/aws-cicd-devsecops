@@ -78,6 +78,14 @@ pipeline {
         NPM_CACHE = "/var/lib/jenkins/.npm"
     }
 
+    parameters {
+        booleanParam(
+            name: 'CLEAR_MAVEN_CACHE',
+            defaultValue: false,
+            description: 'Option to clear the Maven cache before building. Use this if you have made changes to dependencies that are not being picked up, or if you want to ensure a clean build without any cached artifacts.'
+        )
+    }
+
     tools {
         // Tool names must match the installation names defined in JCasC jcasc.yaml.
         // maven → tool.maven.installations[].name
@@ -105,7 +113,7 @@ pipeline {
             }
         }
 
-        stage('Secret Scanning') {
+        stage('Secrets Scanning') {
             steps {
                 sh """
                 set -e
@@ -169,14 +177,14 @@ pipeline {
                 stage('User Service') {
                     steps {
                         dir('user-svc') {
-                            sh "mvn -B clean test -Dmaven.repo.local=${MAVEN_CACHE}"
+                            sh "mvn -B clean verify -Dmaven.repo.local=${MAVEN_CACHE}"
                         }
                     }
                 }
                 stage('Product Service') {
                     steps {
                         dir('product-svc') {
-                            sh "mvn -B clean test -Dmaven.repo.local=${MAVEN_CACHE}"
+                            sh "mvn -B clean verify -Dmaven.repo.local=${MAVEN_CACHE}"
                         }
                     }
                 }
@@ -185,30 +193,18 @@ pipeline {
 
         stage('Build Artifacts') {
             stages {
-                stage('Cache') {
+                stage('Clear Maven Cache') {
+                    when {
+                        expression { params.CLEAR_MAVEN_CACHE }
+                    }
                     steps {
-                        script {
-                            def clearCache = input(
-                                message: 'Clear Maven cache before building?',
-                                ok: 'Continue',
-                                parameters: [
-                                    booleanParam(
-                                        name: 'CLEAR_MAVEN_CACHE',
-                                        defaultValue: false,
-                                        description: 'Wipe the local Maven cache — use when a dependency change is not being picked up.'
-                                    )
-                                ]
-                            )
-
-                            if (clearCache) {
-                                echo "Clearing Maven cache at ${MAVEN_CACHE}..."
-                                sh "rm -rf ${MAVEN_CACHE}"
-                                // Re-install parent POM after wipe so submodule builds resolve the current parent rather than re-downloading a potentially stale release version from remote.
-                                sh "mvn -B install -N -Dmaven.repo.local=${MAVEN_CACHE}"
-                            } else {
-                                echo "Maven cache preserved — skipping parent POM reinstall."
-                            }
-                        }
+                        echo "Clearing Maven cache at ${MAVEN_CACHE}..."
+                        sh "rm -rf ${MAVEN_CACHE}"
+                        // Re-install parent POM after wipe so submodule builds resolve the
+                        // current parent rather than re-downloading a potentially stale release
+                        // version from remote.
+                        sh "mvn -B install -N -Dmaven.repo.local=${MAVEN_CACHE}"
+                        echo "Cache cleared and parent POM reinstalled."
                     }
                 }
 
@@ -503,7 +499,7 @@ pipeline {
                     # This is the only end-to-end check that proves the application
                     # actually responds — pod Ready just means probes pass, not that
                     # the app serves traffic correctly.
-                    ALB_HOST=\$(kubectl get ingress catalogix -n ${K8S_NAMESPACE} \
+                    ALB_HOST=\$(kubectl get ingress catalogix-frontend-ingress -n ${K8S_NAMESPACE} \
                         -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)
 
                     if [ -z "\$ALB_HOST" ]; then
