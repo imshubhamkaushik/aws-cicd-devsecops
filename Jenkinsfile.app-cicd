@@ -56,8 +56,11 @@ pipeline {
         // AWS
         AWS_REGION = "ap-south-1"
         
+        // Environment (dev/staging/prod)
+        ENV = "dev"
+        
         // Cluster Name
-        CLUSTER_NAME = "catalogix-cluster-dev"
+        CLUSTER_NAME = "catalogix-cluster-${ENV}"
         
         // Image tags
         MAJOR_VERSION = "1.0"

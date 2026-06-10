@@ -57,8 +57,9 @@ pipeline {
 
     environment {
         AWS_REGION   = "ap-south-1"
-        CLUSTER_NAME = "catalogix-cluster-dev"
-        TF_DIR       = "terraform/platform-infra/env/dev"
+        ENV          = "dev" // dev/staging/prod
+        CLUSTER_NAME = "catalogix-cluster-${ENV}"
+        TF_DIR       = "terraform/platform-infra/env/${ENV}"
         // GIT_REPO_URL is injected by JCasC from /etc/default/jenkins — update group_vars/all/jenkins.yaml
         GIT_REPO_URL = "${env.GIT_REPO_URL}"
         // KUBECONFIG is pre-configured by Ansible at /var/lib/jenkins/.kube/config
@@ -77,6 +78,12 @@ pipeline {
             Apply   → Provision / update infrastructure (normal flow)
             Destroy → Tear down ALL Terraform-managed resources (IRREVERSIBLE)'''
         )
+
+        booleanParam( 
+            name: 'DEPLOY_APP_AFTER_INFRA', 
+            defaultValue: true, 
+            description: 'Deploy app after infra provisioning?' 
+        ) 
  
         // Second safety gate — must be explicitly checked when ACTION=Destroy.
         // Defaults to false so an accidental 'destroy' run without ticking this
@@ -86,12 +93,6 @@ pipeline {
             defaultValue: false,
             description: 'REQUIRED when ACTION=Destroy. Check this box to confirm you intend to destroy all resources. Has no effect when ACTION=Apply.'
         )
-
-        booleanParam( 
-            name: 'DEPLOY_APP_AFTER_INFRA', 
-            defaultValue: true, 
-            description: 'Deploy app after infra provisioning?' 
-        ) 
     }
 
     options {
