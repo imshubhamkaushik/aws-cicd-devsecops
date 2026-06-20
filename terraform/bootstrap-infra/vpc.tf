@@ -91,16 +91,18 @@ resource "aws_route_table_association" "public" {
 
 # Route tables for private subnets
 resource "aws_route_table" "private" {
+  count = length(var.private_subnets)
   vpc_id = aws_vpc.this.id
   tags = {
-    Name = "${var.vpc_name}-private-rt"
+    Name = "${var.vpc_name}-private-rt-${count.index + 1}"
   }
 }
 
 resource "aws_route" "private" {
-  route_table_id         = aws_route_table.private.id
+  count                   = length(var.private_subnets)
+  route_table_id         = aws_route_table.private[count.index].id
   destination_cidr_block = "0.0.0.0/0"
-  nat_gateway_id         = aws_nat_gateway.natgw.id
+  nat_gateway_id         = aws_nat_gateway.natgw.id[count.index % var.nat_gateway_count]
   depends_on             = [aws_nat_gateway.natgw]
 }
 

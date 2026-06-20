@@ -63,3 +63,18 @@ variable "console_iam_arn" {
   description = "IAM ARN granted EKS cluster-admin for console access. Passed as data.aws_caller_identity.current.arn from the calling module — automatically the identity running terraform apply."
   type        = string
 }
+
+variable "my_ip_cidr" {
+  description = <<-EOT
+    Operator's IP CIDR (e.g. "203.0.113.5/32"), captured once during
+    bootstrap-infra apply and passed through remote state. Used as an
+    additional entry in the EKS cluster's public_access_cidrs so the
+    operator's local kubectl can reach the EKS API directly, without
+    requiring a re-apply of this module if the IP happens to match what
+    was captured when bootstrap-infra last ran.
+
+    See the comment in main.tf for why this is no longer queried
+    independently inside this module.
+  EOT
+  type = string
+}

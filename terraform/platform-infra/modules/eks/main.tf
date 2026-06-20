@@ -1,15 +1,8 @@
 # Auto-detect the public IP of whoever runs terraform apply.
 # Same pattern used in bootstrap-infra/security-groups.tf.
 # This locks EKS public API access to your machine only — never 0.0.0.0/0
-data "http" "my_ip" {
-  url = "https://checkip.amazonaws.com"
-}
 
 data "aws_caller_identity" "current" {}
-
-locals {
-  my_ip_cidr = "${chomp(data.http.my_ip.response_body)}/32"
-}
 
 # IAM Role for cluster
 data "aws_iam_policy_document" "cluster_assume_role" {
@@ -50,7 +43,7 @@ resource "aws_eks_cluster" "cluster" {
     # DEV NOTE: public access is on so you can run kubectl from your laptop.
     # For production set this to false and access only from within the VPC.
     endpoint_public_access = true # for production, set to false
-    public_access_cidrs    = ["${var.jenkins_public_ip}/32", local.my_ip_cidr]
+    public_access_cidrs    = ["${var.jenkins_public_ip}/32", var.my_ip_cidr]
     # auto-locked to your IP at apply time | use this if endpoint_public_access = true
   }
 

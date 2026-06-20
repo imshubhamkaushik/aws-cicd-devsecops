@@ -22,6 +22,16 @@ jenkins:
 unclassified:
   location:
     url: "http://${JENKINS_URL}:8080/"
+  globalLibraries:
+    libraries:
+      - name: "catalogix-shared-library"
+        defaultVersion: "main"
+        retriever:
+          modernSCM:
+            scm:
+              git:
+                remote: "${GIT_REPO_URL}"
+                credentialsId: "github-token"
 
   sonarGlobalConfiguration:
     installations:

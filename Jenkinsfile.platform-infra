@@ -4,50 +4,7 @@
 // Defined here to avoid duplicating the same 20-line shell block in both Jenkinsfiles.
 // The identical function also exists in Jenkinsfile.app-cicd — if you change the logic here, change it there too.
 // TODO: move to a Jenkins shared library once the project scales to more pipelines.
-def ensureKubernetesAccess() {
-    sh"""
-    set -e
-
-    mkdir -p \$(dirname ${env.KUBECONFIG})
-
-    echo "=== Checking Kubernetes access ==="
-
-    if ! kubectl get nodes --request-timeout=10s; then
-        echo "kubectl failed — regenerating kubeconfig..."
-
-        echo "=== AWS Identity ==="
-        aws sts get-caller-identity || true
-
-        echo "=== Regenerating kubeconfig ==="
-        # Retry up to 5 times with 10s backoff — transient EKS API
-        # hiccups are common immediately after cluster operations.
-        SUCCESS=0
-        for i in 1 2 3 4 5; do
-            if aws eks update-kubeconfig \
-                --region ${env.AWS_REGION} \
-                --name ${env.CLUSTER_NAME} \
-                --kubeconfig ${env.KUBECONFIG}; then
-                SUCCESS=1
-                break
-            fi
-            echo "Attempt \$i failed — retrying in 10s..."
-            sleep 10
-        done
-
-        if [ "\$SUCCESS" -ne 1 ]; then
-            echo "ERROR: Failed to generate kubeconfig after 5 attempts"
-            exit 1
-        fi
-
-        echo "=== Retrying kubectl ==="
-        kubectl get nodes --request-timeout=10s
-    fi
-
-    chmod 600 ${env.KUBECONFIG}
-
-    echo "Kubernetes access verified."
-    """               
-}
+@Library('catalogix-shared-library') _
 
 // ACTION=Apply  → Terraform fmt → init → validate → plan → human approval → apply → verify EKS → deploy monitoring
 // ACTION=Destroy → Checkout → init → plan -destroy → human approval (double-gate) → destroy
@@ -57,7 +14,6 @@ pipeline {
 
     environment {
         AWS_REGION   = "ap-south-1"
-        ENV          = "dev" // dev/staging/prod
         CLUSTER_NAME = "catalogix-cluster-${ENV}"
         TF_DIR       = "terraform/platform-infra/env/${ENV}"
         // GIT_REPO_URL is injected by JCasC from /etc/default/jenkins — update group_vars/all/jenkins.yaml
@@ -79,6 +35,12 @@ pipeline {
             Destroy → Tear down ALL Terraform-managed resources (IRREVERSIBLE)'''
         )
 
+        choice(
+            name: 'ENV',
+            choices: ['dev', 'staging'],
+            description: 'Select the deployment environment. This determines which EKS cluster and Helm values are used.'
+        )
+
         booleanParam( 
             name: 'DEPLOY_APP_AFTER_INFRA', 
             defaultValue: true, 
@@ -97,7 +59,7 @@ pipeline {
 
     options {
         timestamps()
-        disableConcurrentBuilds()
+        disableConcurrentBuilds(abortPrevious: true)
         timeout(time: 90, unit: 'MINUTES')
     }
 
@@ -129,15 +91,7 @@ pipeline {
             steps {
                 script {
                     if (!params.CONFIRM_DESTROY) {
-                        error("""
-╔══════════════════════════════════════════════════════════════════════╗
-║  DESTROY ABORTED — safety gate not cleared                          ║
-║                                                                      ║
-║  You selected ACTION=Destroy but did NOT check CONFIRM_DESTROY.     ║
-║  Re-run the build, set ACTION=Destroy AND tick CONFIRM_DESTROY=true ║
-║  to proceed.                                                         ║
-╚══════════════════════════════════════════════════════════════════════╝
-""")
+                        error("Destroy aborted — set CONFIRM_DESTROY=true to proceed.")
                     }
                     echo "Destroy safety gate cleared. Proceeding with destroy flow."
                 }
@@ -172,15 +126,19 @@ pipeline {
                 expression { params.ACTION == 'Apply' }
             }
             steps {
+                script {
+                    env.TRIVY_TAG = sh(
+                        script: "grep '^trivy_version:' ansible/group_vars/all/vars.yaml | awk '{print \$2}'",
+                        returnStdout: true
+                    ).trim()
+                    env.TRIVY_IMAGE = "aquasec/trivy:${env.TRIVY_TAG}"
+                }
                 sh """
                 set -e
-
-                echo "=== Trivy IaC scan - terraform/platform-infra ==="
-                trivy config \\
-                    --severity HIGH,CRITICAL \\
-                    --exit-code 1 \\
-                    --ignorefile .trivyignore \\
-                    terraform/platform-infra/
+                docker run --rm -v \$(pwd):/iac ${TRIVY_IMAGE} config \\
+                    --severity HIGH,CRITICAL --exit-code 1 \\
+                    --ignorefile /iac/.trivyignore \\
+                    /iac/terraform/platform-infra/
                 """
             }
         }
@@ -190,7 +148,7 @@ pipeline {
         stage("Terraform Init") { 
             steps { 
                 dir("${TF_DIR}") { 
-                    sh "terraform init -reconfigure" 
+                    sh "terraform init" 
                 } 
             }
         }
@@ -223,7 +181,7 @@ pipeline {
                     """
                 }
                 // input is a Jenkins DSL step, must be at Groovy level — CANNOT go inside sh.
-                input message: "Review the terraform plan in the last stage. Approve apply?", ok: "Apply"
+                input message: "Review the terraform plan above. Approve apply?", ok: "Apply"
 
                 dir("${TF_DIR}") {
                     sh """
@@ -246,7 +204,7 @@ pipeline {
             }
             steps {
                 script {
-                    ensureKubernetesAccess()
+                    ensureKubernetesAccess(env.AWS_REGION, env.CLUSTER_NAME, env.KUBECONFIG)
                 }            
             }
         }
@@ -256,7 +214,7 @@ pipeline {
                 expression { params.ACTION == 'Apply' }
             }
             steps {
-                sh '''
+                sh """
                 set -e
 
                 NODEGROUP="${CLUSTER_NAME}-node-group"
@@ -274,9 +232,9 @@ pipeline {
                 # It exits 0 when the node group is ACTIVE, exits 1 on timeout or error.
                 # This is more reliable than kubectl polling because it doesn't depend on
                 # the kubernetes API server being reachable — it just checks EC2/EKS state.
-                aws eks wait nodegroup-active \
-                    --cluster-name ${CLUSTER_NAME} \
-                    --nodegroup-name ${NODEGROUP} \
+                aws eks wait nodegroup-active \\
+                    --cluster-name ${CLUSTER_NAME} \\
+                    --nodegroup-name \${NODEGROUP} \\
                     --region ${AWS_REGION}
 
                 echo "Node group is ACTIVE."
@@ -299,39 +257,45 @@ pipeline {
                     --timeout=300s \
                     --request-timeout=15s
 
+                echo "=== Waiting for CoreDNS ==="
+                kubectl rollout status deployment/coredns -n kube-system --timeout=120s
+
                 echo ""
                 echo "All nodes are Ready."
                 kubectl get nodes --request-timeout=15s
                 echo ""
                 echo "Cluster is ready for use."
-                '''  
+                """ 
             }
         }
 
         // Metrics Server is a cluster-level component that the monitoring stack depends on, so we install it here in the infra pipeline rather than the app pipeline. 
-
+        // Metrics Server is used by the Horizontal Pod Autoscaler (HPA) to scale workloads based on CPU/memory usage, and by the monitoring stack to provide resource metrics for dashboards and alerts.
         stage('Install Metrics Server') {
             when {
                 expression { params.ACTION == 'Apply' }
             }
             steps {
-                sh '''
+                sh """
                 set -e
 
                 echo "Installing metrics-server..."
 
-                helm repo add metrics-server https://kubernetes-sigs.github.io/metrics-server || true
-                helm repo update
+                helm repo add metrics-server https://kubernetes-sigs.github.io/metrics-server/ 2>/dev/null || \\
+                    helm repo list | grep -q '^metrics-server' || \\
+                    { echo "ERROR: helm repo add metrics-server failed"; exit 1; }
+                helm repo update metrics-server
 
-                helm upgrade --install metrics-server metrics-server/metrics-server \
-                --namespace kube-system \
-                --create-namespace \
-                --set args="{--kubelet-insecure-tls,--kubelet-preferred-address-types=InternalIP}" \
-                --wait --timeout 120s
+                helm upgrade --install metrics-server metrics-server/metrics-server \\
+                    --namespace kube-system \\
+                    --create-namespace \\
+                    --version 3.12.2 \\
+                    --set args="{--kubelet-preferred-address-types=InternalIP}" \\
+                    --wait --timeout 120s
 
                 echo "Verifying metrics-server..."
                 kubectl get deployment metrics-server -n kube-system
-                '''
+                """
             }
         }
 
@@ -347,15 +311,16 @@ pipeline {
 
                 # helm repo add is idempotent — safe on every run.
                 # Without this, helm dependency update fails on a clean Jenkins workspace.
-                helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+                helm repo add prometheus-community https://prometheus-community.github.io/helm-charts 2>/dev/null || true
+                helm repo add grafana https://grafana.github.io/helm-charts 2>/dev/null || true
                 helm repo update
 
                 # Resolve the kube-prometheus-stack dependency before install
                 helm dependency update helm/monitoring
 
-                helm upgrade --install monitoring helm/monitoring \
-                    --namespace monitoring \
-                    --create-namespace \
+                helm upgrade --install monitoring helm/monitoring \\
+                    --namespace monitoring \\
+                    --create-namespace \\
                     --wait --timeout 300s
                 """
             }
@@ -370,6 +335,7 @@ pipeline {
                 set -e
                 kubectl get pods -n monitoring
                 kubectl get svc  -n monitoring
+                kubectl get pods -n kube-system | grep -E 'metrics-server|cluster-autoscaler|coredns|aws-load-balancer'
                 """
             }       
         }
@@ -379,52 +345,6 @@ pipeline {
         // Uses 'terraform plan -destroy' so you see exactly what will be removed
         // before the human approval input.
 
-        stage("Cleanup Kubernetes Resources") {
-            when {
-                expression { params.ACTION == 'Destroy' }
-            }
-            steps {
-                // We use set +e (or || true) so the pipeline doesn't fail 
-                // if the cluster is already partially destroyed or unreachable.
-                sh """
-                set +e 
-
-                echo "Attempting to clean up K8s resources to prevent Terraform timeouts and AWS VPC hangs..."
-                
-                # Ensure we are connected to the cluster
-                aws eks update-kubeconfig --region ${AWS_REGION} --name ${CLUSTER_NAME} --kubeconfig ${KUBECONFIG}
-                
-                echo "Uninstalling App..."
-                helm uninstall catalogix -n catalogix || true
-                
-                echo "Uninstalling Monitoring & Metrics..."
-                helm uninstall monitoring -n monitoring || true
-                helm uninstall metrics-server -n kube-system || true
-
-                # kube-prometheus-stack does not delete PVCs on uninstall by default.
-                # Delete them explicitly while the EBS CSI driver is still alive so the CSI driver calls DeleteVolume on AWS and removes the EBS volumes before the nodes are killed. 
-                #This requires reclaimPolicy: Delete on the gp3-sc StorageClass — Retain would keep the volumes regardless.
-                kubectl delete pvc --all -n monitoring --wait=true --timeout=120s|| true
-
-                echo "Uninstalling AWS Load Balancer Controller (CRITICAL FIX)..."
-                MAX_WAIT=180
-                ELAPSED=0
-                while true; do
-                    COUNT=\$(aws elbv2 describe-load-balancers \\
-                        --region ${AWS_REGION} \\
-                        --query "LoadBalancers[?contains(LoadBalancerName, 'catalogix')] | length(@)" \\
-                        --output text 2>/dev/null || echo "0")
-                    [ "\$COUNT" = "0" ] && echo "No ALBs remaining." && break
-                    echo "  Still waiting (\$COUNT ALB(s) remain)... \${ELAPSED}s elapsed"
-                    sleep 15
-                    ELAPSED=\$((ELAPSED + 15))
-                    [ \$ELAPSED -ge \$MAX_WAIT ] && echo "WARNING: ALBs did not delete in \${MAX_WAIT}s — proceeding anyway" && break
-                done
-                helm uninstall aws-load-balancer-controller -n kube-system || true
-                """
-            }
-        }
- 
         stage("Terraform Plan - Destroy Preview") {
             when {
                 expression { params.ACTION == 'Destroy' }
@@ -462,6 +382,58 @@ Are you absolutely sure?""",
             }
         }
 
+        stage("Cleanup Kubernetes Resources") {
+            when {
+                expression { params.ACTION == 'Destroy' }
+            }
+            steps {
+                // We use set +e (or || true) so the pipeline doesn't fail 
+                // if the cluster is already partially destroyed or unreachable.
+                sh """
+
+                echo "Attempting to clean up K8s resources to prevent Terraform timeouts and AWS VPC hangs..."
+                
+                # Ensure we are connected to the cluster
+                if ! aws eks update-kubeconfig \\
+                    --region ${AWS_REGION} \\
+                    --name ${CLUSTER_NAME} \\
+                    --kubeconfig ${KUBECONFIG} 2>&1; then
+                    echo "WARNING: Failed to connect to cluster — it may already be destroyed. Skipping Kubernetes cleanup."
+                else
+                    echo "Uninstalling App..."
+                    helm uninstall catalogix -n catalogix || true
+                
+                    echo "Uninstalling Monitoring & Metrics..."
+                    helm uninstall monitoring -n monitoring || true
+                    helm uninstall metrics-server -n kube-system || true
+
+                    # kube-prometheus-stack does not delete PVCs on uninstall by default.
+                    # Delete them explicitly while the EBS CSI driver is still alive so the CSI driver calls DeleteVolume on AWS and removes the EBS volumes before the nodes are killed. 
+                    #This requires reclaimPolicy: Delete on the gp3-sc StorageClass — Retain would keep the volumes regardless.
+                    
+                    kubectl delete pvc --all -n monitoring --wait=true --timeout=120s|| true
+
+                    echo "Waiting for ALBs to be deleted..."
+                    MAX_WAIT=180
+                    ELAPSED=0
+                    while true; do
+                        if ! COUNT=\$(aws elbv2 describe-load-balancers --region ${AWS_REGION} \\
+                                --query "LoadBalancers[?contains(LoadBalancerName,'catalogix')] | length(@)" \\
+                                --output text 2>&1); then
+                            echo "WARNING: ALB query failed — proceeding anyway"; break
+                        fi
+                        [ "\$COUNT" = "0" ] && echo "No ALBs remaining." && break
+                        echo "  \${COUNT} ALB(s) remain... \${ELAPSED}s"
+                        sleep 15; ELAPSED=\$((ELAPSED+15))
+                        [ \$ELAPSED -ge \$MAX_WAIT ] && echo "WARNING: timeout" && break
+                    done
+
+                    helm uninstall aws-load-balancer-controller -n kube-system || true
+                fi
+                """
+            }
+        }
+
         stage("Terraform Destroy") {
             when {
                 expression { params.ACTION == 'Destroy' }
@@ -494,21 +466,34 @@ Are you absolutely sure?""",
                         // if ESO isn't ready, the ExternalSecret stays in a Pending state and
                         // pods fail to start because the DB password secret never gets created. 
                         // This wait ensures ESO is actually serving requests before the app pipeline fires.
-                        echo "Waiting for ESO to be ready before triggering app deployment..."
                         sh """
                         set -e
-                        kubectl wait deployment/external-secrets \
-                            -n external-secrets \
-                            --for=condition=Available \
+
+                        echo "Waiting for ESO to be ready before triggering app deployment..."
+                        kubectl wait deployment/external-secrets \\
+                            -n external-secrets \\
+                            --for=condition=Available \\
                             --timeout=120s
-                        kubectl wait deployment/external-secrets-webhook \
-                            -n external-secrets \
-                            --for=condition=Available \
+                        kubectl wait deployment/external-secrets-webhook \\
+                            -n external-secrets \\
+                            --for=condition=Available \\
                             --timeout=120s
                         echo "ESO is ready."
+
+                        # Wait for the ExternalSecret CRD to be Ready — not just
+                        # the ESO controller. The controller being Available does not guarantee the ExternalSecret has synced from Secrets Manager.
+                        # Without this wait, Spring Boot starts, fails to read credentials,
+                        # and enters CrashLoopBackOff before the Secret is created.
+                        
+                        kubectl wait externalsecret/catalogix-secrets \\
+                            -n catalogix --for=condition=Ready --timeout=120s || true
                         """
                         echo "Triggering app deployment pipeline..."
-                        build job: 'app-cicd', wait: false
+                        
+                        build job: 'app-cicd',
+                              parameters: [string(name: 'ENV', value: params.ENV)],
+                              wait: false
+                        
                         echo "App deployment pipeline triggered."
                     } else {
                         echo "Skipping app deployment as per parameter."
@@ -531,8 +516,7 @@ Are you absolutely sure?""",
         
         always  { 
             dir("${TF_DIR}") { 
-                sh "rm -f main.tfplan || true" 
-                sh "rm -f destroy.tfplan || true"
+                sh "rm -f main.tfplan destroy.tfplan || true"
             } 
         }
     }

@@ -79,7 +79,7 @@ module "eks" {
   private_subnets = local.private_subnets
 
   min_size     = 1
-  max_size     = 2
+  max_size     = 4
   desired_size = 2
 
   # KMS key for EKS secrets
@@ -87,6 +87,12 @@ module "eks" {
 
   jenkins_role_arn  = data.terraform_remote_state.bootstrap.outputs.jenkins_role_arn
   jenkins_public_ip = data.terraform_remote_state.bootstrap.outputs.public_ip_jenkins
+
+  # my_ip_cidr comes from bootstrap-infra's remote state, captured
+  # once at bootstrap-infra apply time, instead of this module independently
+  # querying checkip.amazonaws.com again at a potentially much later time.
+  # See modules/eks/main.tf for the full rationale.
+  my_ip_cidr = data.terraform_remote_state.bootstrap.outputs.jenkins_my_ip_cidr
 
   # Whoever runs terraform apply automatically gets console access.
   # No variable or tfvars entry needed.
@@ -198,7 +204,8 @@ resource "kubernetes_storage_class_v1" "gp3" {
   }
 
   storage_provisioner    = "ebs.csi.aws.com"
-  reclaim_policy         = "Retain"
+  # reclaim_policy = Delete ensures the EBS volume is deleted when the PVC is deleted, avoiding orphaned volumes and unexpected AWS charges.
+  reclaim_policy         = "Delete"
   volume_binding_mode    = "WaitForFirstConsumer"
   allow_volume_expansion = true
 

@@ -75,3 +75,20 @@ variable "aws_region" {
   type        = string
   default     = "ap-south-1"
 }
+
+variable "nat_gateway_count" {
+  description = <<-EOT
+    Number of NAT Gateways to create, one per AZ up to this count.
+    Default 1 = single NAT Gateway (cost-effective, dev default — ~$32/mo).
+    Set to length(var.azs) for one NAT Gateway per AZ (production pattern —
+    survives a single-AZ outage without losing outbound connectivity in
+    other AZs). Must be <= length(var.azs).
+  EOT
+  type    = number
+  default = 1
+
+  validation {
+    condition     = var.nat_gateway_count >= 1
+    error_message = "nat_gateway_count must be at least 1."
+  }
+}
