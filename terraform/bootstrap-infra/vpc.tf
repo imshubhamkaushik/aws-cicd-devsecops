@@ -47,22 +47,21 @@ resource "aws_subnet" "private" {
 
 # NAT Gateway
 resource "aws_eip" "nat" {
+  count  = var.nat_gateway_count
   domain = "vpc"
 
   tags = {
-    Name = "${var.vpc_name}-nat-eip"
+    Name = "${var.vpc_name}-nat-eip-${count.index + 1}"
   }
 }
 
 resource "aws_nat_gateway" "natgw" {
-  allocation_id = aws_eip.nat.id
-  subnet_id     = aws_subnet.public[0].id
-
-  # PROD NOTE: This is a single NAT Gateway (cost-effective for dev).
-  # In production use one NAT GW per AZ so a single AZ failure doesn't cut outbound traffic for all private subnets. Add count = length(var.azs) and reference aws_subnet.public[count.index].id.
+  count         = var.nat_gateway_count
+  allocation_id = aws_eip.nat[count.index].id
+  subnet_id     = aws_subnet.public[count.index].id
 
   tags = {
-    Name = "${var.vpc_name}-natgw"
+    Name = "${var.vpc_name}-natgw-${count.index + 1}"
   }
 
   depends_on = [aws_internet_gateway.igw]
@@ -99,15 +98,15 @@ resource "aws_route_table" "private" {
 }
 
 resource "aws_route" "private" {
-  count                   = length(var.private_subnets)
+  count                  = length(var.private_subnets)
   route_table_id         = aws_route_table.private[count.index].id
   destination_cidr_block = "0.0.0.0/0"
-  nat_gateway_id         = aws_nat_gateway.natgw.id[count.index % var.nat_gateway_count]
+  nat_gateway_id         = aws_nat_gateway.natgw[count.index % var.nat_gateway_count].id
   depends_on             = [aws_nat_gateway.natgw]
 }
 
 resource "aws_route_table_association" "private" {
   count          = length(var.private_subnets)
   subnet_id      = aws_subnet.private[count.index].id
-  route_table_id = aws_route_table.private.id
+  route_table_id = aws_route_table.private[count.index].id
 }

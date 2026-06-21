@@ -7,7 +7,7 @@ filters:
   tag:Project: catalogix
   # must match var.project_tag in terraform.tfvars
   instance-state-name: running
-  # This prevent Ansible from targeting stopped or termminated instances
+  # This prevent Ansible from targeting stopped or terminated instances
 
 keyed_groups:
   - key: ec2_tags.Role

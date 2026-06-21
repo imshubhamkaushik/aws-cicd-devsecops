@@ -43,7 +43,7 @@ pipeline {
 
         booleanParam( 
             name: 'DEPLOY_APP_AFTER_INFRA', 
-            defaultValue: true, 
+            defaultValue: false, 
             description: 'Deploy app after infra provisioning?' 
         ) 
  
