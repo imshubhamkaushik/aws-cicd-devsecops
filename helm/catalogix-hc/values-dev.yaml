@@ -63,6 +63,7 @@ userSvc:
     minReplicas: 2
     maxReplicas: 4
     cpuUtilization: 75
+    memoryUtilization: 75
 
 productSvc:
   image:
@@ -85,6 +86,7 @@ productSvc:
     minReplicas: 2
     maxReplicas: 4
     cpuUtilization: 75
+    memoryUtilization: 75
 
 hpa:
   enabled: true

@@ -164,6 +164,7 @@ module "rds" {
   db_engine_version       = "18.1"
   backup_retention_period = 0
   multi_az                = false
+  skip_final_snapshot     = true
 
   ssm_parameter_path = "/${local.env_prefix}/rds-endpoint"
 }

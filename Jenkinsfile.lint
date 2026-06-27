@@ -136,7 +136,7 @@ pipeline {
                 sh '''
                 set -e
                 shellcheck create-key-pair.sh
-                shellcheck scripts/install/*.sh
+                shellcheck scripts/bash/*.sh
                 '''
             }
         }

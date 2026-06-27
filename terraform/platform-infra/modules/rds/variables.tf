@@ -58,3 +58,13 @@ variable "multi_az" {
   EOT
   type        = bool
 }
+
+variable "skip_final_snapshot" {
+  description = <<-EOT
+    Whether to skip the final snapshot when destroying the RDS instance.
+    Fine for dev/test, but not for production.
+    No default: every environment must decide explicitly.
+    dev/test: true  |  staging: false  |  production: false
+  EOT
+  type        = bool
+}

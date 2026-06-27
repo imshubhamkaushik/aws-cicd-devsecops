@@ -19,6 +19,12 @@ spec:
         target:
           type: Utilization
           averageUtilization: {{ .Values.userSvc.hpa.cpuUtilization }}
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.userSvc.hpa.memoryUtilization }}
 ---
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
@@ -39,6 +45,12 @@ spec:
         target:
           type: Utilization
           averageUtilization: {{ .Values.productSvc.hpa.cpuUtilization }}
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.productSvc.hpa.memoryUtilization }}
 ---
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler

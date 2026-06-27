@@ -127,7 +127,7 @@ pipeline {
             steps {
                 script {
                     env.TRIVY_TAG = sh(
-                        script: "grep '^trivy_version:' ansible/group_vars/all/vars.yaml | awk '{print \$2}'",
+                        script: "grep '^trivy_version:' ansible/group_vars/all/vars.yaml | awk -F'\"' '{print \$2}'",
                         returnStdout: true
                     ).trim()
                     env.TRIVY_IMAGE = "aquasec/trivy:${env.TRIVY_TAG}"
@@ -335,7 +335,7 @@ pipeline {
                 set -e
                 kubectl get pods -n monitoring
                 kubectl get svc  -n monitoring
-                kubectl get pods -n kube-system | grep -E 'metrics-server|cluster-autoscaler|coredns|aws-load-balancer'
+                kubectl get pods -n kube-system | grep -E 'metrics-server|coredns|aws-load-balancer'
                 """
             }       
         }

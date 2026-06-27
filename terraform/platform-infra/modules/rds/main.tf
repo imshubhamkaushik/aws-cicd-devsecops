@@ -26,7 +26,7 @@ resource "aws_db_instance" "postgres" {
   backup_retention_period = var.backup_retention_period
   # DEV NOTE: skip_final_snapshot = true means no backup snapshot is taken when this RDS instance is destroyed. Fine for dev — acceptable to lose the data. 
   # For production set to false and set final_snapshot_identifier.
-  skip_final_snapshot = true # Fine for dev, but not for production
+  skip_final_snapshot = var.skip_final_snapshot # Fine for dev, but not for production
 
   # lifecycle {
   #   prevent_destroy = true
