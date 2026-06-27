@@ -17,3 +17,8 @@ variable "region" {
   description = "AWS region — passed to the ClusterSecretStore so ESO knows which region to call"
   type        = string
 }
+
+variable "permissions_boundary_arn" {
+  description = "ARN of the IAM permissions boundary that must be attached to the role this module creates. See modules/eks/variables.tf for the full rationale."
+  type        = string
+}

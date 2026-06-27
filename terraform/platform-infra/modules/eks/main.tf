@@ -17,8 +17,9 @@ data "aws_iam_policy_document" "cluster_assume_role" {
 }
 
 resource "aws_iam_role" "cluster_role" {
-  name               = "${var.cluster_name}-cluster-role"
-  assume_role_policy = data.aws_iam_policy_document.cluster_assume_role.json
+  name                 = "${var.cluster_name}-cluster-role"
+  assume_role_policy   = data.aws_iam_policy_document.cluster_assume_role.json
+  permissions_boundary = var.permissions_boundary_arn
 }
 
 resource "aws_iam_role_policy_attachment" "cluster_policy" {
@@ -96,8 +97,9 @@ data "aws_iam_policy_document" "node_assume_role" {
 }
 
 resource "aws_iam_role" "node_role" {
-  name               = "${var.cluster_name}-node-role"
-  assume_role_policy = data.aws_iam_policy_document.node_assume_role.json
+  name                 = "${var.cluster_name}-node-role"
+  assume_role_policy   = data.aws_iam_policy_document.node_assume_role.json
+  permissions_boundary = var.permissions_boundary_arn
 }
 
 # Attach Policies
@@ -125,7 +127,7 @@ resource "aws_eks_node_group" "node_group" {
   instance_types = var.instance_type
   ami_type       = "AL2023_x86_64_STANDARD"
   capacity_type  = "ON_DEMAND"
-  disk_size      = 20
+  disk_size      = var.disk_size
 
   node_group_name = "${var.cluster_name}-node-group"
 
@@ -205,8 +207,9 @@ data "aws_iam_policy_document" "ebs_csi_assume_role" {
 }
 
 resource "aws_iam_role" "ebs_csi" {
-  name               = "${var.cluster_name}-ebs-csi-role"
-  assume_role_policy = data.aws_iam_policy_document.ebs_csi_assume_role.json
+  name                 = "${var.cluster_name}-ebs-csi-role"
+  assume_role_policy   = data.aws_iam_policy_document.ebs_csi_assume_role.json
+  permissions_boundary = var.permissions_boundary_arn
 }
 
 resource "aws_iam_role_policy_attachment" "ebs_csi" {

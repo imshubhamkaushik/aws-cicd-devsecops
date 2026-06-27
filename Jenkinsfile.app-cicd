@@ -1,13 +1,11 @@
 // Application CI/CD pipeline Jenkinsfile. Builds, tests, and deploys the Catalogix application to EKS whenever changes are pushed to the main branch.
 
-// ensureKubernetesAccess() was previously defined inline here AND
-// duplicated verbatim in Jenkinsfile.platform-infra, with a comment warning
-// "if you change the logic here, change it there too" — exactly the
-// maintenance trap that comment predicted. Moved to a Jenkins shared library
-// (jenkins/shared-library/vars/ensureKubernetesAccess.groovy) 
+// ensureKubernetesAccess() was previously defined inline here AND duplicated verbatim in Jenkinsfile.platform-infra, 
+// with a comment warning "if you change the logic here, change it there too" — 
+// exactly the maintenance trap that comment predicted. 
+// Moved to a Jenkins shared library (vars/ensureKubernetesAccess.groovy) 
 // so there is now a single implementation both pipelines call. 
-// Requires the library to be registered once in JCasC under unclassified.globalLibraries — see that
-// file's header comment for the exact block to add.
+// Requires the library to be registered once in JCasC under unclassified.globalLibraries — see that file's header comment for the exact block to add.
 @Library('catalogix-shared-library') _
 
 pipeline {
@@ -80,7 +78,8 @@ pipeline {
             }
         }
 
-        stage('Secrets Scanning') {
+        // Gitleaks is a static analysis tool for detecting hardcoded secrets like passwords, API keys, and tokens in git repositories. It scans the entire repository history to find any potential secrets that may have been committed. This stage runs Gitleaks in a Docker container to ensure a consistent environment and avoid polluting the Jenkins agent with additional dependencies. The scan is configured to fail the build if any secrets are found, enforcing security best practices.
+        stage('Secrets Scanning - Gitleaks') {
             steps {
                 sh """
                 set -e
@@ -95,6 +94,7 @@ pipeline {
             }
         }
 
+        // AWS Authentication stage is run before the Login to Amazon ECR stage to ensure the necessary environment variables are set for ECR login and Kubernetes access.
         stage('AWS Authentication') {
             steps {
                 script {
@@ -103,20 +103,24 @@ pipeline {
                     // host install (Ansible devops-tools role) and this Docker image tag.
                     // Updating the version in one place keeps both in sync automatically.
                     env.TRIVY_TAG = sh(
-                        script: "grep '^trivy_version:' ansible/group_vars/all/vars.yaml | awk '{print \$2}'",
+                        script: "grep '^trivy_version:' ansible/group_vars/all/vars.yaml | awk -F'\"' '{print \$2}'",
                         returnStdout: true).trim()
-
-                    env.TRIVY_IMAGE = "aquasec/trivy:${env.TRIVY_TAG}"
 
                     if (!env.TRIVY_TAG) {
                         error("TRIVY_TAG is empty — 'trivy_version' key not found in ansible/group_vars/all/vars.yaml. Check the key name and file path.")
                     }
 
+                    env.TRIVY_IMAGE = "aquasec/trivy:${env.TRIVY_TAG}"
+
                     // Read SonarQube scanner version from Ansible vars — single source of truth.
                     // ansible/group_vars/all/vars.yaml:sonar_scanner_version drives both the host install (Ansible devops-tools role) and this Docker image tag.
                     env.SONAR_SCANNER_TAG = sh(
-                        script: "grep '^sonar_scanner_version:' ansible/group_vars/all/vars.yaml | awk '{print \$2}'",
+                        script: "grep '^sonar_scanner_version:' ansible/group_vars/all/vars.yaml | awk -F'\"' '{print \$2}'",
                         returnStdout: true).trim()
+
+                    if (!env.SONAR_SCANNER_TAG) {
+                        error("SONAR_SCANNER_TAG is empty — 'sonar_scanner_version' key not found in ansible/group_vars/all/vars.yaml. Check the key name and file path.")
+                    }
                     
                     env.SONAR_SCANNER_IMAGE = "sonarsource/sonar-scanner-cli:${env.SONAR_SCANNER_TAG}"
 
@@ -138,6 +142,7 @@ pipeline {
             }   
         }
 
+        // Login to Amazon ECR is run before the Ensure Kubernetes Access step to ensure the credentials are available.
         stage('Login to Amazon ECR') {
             steps {
                 sh """
@@ -149,6 +154,7 @@ pipeline {
             }
         }
 
+        // Ensure Kubernetes Access is run after the Login to Amazon ECR step to ensure the credentials are available.
         stage('Ensure Kubernetes Access') {
             steps {
                 script {
@@ -156,7 +162,8 @@ pipeline {
                 }
             }
         }
-
+        
+        // Hadolint — Dockerfile Linting is run in parallel for all three services. Each Dockerfile is linted in its own stage to avoid conflicts and to provide clear feedback on which service's Dockerfile has issues.
         stage('Hadolint — Dockerfile Linting') {
             parallel {
                 stage('user-svc') { 
@@ -179,6 +186,20 @@ pipeline {
             }
         }
 
+        // Clear Maven cache before running tests.
+        stage('Clear Maven Cache') {
+            when { expression { params.CLEAR_MAVEN_CACHE } }
+            steps {
+                sh """
+                echo "Clearing Maven cache at ${MAVEN_CACHE}..."
+                rm -rf ${MAVEN_CACHE}
+                mvn -B install -N -Dmaven.repo.local=${MAVEN_CACHE}
+                echo "Maven cache cleared."
+                """
+            }
+        }
+
+        // Run unit and integration tests in parallel for all backend services. Each test is run in its own directory to avoid conflicts, and the Maven cache is used to speed up builds.
         stage('Unit & Integration Tests (Backend)') {
             parallel {
                 stage('User Service') {
@@ -199,20 +220,9 @@ pipeline {
             }
         }
 
+        // Build Artifacts (JARs for backend services, frontend build) in parallel for all three services. Each build is run in its own directory to avoid conflicts, and the Maven and NPM caches are used to speed up builds.
         stage('Build Artifacts') {
             stages {
-                stage('Clear Maven Cache') {
-                    when { expression { params.CLEAR_MAVEN_CACHE } }
-                    steps {
-                        sh """
-                        echo "Clearing Maven cache at ${MAVEN_CACHE}..."
-                        rm -rf ${MAVEN_CACHE}
-                        mvn -B install -N -Dmaven.repo.local=${MAVEN_CACHE}
-                        echo "Maven cache cleared."
-                        """
-                    }
-                }
-
                 stage('Build') {
                     parallel {
                         stage('User Service JAR') {
@@ -281,6 +291,9 @@ pipeline {
             }
         }
 
+        // Build Docker Images and scan them with Trivy for vulnerabilities. Each image is built in parallel, and each scan is run in a separate Docker container to avoid polluting the Jenkins agent with Trivy dependencies.
+        // The Trivy scan is configured to fail the build if any HIGH or CRITICAL vulnerabilities are found, and it ignores unfixed vulnerabilities and those listed in the .trivyignore file.
+        // The --cache-from option is used to speed up builds by reusing layers from the previously built image, if it exists in ECR. If the image does not exist yet, the build will proceed without cache.
         stage('Build Docker Images and Trivy Image Scan') {
             parallel {
                 stage('User Service') {
@@ -288,11 +301,11 @@ pipeline {
                         sh """
                         set -e
 
-                        # Pull Image
-                        docker pull ${USER_SVC_IMAGE} || true
-
-                        # Build Main Image
-                        docker build --cache-from ${USER_SVC_IMAGE} --target app -f user-svc/Dockerfile -t ${USER_SVC_IMAGE} .
+                        # Build Main Image — Docker's own local build cache on
+                        # this host already persists between builds (this is a
+                        # single persistent EC2, not an ephemeral build agent),
+                        # so no --cache-from registry round trip is needed.
+                        docker build --target app -f user-svc/Dockerfile -t ${USER_SVC_IMAGE} .
 
                         # Scan Main Image
                         docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \\
@@ -311,11 +324,9 @@ pipeline {
                         sh """
                         set -e
 
-                        # Pull Image
-                        docker pull ${PRODUCT_SVC_IMAGE} || true
-
-                        # Build Main Image
-                        docker build --cache-from ${PRODUCT_SVC_IMAGE} --target app -f product-svc/Dockerfile -t ${PRODUCT_SVC_IMAGE} .
+                        # Build Main Image — see User Service stage above for why
+                        # there's no --cache-from here.
+                        docker build --target app -f product-svc/Dockerfile -t ${PRODUCT_SVC_IMAGE} .
 
                         # Scan Main Image
                         docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \\
@@ -334,11 +345,9 @@ pipeline {
                         sh """
                         set -e 
 
-                        # Pull Image
-                        docker pull ${FRONTEND_SVC_IMAGE} || true
-
-                        # Build Main Image
-                        docker build --cache-from ${FRONTEND_SVC_IMAGE} -f frontend-svc/Dockerfile -t ${FRONTEND_SVC_IMAGE} frontend-svc
+                        # Build Main Image — see User Service stage above for why
+                        # there's no --cache-from here.
+                        docker build -f frontend-svc/Dockerfile -t ${FRONTEND_SVC_IMAGE} frontend-svc
 
                         # Scan Main Image
                         docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \\
@@ -355,6 +364,7 @@ pipeline {
             }
         }
 
+        // Push Docker Images to Amazon ECR in parallel for all three services. Each push is retried up to 3 times with a 15s backoff to handle transient ECR throttling or network blips.
         stage('Push Docker Images to Amazon ECR') {
             parallel {
                 stage('Push User Service') {
@@ -403,6 +413,7 @@ pipeline {
             }
         }
 
+        // Run Trivy against the Helm charts to check for vulnerabilities.
         stage('Trivy Scan Helm Charts') {
             steps {
                 sh """
@@ -478,14 +489,15 @@ pipeline {
             }
         }
 
+        // Post-deployment verification: check that the application is running and responding correctly after deployment. 
+        // This includes checking the status of the Kubernetes resources and performing a smoke test against the frontend service.
         stage('Post-Deployment Verification') {
             steps {
                     sh """
                     set -e
 
-                    # helm upgrade --wait (previous stage) already blocks until all
-                    # Deployments report Ready. Adding rollout status on top doubles
-                    # the potential wait time (3 × 300s = 900s extra) for a check
+                    # helm upgrade --wait (previous stage) already blocks until all Deployments report Ready. 
+                    # Adding rollout status on top doubles the potential wait time (3 × 300s = 900s extra) for a check
                     # that is already guaranteed by Helm before reaching this stage.
 
                     echo "===== Application Deployment ====="
@@ -507,8 +519,8 @@ pipeline {
                     echo "===== Smoke Test ====="
 
                     # Fetch the ALB hostname from the frontend ingress and hit it.
-                    # This is the only end-to-end check that proves the application
-                    # actually responds — pod Ready just means probes pass, not that the app serves traffic correctly.
+                    # This is the only end-to-end check that proves the application actually responds — 
+                    # pod Ready just means probes pass, not that the app serves traffic correctly.
                     ALB_HOST=\$(kubectl get ingress catalogix-frontend-ingress -n ${K8S_NAMESPACE} \
                         -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)
 
@@ -517,6 +529,7 @@ pipeline {
                     else
                         echo "ALB hostname: \$ALB_HOST"
                         # Retry for up to 60s — ALB DNS takes a moment to propagate.
+                        PASSED=0
                         for i in \$(seq 1 30); do
                             HTTP_CODE=\$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "http://\$ALB_HOST/" || echo "000")
                             if echo "\$HTTP_CODE" | grep -qE '^(200|301|302)$'; then
@@ -530,15 +543,12 @@ pipeline {
             }
         }
 
+        // DAST — OWASP ZAP Baseline Scan - passive scan against the live ALB endpoint. Catches runtime issues SAST/image scanning can't see: missing security headers, verbose error pages, exposed actuator endpoints. Non-blocking (-I) initially; archived as a build artifact for review.
+        // If the ALB hostname is not yet assigned, the scan is skipped with a warning
         stage('DAST — OWASP ZAP Baseline Scan') {
             steps {
                 sh """
                 set -e
-
-                # Passive baseline scan against the live ALB endpoint — catches
-                # runtime issues SAST/image scanning can't see: missing security
-                # headers, verbose error pages, exposed actuator endpoints.
-                # Non-blocking (-I) initially; archived as a build artifact for review.
 
                 ALB_HOST=\$(kubectl get ingress catalogix-frontend-ingress \\
                     -n ${K8S_NAMESPACE} \\
@@ -591,21 +601,25 @@ pipeline {
             # helm rollback without a revision number already picks the previous
             # one automatically, so we only need to confirm one exists.
             
-            PREVIOUS_RELEASE=\$(helm history catalogix \\
+            SUPERSEDED_COUNT=\$(helm history catalogix \\
                 --namespace ${K8S_NAMESPACE} \\
                 --output json 2>/dev/null \\
                 | jq -r '[.[] | select(.status=="superseded")] | length')
 
-            if [ -z "\$PREVIOUS_RELEASE" = "0" ] || [ -z "\$PREVIOUS_RELEASE" ]; then
+            if [ -z "\$SUPERSEDED_COUNT" ] || [ "\$SUPERSEDED_COUNT" = "0" ]; then
                 echo "No previously deployed revision found — skipping rollback."
             else
-                echo "Rolling back to previous release \$PREVIOUS_RELEASE ..."
+                echo "Found \$SUPERSEDED_COUNT superseded revision(s) — rolling back to the previous one ..."
                 
-                if ! helm rollback catalogix "\$PREVIOUS_RELEASE" --namespace ${K8S_NAMESPACE}; then
+                # No revision number passed on purpose: helm rollback with no
+                # revision argument automatically targets the last superseded
+                # (i.e. previously good) release. SUPERSEDED_COUNT is only a
+                # count, never a revision number — passing it as one rolled
+                # back to whatever revision happened to match the count.
+                if ! helm rollback catalogix --namespace ${K8S_NAMESPACE}; then
                     echo "========================================================="
                     echo "  ROLLBACK FAILED — manual intervention required"
                     echo "  Cluster may be in a partially broken state."
-                    echo "  Revision targeted: \$PREVIOUS_RELEASE"
                     echo "========================================================="
                     echo "=== Current Helm release state ==="
                     helm status catalogix --namespace ${K8S_NAMESPACE} || true
@@ -613,7 +627,7 @@ pipeline {
                     kubectl get pods -n ${K8S_NAMESPACE} -o wide || true
                     exit 1
                 fi
-                echo "Rollback to previous release \$PREVIOUS_RELEASE successful."
+                echo "Rollback to previous release successful."
             fi
             """ 
         }

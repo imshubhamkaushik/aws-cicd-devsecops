@@ -1,9 +1,8 @@
 // Infrastructure pipeline — trigger manually only, never via webhook.
 
-// Ensures kubectl is working, regenerates kubeconfig if not.
-// Defined here to avoid duplicating the same 20-line shell block in both Jenkinsfiles.
-// The identical function also exists in Jenkinsfile.app-cicd — if you change the logic here, change it there too.
-// TODO: move to a Jenkins shared library once the project scales to more pipelines.
+// ensureKubernetesAccess() is defined in the shared library (catalogix-shared-library).
+// Both this pipeline and Jenkinsfile.app-cicd call it via @Library — there is no inline copy and no duplication. 
+// Changes to the function only need to be made in the library.
 @Library('catalogix-shared-library') _
 
 // ACTION=Apply  → Terraform fmt → init → validate → plan → human approval → apply → verify EKS → deploy monitoring
@@ -14,8 +13,8 @@ pipeline {
 
     environment {
         AWS_REGION   = "ap-south-1"
-        CLUSTER_NAME = "catalogix-cluster-${ENV}"
-        TF_DIR       = "terraform/platform-infra/env/${ENV}"
+        CLUSTER_NAME = "catalogix-cluster-${params.ENV}"
+        TF_DIR       = "terraform/platform-infra/env/${params.ENV}"
         // GIT_REPO_URL is injected by JCasC from /etc/default/jenkins — update group_vars/all/jenkins.yaml
         GIT_REPO_URL = "${env.GIT_REPO_URL}"
         // KUBECONFIG is pre-configured by Ansible at /var/lib/jenkins/.kube/config
@@ -281,9 +280,10 @@ pipeline {
 
                 echo "Installing metrics-server..."
 
-                helm repo add metrics-server https://kubernetes-sigs.github.io/metrics-server/ 2>/dev/null || \\
+                helm repo add metrics-server https://kubernetes-sigs.github.io/metrics-server/ || \\
                     helm repo list | grep -q '^metrics-server' || \\
-                    { echo "ERROR: helm repo add metrics-server failed"; exit 1; }
+                    { echo "ERROR: metrics-server repo could not be added and is not in the repo list"; exit 1; }
+
                 helm repo update metrics-server
 
                 helm upgrade --install metrics-server metrics-server/metrics-server \\
@@ -313,7 +313,7 @@ pipeline {
                 # Without this, helm dependency update fails on a clean Jenkins workspace.
                 helm repo add prometheus-community https://prometheus-community.github.io/helm-charts 2>/dev/null || true
                 helm repo add grafana https://grafana.github.io/helm-charts 2>/dev/null || true
-                helm repo update
+                helm repo update prometheus-community grafana
 
                 # Resolve the kube-prometheus-stack dependency before install
                 helm dependency update helm/monitoring
@@ -342,8 +342,7 @@ pipeline {
 
         // ── Destroy flow ─────────────────────────────────────────────────────
         // Runs only when ACTION=Destroy AND CONFIRM_DESTROY=true (gate above).
-        // Uses 'terraform plan -destroy' so you see exactly what will be removed
-        // before the human approval input.
+        // Uses 'terraform plan -destroy' so you see exactly what will be removed before the human approval input.
 
         stage("Terraform Plan - Destroy Preview") {
             when {
@@ -411,7 +410,7 @@ Are you absolutely sure?""",
                     # Delete them explicitly while the EBS CSI driver is still alive so the CSI driver calls DeleteVolume on AWS and removes the EBS volumes before the nodes are killed. 
                     #This requires reclaimPolicy: Delete on the gp3-sc StorageClass — Retain would keep the volumes regardless.
                     
-                    kubectl delete pvc --all -n monitoring --wait=true --timeout=120s|| true
+                    kubectl delete pvc --all -n monitoring --wait=true --timeout=120s || true
 
                     echo "Waiting for ALBs to be deleted..."
                     MAX_WAIT=180
@@ -485,7 +484,7 @@ Are you absolutely sure?""",
                         # Without this wait, Spring Boot starts, fails to read credentials,
                         # and enters CrashLoopBackOff before the Secret is created.
                         
-                        kubectl wait externalsecret/catalogix-secrets \\
+                        kubectl wait externalsecret/catalogix-db-credentials \\
                             -n catalogix --for=condition=Ready --timeout=120s || true
                         """
                         echo "Triggering app deployment pipeline..."

@@ -4,14 +4,14 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 6.0"
     }
-    kubernetes = {
-      source  = "hashicorp/kubernetes"
-      version = "~> 3.0"
-    }
-    helm = {
-      source  = "hashicorp/helm"
-      version = "~> 3.0"
-    }
+    # kubernetes = {
+    #   source  = "hashicorp/kubernetes"
+    #   version = "~> 3.0"
+    # }
+    # helm = {
+    #   source  = "hashicorp/helm"
+    #   version = "~> 3.0"
+    # }
   }
 }
 
@@ -50,8 +50,9 @@ data "aws_iam_policy_document" "alb_assume_role" {
 }
 
 resource "aws_iam_role" "alb" {
-  name               = "${var.cluster_name}-alb-role"
-  assume_role_policy = data.aws_iam_policy_document.alb_assume_role.json
+  name                 = "${var.cluster_name}-alb-role"
+  assume_role_policy   = data.aws_iam_policy_document.alb_assume_role.json
+  permissions_boundary = var.permissions_boundary_arn
 }
 
 resource "aws_iam_role_policy_attachment" "alb" {

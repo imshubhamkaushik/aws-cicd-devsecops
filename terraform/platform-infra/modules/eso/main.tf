@@ -15,9 +15,12 @@ terraform {
     # Replaces local-exec for CRD-based resources.
     # Unlike hashicorp/kubernetes, this does NOT validate CRD schemas at plan time.
     # Safe to use on fresh deploys where the cluster doesn't exist yet at plan time.
+    # gavinbunney/kubectl is unmaintained (last release Jan 2025, validated
+    # only through k8s 1.32) while this cluster targets 1.35+. alekc/kubectl
+    # is a maintained fork with the same resource/provider schema.
     kubectl = {
-      source  = "gavinbunney/kubectl"
-      version = "~> 1.14"
+      source  = "alekc/kubectl"
+      version = "~> 2.0"
     }
   }
 }
@@ -74,8 +77,9 @@ data "aws_iam_policy_document" "eso_assume_role" {
 }
 
 resource "aws_iam_role" "eso" {
-  name               = "${var.cluster_name}-eso-role"
-  assume_role_policy = data.aws_iam_policy_document.eso_assume_role.json
+  name                 = "${var.cluster_name}-eso-role"
+  assume_role_policy   = data.aws_iam_policy_document.eso_assume_role.json
+  permissions_boundary = var.permissions_boundary_arn
 }
 
 resource "aws_iam_role_policy_attachment" "eso" {

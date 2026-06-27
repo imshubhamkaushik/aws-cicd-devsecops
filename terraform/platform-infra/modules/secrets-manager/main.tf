@@ -4,33 +4,54 @@ data "aws_region" "current" {}
 # Secrets Manager holds deleted secrets for up to 30 days by default.
 # Without this, terraform apply fails with InvalidRequestException when
 # re-applying after a destroy if the previous deletion used a recovery window.
-resource "terraform_data" "force_delete_pending_secret" {
-  triggers_replace = {
-    secret_name = var.secret_name
-  }
 
-  provisioner "local-exec" {
-    command = <<-EOF
-      set -e
-      DELETED_DATE=$(aws secretsmanager describe-secret \
-        --secret-id "${var.secret_name}" \
-        --region "${data.aws_region.current.region}" \
-        --query 'DeletedDate' \
-        --output text 2>/dev/null || echo "NOT_FOUND")
+# Force-delete-on-recreate workaround removed.
+#
+# Previously this used a terraform_data + local-exec provisioner that shelled
+# out to the `aws` CLI directly. That re-introduces the exact hidden runtime
+# dependency this codebase explicitly engineered around elsewhere — see the
+# comment on the aws-auth ConfigMap in env/dev/main.tf, which documents why
+# local-exec was removed from there ("broke on clean CI runners").
+#
+# It's also unnecessary going forward: aws_secretsmanager_secret.this below
+# sets recovery_window_in_days = 0, so AWS deletes the secret immediately
+# (no recovery window) whenever Terraform destroys it. There is nothing left
+# in a "pending deletion" state for a future apply to collide with.
+#
+# If you're migrating an existing secret that was deleted under an OLDER
+# version of this module (recovery window > 0) and you hit
+# InvalidRequestException on apply, that's a one-time cleanup — run:
+#   aws secretsmanager delete-secret --secret-id "<secret-name>" \
+#     --force-delete-without-recovery --region "<region>"
+# once, by hand, and the routine case above prevents it from recurring.
 
-      if [ "$DELETED_DATE" = "NOT_FOUND" ] || [ "$DELETED_DATE" = "None" ]; then
-        echo "Secret '${var.secret_name}' is active or does not exist — skipping force-delete."
-      else
-        echo "Secret '${var.secret_name}' is pending deletion — force-deleting..."
-        aws secretsmanager delete-secret \
-          --secret-id "${var.secret_name}" \
-          --force-delete-without-recovery \
-          --region "${data.aws_region.current.region}"
-        sleep 5
-      fi
-    EOF
-  }
-}
+# resource "terraform_data" "force_delete_pending_secret" {
+#   triggers_replace = {
+#     secret_name = var.secret_name
+#   }
+
+#   provisioner "local-exec" {
+#     command = <<-EOF
+#       set -e
+#       DELETED_DATE=$(aws secretsmanager describe-secret \
+#         --secret-id "${var.secret_name}" \
+#         --region "${data.aws_region.current.region}" \
+#         --query 'DeletedDate' \
+#         --output text 2>/dev/null || echo "NOT_FOUND")
+
+#       if [ "$DELETED_DATE" = "NOT_FOUND" ] || [ "$DELETED_DATE" = "None" ]; then
+#         echo "Secret '${var.secret_name}' is active or does not exist — skipping force-delete."
+#       else
+#         echo "Secret '${var.secret_name}' is pending deletion — force-deleting..."
+#         aws secretsmanager delete-secret \
+#           --secret-id "${var.secret_name}" \
+#           --force-delete-without-recovery \
+#           --region "${data.aws_region.current.region}"
+#         sleep 5
+#       fi
+#     EOF
+#   }
+# }
 
 resource "aws_secretsmanager_secret" "this" {
   name        = var.secret_name
@@ -38,7 +59,7 @@ resource "aws_secretsmanager_secret" "this" {
 
   recovery_window_in_days = 0 # Disable deletion protection, fine for dev not for production
 
-  depends_on = [terraform_data.force_delete_pending_secret]
+  # depends_on = [terraform_data.force_delete_pending_secret]
 }
 
 resource "aws_secretsmanager_secret_version" "value" {

@@ -191,14 +191,15 @@
   shell: |
     set -euo pipefail
  
-    VAULT_FILE="{{ _vault_file }}"
-    VAULT_PASS="{{ _vault_pass_file }}"
+    VAULT_FILE="{{ vault_file }}"
+    VAULT_PASS="{{ vault_pass_file }}"
     TOKEN="{{ sonar_token_plaintext }}"
     TMPFILE="$(mktemp)"
  
     # ── Guard: confirm vault.yaml is encrypted before touching it ──────────
     # ansible-vault encrypted files always begin with '$ANSIBLE_VAULT'.
     # If this check fails the file is already plaintext — do not decrypt again.
+    
     HEADER="$(head -1 "$VAULT_FILE")"
     if [[ "$HEADER" != '$ANSIBLE_VAULT'* ]]; then
       echo "ERROR: vault.yaml does not appear to be encrypted. Refusing to proceed." >&2

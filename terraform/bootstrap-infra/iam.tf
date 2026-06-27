@@ -321,6 +321,62 @@ resource "aws_iam_role_policy_attachment" "jenkins_kms" {
   policy_arn = aws_iam_policy.jenkins_kms.arn
 }
 
+# -----------------------------------------------------------------------
+# Permissions boundary — closes a privilege-escalation path.
+#
+# Jenkins's IAM policy (below) grants iam:CreateRole, iam:CreatePolicy,
+# iam:PutRolePolicy/AttachRolePolicy, iam:PassRole, iam:CreateInstanceProfile
+# and (separately) ec2:RunInstances. Resource-level IAM scoping restricts
+# the NAME of a role/policy Jenkins can create — it does NOT restrict what
+# permissions the policy DOCUMENT it creates can grant. Combined, those
+# permissions let Jenkins: create a role named "catalogix-anything", attach
+# an arbitrarily permissive inline policy to it, put it in an instance
+# profile, launch an EC2 instance with that profile, and end up with
+# effectively account-admin access. Anyone who can trigger a Jenkins
+# Terraform run — or who compromises the Jenkins EC2 instance — inherits
+# that path.
+#
+# This boundary is attached (via the permissions_boundary argument, plumbed
+# through as var.permissions_boundary_arn) to every IAM role created by
+# platform-infra's modules, and is enforced — not just suggested — via the
+# Condition on RoleCreate below. A role with this boundary can never call
+# IAM, STS AssumeRole*, Organizations, or Account-settings actions, no
+# matter what gets attached to it. That closes the identity-escalation and
+# cross-account-pivot path specifically.
+#
+# What this does NOT do: cap the role to only the services it legitimately
+# needs (EC2/EKS/ECR/RDS/etc.) — it's a blunt "no IAM/STS/Org footguns"
+# boundary, not a least-privilege one. A new role with an over-broad
+# attached policy could still, e.g., touch unrelated S3 buckets or EC2
+# resources. If you want that tightened further, replace the NotAction list
+# below with an explicit allow-list of exactly the actions this account's
+# infra needs.
+# -----------------------------------------------------------------------
+resource "aws_iam_policy" "jenkins_boundary" {
+  name        = "${var.project_name}-jenkins-boundary"
+  description = "Permissions boundary required on every IAM role Jenkins creates — caps maximum effective permissions regardless of what's attached to the role."
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "MaxPermissionsForJenkinsCreatedRoles"
+        Effect = "Allow"
+        NotAction = [
+          "iam:*",
+          "sts:AssumeRole",
+          "sts:AssumeRoleWithSAML",
+          "sts:AssumeRoleWithWebIdentity",
+          "sts:GetFederationToken",
+          "organizations:*",
+          "account:*"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+}
+
 # Custom policy for Jenkins to manage IAM
 resource "aws_iam_policy" "jenkins_iam" {
   name        = "${var.project_name}-jenkins-iam-policy"
@@ -330,10 +386,27 @@ resource "aws_iam_policy" "jenkins_iam" {
     Version = "2012-10-17"
     Statement = [
       {
+        # iam:CreateRole and iam:PassRole are separate actions. PassRole is required for Terraform to create IAM roles with the correct trust policy, but it does not grant permission to create the role itself. The CreateRole action is required to actually create the role.
+        # Split out from role management below specifically so the boundary
+        # condition can be applied only to role creation, not every role action. Without this split, 
+        # Terraform fails to create new roles with an AccessDenied error because the boundary condition is applied to all role actions, not just creation.
+        Sid    = "RoleCreate"
+        Effect = "Allow"
+        Action = ["iam:CreateRole"]
+        Resource = [
+          "arn:aws:iam::*:role/${var.project_name}-*",
+          "arn:aws:iam::*:role/aws-service-role/*"
+        ]
+        Condition = {
+          StringEquals = {
+            "iam:PermissionsBoundary" = aws_iam_policy.jenkins_boundary.arn
+          }
+        }
+      },
+      {
         Sid    = "RoleManagement"
         Effect = "Allow"
         Action = [
-          "iam:CreateRole",
           "iam:DeleteRole",
           "iam:GetRole",
           "iam:UpdateRole",
@@ -356,6 +429,27 @@ resource "aws_iam_policy" "jenkins_iam" {
         ]
       },
       {
+        # RoleManagement's Resource scope ("${var.project_name}-*") also
+        # matches Jenkins's own role name and Sonar's role name — meaning
+        # the permissions above, intended for roles Jenkins CREATES for EKS/
+        # ALB/ESO/etc., would otherwise also let Jenkins attach more
+        # policies to ITSELF directly, no new role required. Deny wins over
+        # the Allow in RoleManagement, so this closes that path without
+        # touching Jenkins's ability to manage every other role it owns.
+        Sid    = "PreventJenkinsSelfModification"
+        Effect = "Deny"
+        Action = [
+          "iam:AttachRolePolicy",
+          "iam:PutRolePolicy",
+          "iam:UpdateAssumeRolePolicy",
+          "iam:PassRole"
+        ]
+        Resource = [
+          aws_iam_role.jenkins_ec2_role.arn,
+          aws_iam_role.sonar_ec2_role.arn
+        ]
+      },
+      {
         Sid    = "PolicyManagement"
         Effect = "Allow"
         Action = [
@@ -373,6 +467,37 @@ resource "aws_iam_policy" "jenkins_iam" {
         Resource = [
           "arn:aws:iam::*:policy/${var.project_name}-*"
         ]
+      },
+      {
+        # Explicit Deny always wins, including over PolicyManagement's
+        # wildcard match on this exact ARN (the boundary policy's name
+        # matches ${var.project_name}-* like every other Jenkins-managed
+        # policy). Without this, Jenkins could edit or delete its own
+        # permissions boundary, which would silently defeat RoleCreate's
+        # Condition above.
+        Sid    = "ProtectPermissionsBoundary"
+        Effect = "Deny"
+        Action = [
+          "iam:DeletePolicy",
+          "iam:CreatePolicyVersion",
+          "iam:DeletePolicyVersion",
+          "iam:SetDefaultPolicyVersion"
+        ]
+        Resource = aws_iam_policy.jenkins_boundary.arn
+      },
+      {
+        # Jenkins is not granted iam:PutRolePermissionsBoundary or
+        # iam:DeleteRolePermissionsBoundary anywhere in this policy, so this
+        # explicit Deny is currently redundant with that omission — it's
+        # here so the guarantee survives a future edit that accidentally
+        # adds those actions, rather than relying on nobody ever doing that.
+        Sid    = "ProtectBoundaryAssignment"
+        Effect = "Deny"
+        Action = [
+          "iam:DeleteRolePermissionsBoundary",
+          "iam:PutRolePermissionsBoundary"
+        ]
+        Resource = "arn:aws:iam::*:role/${var.project_name}-*"
       },
       {
         Sid    = "InstanceProfileManagement"
@@ -579,7 +704,7 @@ resource "aws_iam_role_policy_attachment" "jenkins_s3_ops" {
   policy_arn = aws_iam_policy.jenkins_s3_ops.arn
 }
 
-# Jenkns IAM instance profile
+# Jenkins IAM instance profile
 resource "aws_iam_instance_profile" "jenkins_profile" {
   name = "${var.project_name}-jenkins-instance-profile"
   role = aws_iam_role.jenkins_ec2_role.name

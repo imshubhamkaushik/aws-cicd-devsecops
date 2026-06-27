@@ -5,6 +5,7 @@
 kubectl_version: "v1.35.0"
 helm_version: "v3.17.0"
 trivy_version: "0.70.0"
+sonar_scanner_version: "12.1"  # verify against https://hub.docker.com/r/sonarsource/sonar-scanner-cli/tags before relying on this
 
 # variables
 aws_region: "ap-south-1"

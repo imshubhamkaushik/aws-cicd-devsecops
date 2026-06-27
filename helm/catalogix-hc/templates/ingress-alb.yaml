@@ -29,6 +29,14 @@ metadata:
     alb.ingress.kubernetes.io/healthcheck-interval-seconds: "15"
     alb.ingress.kubernetes.io/healthy-threshold-count: "2"
     alb.ingress.kubernetes.io/unhealthy-threshold-count: "2"
+
+    # Jenkins fetches the ARN from SSM and passes it via --set ingress.wafAclArn=<arn>,
+    # but without this annotation the ALB Ingress Controller never attaches the WAF rule.
+    # The WAF module was provisioned, its ARN stored, fetched, and passed to Helm —
+    # then silently discarded because no template consumed .Values.ingress.wafAclArn.
+    {{ if .Values.ingress.wafAclArn }}
+    alb.ingress.kubernetes.io/wafv2-acl-arn: {{ .Values.ingress.wafAclArn }}
+    {{ end }}
 spec:
   ingressClassName: alb
   rules:
@@ -77,6 +85,13 @@ metadata:
     alb.ingress.kubernetes.io/healthcheck-interval-seconds: "15"
     alb.ingress.kubernetes.io/healthy-threshold-count: "2"
     alb.ingress.kubernetes.io/unhealthy-threshold-count: "2"
+
+    # WAF applies at the ALB level — the annotation is needed on the frontend ingress
+    # (the public entry point) as well as the backend, since both share the same ALB
+    # via the catalogix group. ALB Ingress Controller merges annotations per-group.
+    {{ if .Values.ingress.wafAclArn }}
+    alb.ingress.kubernetes.io/wafv2-acl-arn: {{ .Values.ingress.wafAclArn }}
+    {{ end }}
 spec:
   ingressClassName: alb
   rules:

@@ -16,34 +16,45 @@ def error(msg):
 
 def _get_custom_error(stderr: str):
     """Return human-friendly error message if known pattern matches."""
+    msg = _classify_error(stderr)
+    return msg
+
+
+# Patterns that are worth retrying — genuinely transient, likely to clear up
+# on their own (network blips, throttling, eventual-consistency races).
+_TRANSIENT_PATTERNS = {
+    "unable to list objects in s3 bucket": "S3 backend unreachable. Check internet or AWS region.",
+    "connection reset by peer": "Network instability detected. Please retry.",
+}
+
+# Patterns that will NOT fix themselves by re-running the exact same command.
+# Retrying these just delays the real error message by ~30s for nothing —
+# worse, for a mutating command (terraform apply, ansible-playbook) it can
+# also waste a partial/duplicate side effect before failing anyway.
+_NON_TRANSIENT_PATTERNS = {
+    "unable to locate credentials": "AWS credentials not configured. Run: aws configure",
+    "accessdenied": "AWS access denied. Check IAM permissions or credentials.",
+    "error: invalid": "Terraform configuration error. Check your .tf files.",
+    "decryption failed": "Invalid Ansible Vault password.",
+}
+
+
+def _classify_error(stderr: str):
+    """Return (message, is_transient) for a known error pattern, or (None, None)."""
     if not stderr:
-        return None
+        return None, None
 
-    stderr = stderr.lower()
+    lowered = stderr.lower()
 
-    # Network / S3 backend issues
-    if "unable to list objects in s3 bucket" in stderr:
-        return "S3 backend unreachable. Check internet or AWS region."
+    for pattern, msg in _NON_TRANSIENT_PATTERNS.items():
+        if pattern in lowered:
+            return msg, False
 
-    if "connection reset by peer" in stderr:
-        return "Network instability detected. Please retry."
+    for pattern, msg in _TRANSIENT_PATTERNS.items():
+        if pattern in lowered:
+            return msg, True
 
-    # AWS issues
-    if "unable to locate credentials" in stderr:
-        return "AWS credentials not configured. Run: aws configure"
-
-    if "accessdenied" in stderr:
-        return "AWS access denied. Check IAM permissions or credentials."
-
-    # Terraform issues
-    if "error: invalid" in stderr:
-        return "Terraform configuration error. Check your .tf files."
-
-    # Ansible Vault issues
-    if "decryption failed" in stderr:
-        return "Invalid Ansible Vault password."
-
-    return None
+    return None, None
 
 
 def _execute_once(cmd, cwd, capture_output, merged_env, check):
@@ -71,15 +82,23 @@ def _execute_once(cmd, cwd, capture_output, merged_env, check):
  
 def _handle_failure(e, cmd, attempt, retries, delay, capture_output):
     """Log the failure and either retry (sleep) or raise a final error."""
+    
     stderr = (e.stderr or "") if capture_output else ""
  
     warn(f"Command failed (attempt {attempt + 1}/{retries}): {cmd}")
  
     if stderr.strip():
         print(stderr)
+        
+    custom_msg, is_transient = _classify_error(stderr)
+
+    if is_transient is False:
+        # Known non-transient failure — fail now instead of burning 2 more
+        # retries and ~30s on a command that cannot succeed without a change.
+        error(custom_msg)
+        return
  
     if attempt + 1 == retries:
-        custom_msg = _get_custom_error(stderr)
         error(custom_msg or f"Command failed after {retries} attempts: {cmd}")
     else:
         time.sleep(delay * (attempt + 1))

@@ -20,6 +20,12 @@ variable "instance_type" {
   default     = ["c7i-flex.large"]
 }
 
+variable "disk_size" {
+  description = "Root volume size (GB) for worker nodes"
+  type        = number
+  default     = 30
+}
+
 variable "min_size" {
   description = "Minimum number of worker nodes"
   type        = number
@@ -76,5 +82,17 @@ variable "my_ip_cidr" {
     See the comment in main.tf for why this is no longer queried
     independently inside this module.
   EOT
-  type = string
+  type        = string
+}
+
+variable "permissions_boundary_arn" {
+  description = <<-EOT
+    ARN of the IAM permissions boundary (created once in bootstrap-infra)
+    that must be attached to every IAM role this module creates.
+    Jenkins's own IAM policy requires this boundary on any role it creates
+    via iam:CreateRole — omitting it here means terraform apply fails with
+    AccessDenied, by design. See bootstrap-infra/iam.tf for the full
+    rationale (this closes a PassRole/CreateRole privilege-escalation path).
+  EOT
+  type        = string
 }

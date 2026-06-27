@@ -48,3 +48,13 @@ variable "db_engine_version" {
   description = "Version of the database engine to use"
   type        = string
 }
+
+variable "multi_az" {
+  description = <<-EOT
+    Whether to provision a synchronous standby in a second AZ for automatic
+    failover. Roughly doubles RDS cost for this instance.
+    No default: every environment must decide explicitly.
+    dev/test: false  |  staging: false (unless testing failover itself)  |  production: true
+  EOT
+  type        = bool
+}

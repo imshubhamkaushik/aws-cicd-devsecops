@@ -13,12 +13,7 @@ variable "oidc_provider_arn" {
   type        = string
 }
 
-variable "vpc_id" {
-  description = "VPC ID"
-  type        = string
-}
-
-variable "region" {
-  description = "AWS region"
+variable "permissions_boundary_arn" {
+  description = "ARN of the IAM permissions boundary that must be attached to the role this module creates. See modules/eks/variables.tf for the full rationale."
   type        = string
 }

@@ -90,8 +90,9 @@ resource "aws_route_table_association" "public" {
 
 # Route tables for private subnets
 resource "aws_route_table" "private" {
-  count = length(var.private_subnets)
+  count  = length(var.private_subnets)
   vpc_id = aws_vpc.this.id
+
   tags = {
     Name = "${var.vpc_name}-private-rt-${count.index + 1}"
   }

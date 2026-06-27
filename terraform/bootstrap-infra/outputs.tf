@@ -47,6 +47,11 @@ output "jenkins_role_arn" {
   value = aws_iam_role.jenkins_ec2_role.arn
 }
 
+output "jenkins_boundary_arn" {
+  description = "ARN of the permissions boundary every IAM role created downstream (platform-infra) must use — see iam.tf for why."
+  value       = aws_iam_policy.jenkins_boundary.arn
+}
+
 output "jenkins_my_ip_cidr" {
   description = "CIDR of the operator's IP — captured once at bootstrap-infra apply time and passed to platform-infra to allowlist on EKS API. Avoids the risk of independently querying checkip.amazonaws.com at a later time when your IP might have changed."
   value       = "${chomp(data.http.my_ip.response_body)}/32"

@@ -13,6 +13,7 @@ resource "aws_db_instance" "postgres" {
   allocated_storage     = 20
   max_allocated_storage = 100
   storage_encrypted     = true
+  multi_az              = var.multi_az
 
   db_name  = var.db_name
   username = var.username
@@ -27,6 +28,9 @@ resource "aws_db_instance" "postgres" {
   # For production set to false and set final_snapshot_identifier.
   skip_final_snapshot = true # Fine for dev, but not for production
 
+  # lifecycle {
+  #   prevent_destroy = true
+  # }
   # DEV NOTE: lifecycle { prevent_destroy=true } prevents accidental deletion via a mistyped terraform destroy or workspace destroy. 
   # To intentionally delete: comment this block out, apply, then destroy .
 }

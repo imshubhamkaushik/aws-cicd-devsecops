@@ -3,22 +3,25 @@
 # HOW THIS PLAYBOOK IS EXECUTED
 # =============================================================================
 #
-# ansible.py calls ansible-playbook THREE times with --limit.
-# Each call is a SEPARATE subprocess so Ansible re-reads vault.yaml from disk
-# at startup. This is what makes single-run token propagation work.
+# ansible.py calls ansible-playbook TWO times with --limit — two phases, two
+# separate OS processes. Phase 1 has two steps inside it (both run in the same subprocess); Phase 2 is Jenkins alone, in its own subprocess. 
+# The "Phase 1 step 1/2" labels below describe POSITION WITHIN PHASE 1, not a third top-level phase — there are only ever two subprocess calls.
 #
-# Phase 1  --limit all:!jenkins
-#   Runs the 'all' play (common + docker) on BOTH EC2s.
-#   Then runs the 'sonarqube' play — generates vault_sonar_token and writes
-#   it into vault.yaml before this subprocess exits.
-#   The '!jenkins' exclusion prevents the Jenkins play from running here,
-#   because jenkins IS a subset of 'all' and would otherwise execute with
-#   vault_sonar_token still empty.
+# Phase 1  --limit all:!jenkins   (everything except Jenkins)
+#   Step 1: the 'all' play (common + docker) on every host the limit allows
+#           — i.e. the SonarQube host only, since Jenkins is excluded here.
+#   Step 2: the 'sonarqube' play — generates vault_sonar_token and writes
+#           it into vault.yaml before this subprocess exits.
+#   The '!jenkins' exclusion matters because 'jenkins' IS a subset of 'all':
+#   without it, the baseline play would also run against the Jenkins host in this same subprocess, 
+#   before vault_sonar_token exists — defeating the whole point of splitting Jenkins into its own later subprocess.
 #
-# Phase 2  --limit jenkins
+# Phase 2  --limit jenkins   (Jenkins only)
 #   Fresh subprocess → vault.yaml re-read from disk → vault_sonar_token is
-#   already populated → Jenkins renders /etc/default/jenkins with a real
-#   SONARQUBE_TOKEN → sonarqube-token credential in JCasC has a real value.
+#   already populated (written during Phase 1) → Jenkins renders /etc/default/jenkins with a real SONARQUBE_TOKEN → sonarqube-token credential in JCasC has a real value. 
+#   The baseline play (common + docker) also runs again here, scoped to the Jenkins host this time —
+#   it never ran against that host during Phase 1, since the limit excluded it. 
+#   Each host gets common+docker exactly once across the two phases combined; neither host gets it twice.
 #
 # WHY --limit AND NOT SEPARATE PLAYBOOK FILES:
 #   One playbook file is easier to maintain and review. --limit scopes execution
@@ -34,9 +37,11 @@
 #     - Webhook created only when name 'Jenkins' not found in existing list
 # =============================================================================
 
-# ── Phase 1: baseline packages + Docker on both EC2s ─────────────────────────
+# ── Phase 1, step 1 of 2: baseline packages + Docker ──────────────────────────
 #
-# Runs on ALL hosts. Prepares both machines before role-specific config begins.
+# hosts: all, but the active --limit (all:!jenkins during Phase 1, jenkins
+# during Phase 2) means this play actually only ever touches ONE host per
+# subprocess — see the header comment above for which host, when.
 # Docker must be installed here because both the sonarqube role (container)
 # and the jenkins role (jenkins user → docker group) depend on it.
 #
@@ -79,10 +84,11 @@
     - common
     - docker
 
-# ── Phase 2: SonarQube ───────────────────────────────────────────────────────
+# ── Phase 1, step 2 of 2: SonarQube ────────────────────────────────────────────
 #
-# Runs ONLY on the sonarqube host (enforced by --limit sonarqube in ansible.py).
-# The sonarqube role:
+# Runs ONLY on the sonarqube host (enforced by --limit all:!jenkins in
+# ansible.py — sonarqube is the only host that limit doesn't exclude). The
+# sonarqube role:
 #   1. Sets vm.max_map_count (required by Elasticsearch inside SonarQube).
 #   2. Creates /opt/sonarqube data directories with correct ownership.
 #   3. Starts the SonarQube container (community.docker.docker_container).
@@ -92,9 +98,9 @@
 #   7. Atomically writes vault_sonar_token into vault.yaml on the control node.
 #   8. Creates the Jenkins webhook in SonarQube (idempotent).
 #
-# AFTER this play exits, vault.yaml on disk contains vault_sonar_token.
-# The next subprocess (Phase 3) reads it fresh at startup.
-- name: "Phase 2 — SonarQube configuration"
+# AFTER this play exits — and the Phase 1 subprocess exits with it —
+# vault.yaml on disk contains vault_sonar_token. The Phase 2 subprocess reads it fresh at startup.
+- name: "Phase 1, step 2 of 2 — SonarQube configuration"
   hosts: sonarqube
   become: true
 
@@ -104,11 +110,11 @@
   roles:
     - sonarqube
 
-# ── Phase 3: Jenkins ─────────────────────────────────────────────────────────
+# ── Phase 2: Jenkins ────────────────────────────────────────────────────────────
 #
 # Runs ONLY on the jenkins host (enforced by --limit jenkins in ansible.py).
 # This is a SEPARATE ansible-playbook subprocess — vault.yaml is re-read from
-# disk at startup, so vault_sonar_token is already populated from Phase 2.
+# disk at startup, so vault_sonar_token is already populated from Phase 1.
 #
 # The jenkins role:
 #   1. Installs Java 21 (Jenkins requirement).
@@ -124,12 +130,10 @@
 #      then does a full restart with JCasC active.
 #   8. Triggers a JCasC reload via the Jenkins API.
 #   9. Verifies admin login (HTTP 200 from /api/json) — confirms JCasC applied.
-- name: "Phase 3 — Jenkins configuration"
+- name: "Phase 2 — Jenkins configuration"
   hosts: jenkins
   become: true
   
   roles:
     - devops-tools
     - jenkins
-
-

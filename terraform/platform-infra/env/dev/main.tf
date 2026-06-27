@@ -33,7 +33,7 @@ resource "random_password" "db" {
 
 # KMS key for EKS secrets encryption. Using a customer-managed key is a best practice for production workloads, but not strictly required for this demo since the default AWS-managed key would work fine for encrypting EKS secrets.
 resource "aws_kms_key" "eks" {
-  description             = "EKS secrets encryption key - dev"
+  description             = "EKS secrets encryption key - dev environment"
   deletion_window_in_days = 7
   # enable_key_rotation is a best practice for long-lived keys, but not required for this demo since the key is only used to encrypt EKS secrets and doesn't have any direct human access or permissions attached to it. Enabling rotation adds complexity by creating new key versions every year, which would require updating the eks module with the new key ARN to avoid breaking changes.
   enable_key_rotation = true
@@ -43,7 +43,6 @@ resource "aws_kms_key" "eks" {
 locals {
   # Pulled from remote state so every module uses the same source of truth
   vpc_id          = data.terraform_remote_state.bootstrap.outputs.vpc_id
-  vpc_cidr        = data.terraform_remote_state.bootstrap.outputs.vpc_cidr
   private_subnets = data.terraform_remote_state.bootstrap.outputs.private_subnets
   public_subnets  = data.terraform_remote_state.bootstrap.outputs.public_subnets
 
@@ -51,6 +50,10 @@ locals {
   cluster_name        = module.eks.cluster_name
   cluster_endpoint    = module.eks.cluster_endpoint
   cluster_certificate = module.eks.cluster_certificate
+
+  # Required on every IAM role created below — see bootstrap-infra/iam.tf
+  # for why, and modules/eks/variables.tf for the per-module rationale.
+  permissions_boundary_arn = data.terraform_remote_state.bootstrap.outputs.jenkins_boundary_arn
 
   # Env-specific prefix — change to "catalogix-staging" or "catalogix-prod" in other workspaces
   env_prefix = "${var.cluster_name}-${var.environment}"
@@ -64,7 +67,7 @@ module "sg" {
   source       = "../../modules/security-groups"
   project_name = local.env_prefix
   vpc_id       = local.vpc_id
-  vpc_cidr     = local.vpc_cidr
+  vpc_cidr     = data.terraform_remote_state.bootstrap.outputs.vpc_cidr
 
   jenkins_sg_id     = data.terraform_remote_state.bootstrap.outputs.jenkins_sg_id
   eks_cluster_sg_id = module.eks.cluster_sg_id # implicit depends_on module.eks
@@ -97,6 +100,9 @@ module "eks" {
   # Whoever runs terraform apply automatically gets console access.
   # No variable or tfvars entry needed.
   console_iam_arn = data.aws_iam_session_context.current.issuer_arn
+
+  # permissions_boundary_arn is required on every IAM role created in this module.
+  permissions_boundary_arn = local.permissions_boundary_arn
 }
 
 # EKS DATA (safe, resolves after creation)
@@ -106,12 +112,12 @@ data "aws_eks_cluster" "this" {
   depends_on = [module.eks]
 }
 
-# EKS AUTH (safe, resolves after creation)
-data "aws_eks_cluster_auth" "this" {
-  name = module.eks.cluster_name
+# # EKS AUTH (safe, resolves after creation)
+# data "aws_eks_cluster_auth" "this" {
+#   name = module.eks.cluster_name
 
-  depends_on = [module.eks]
-}
+#   depends_on = [module.eks]
+# }
 
 # ECR — global, no VPC dependency
 module "ecr" {
@@ -123,13 +129,26 @@ module "ecr" {
 module "alb" {
   source = "../../modules/alb"
 
-  cluster_name      = module.eks.cluster_name
-  vpc_id            = local.vpc_id
-  region            = var.aws_region
-  oidc_provider_arn = module.eks.oidc_provider_arn
-  oidc_provider     = trimprefix(module.eks.oidc_provider_arn, "arn:aws:iam::${data.aws_caller_identity.current.account_id}:oidc-provider/")
+  cluster_name             = module.eks.cluster_name
+  oidc_provider_arn        = module.eks.oidc_provider_arn
+  oidc_provider            = trimprefix(module.eks.oidc_provider_arn, "arn:aws:iam::${data.aws_caller_identity.current.account_id}:oidc-provider/")
+  permissions_boundary_arn = local.permissions_boundary_arn
 
   depends_on = [module.eks, module.sg]
+}
+
+# WAF — creates the Web ACL and publishes its ARN to SSM. The ALB itself is
+# created later by the AWS Load Balancer Controller (via the Ingress in
+# helm/catalogix-hc), which is what actually performs the association using
+# the wafv2-acl-arn annotation. See modules/waf/main.tf for the full reasoning.
+module "waf" {
+  source = "../../modules/waf"
+
+  name               = local.env_prefix
+  region             = var.aws_region
+  ssm_parameter_path = "/${local.env_prefix}/waf-acl-arn"
+
+  depends_on = [module.alb]
 }
 
 # RDS
@@ -144,6 +163,7 @@ module "rds" {
   security_group_id       = module.sg.rds_sg
   db_engine_version       = "18.1"
   backup_retention_period = 0
+  multi_az                = false
 
   ssm_parameter_path = "/${local.env_prefix}/rds-endpoint"
 }
@@ -168,10 +188,11 @@ module "secrets" {
 module "eso" {
   source = "../../modules/eso"
 
-  cluster_name      = module.eks.cluster_name
-  oidc_provider_arn = module.eks.oidc_provider_arn
-  oidc_provider     = trimprefix(module.eks.oidc_provider_arn, "arn:aws:iam::${data.aws_caller_identity.current.account_id}:oidc-provider/")
-  region            = var.aws_region
+  cluster_name             = module.eks.cluster_name
+  oidc_provider_arn        = module.eks.oidc_provider_arn
+  oidc_provider            = trimprefix(module.eks.oidc_provider_arn, "arn:aws:iam::${data.aws_caller_identity.current.account_id}:oidc-provider/")
+  region                   = var.aws_region
+  permissions_boundary_arn = local.permissions_boundary_arn
 
   providers = {
     kubernetes = kubernetes.after_eks
@@ -203,7 +224,7 @@ resource "kubernetes_storage_class_v1" "gp3" {
     }
   }
 
-  storage_provisioner    = "ebs.csi.aws.com"
+  storage_provisioner = "ebs.csi.aws.com"
   # reclaim_policy = Delete ensures the EBS volume is deleted when the PVC is deleted, avoiding orphaned volumes and unexpected AWS charges.
   reclaim_policy         = "Delete"
   volume_binding_mode    = "WaitForFirstConsumer"
@@ -218,8 +239,7 @@ resource "kubernetes_storage_class_v1" "gp3" {
   }
 
   # depends_on updated from aws_eks_addon.ebs_csi (module-internal ref)
-  # to module.eks — the root-level handle for the entire EKS module,
-  # which includes the ebs_csi addon internally.
+  # to module.eks — the root-level handle for the entire EKS module, which includes the ebs_csi addon internally.
   depends_on = [
     module.eks,
     module.alb,
@@ -265,29 +285,23 @@ resource "helm_release" "alb_controller" {
 # whichever machine runs terraform apply — a hidden runtime dependency that
 # broke on clean CI runners and the Jenkins EC2 after a fresh Ansible run.
 #
-# The gavinbunney/kubectl provider (alias = after_eks) is already configured
-# in providers.tf and already used for the ClusterSecretStore in the ESO module.
-# It authenticates via "aws eks get-token" exec block, so no local kubeconfig
-# file is needed (load_config_file = false). This is consistent with how every
-# other Kubernetes resource is managed in this root module.
+# The alecks/kubectl provider (alias = after_eks) is already configured in providers.tf and already used for the ClusterSecretStore in the ESO module.
+# It authenticates via "aws eks get-token" exec block, so no local kubeconfig file is needed (load_config_file = false). 
+# This is consistent with how every other Kubernetes resource is managed in this root module.
 #
 # replace_on_change = [module.eks.node_role_arn, module.eks.cluster_name]
-# mirrors the triggers_replace on the old terraform_data: if the node role or
-# cluster is replaced, the ConfigMap is re-applied automatically.
+# mirrors the triggers_replace on the old terraform_data: if the node role or cluster is replaced, the ConfigMap is re-applied automatically.
 resource "kubectl_manifest" "aws_auth" {
   provider = kubectl.after_eks
 
   # Heredoc keeps the format identical to what aws-iam-authenticator expects.
   # Double-yamlencode (outer manifest + inner mapRoles) introduces key-ordering and quoting edge cases with yamlencode — this is simpler and explicit.
   #
-  # force_conflicts = true: if someone runs `kubectl apply` on this ConfigMap
-  # manually (e.g. to add a mapUsers entry), Terraform wins the field-manager
-  # conflict on the next apply and restores the desired state. This is intentional
-  # — additional mapRoles entries (e.g. for Fargate profiles or cluster access entries) should be added here, not outside Terraform.
+  # force_conflicts = true: if someone runs `kubectl apply` on this ConfigMap manually (e.g. to add a mapUsers entry), Terraform wins the field-manager conflict on the next apply and restores the desired state. 
+  # This is intentional — additional mapRoles entries (e.g. for Fargate profiles or cluster access entries) should be added here, not outside Terraform.
   #
   # Drift detection: if the ConfigMap is deleted or corrupted, Terraform detects the diff via normal state comparison and re-applies on the next apply.
-  # No triggers_replace needed — kubectl_manifest tracks real resource state,
-  # unlike terraform_data + local-exec which tracked nothing.
+  # No triggers_replace needed — kubectl_manifest tracks real resource state, unlike terraform_data + local-exec which tracked nothing.
   yaml_body = <<-YAML
 apiVersion: v1
 kind: ConfigMap

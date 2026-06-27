@@ -25,25 +25,39 @@ resource "aws_security_group" "rds" {
   }
 }
 
-resource "aws_security_group_rule" "rds_ingress_postgres" {
-  description       = "Postgres access from VPC (EKS pods, Jenkins, EC2)"
-  type              = "ingress"
-  from_port         = 5432
-  to_port           = 5432
-  protocol          = "tcp"
-  cidr_blocks       = [var.vpc_cidr]
-  security_group_id = aws_security_group.rds.id
+# resource "aws_security_group_rule" "rds_ingress_postgres" {
+#   description       = "Postgres access from VPC (EKS pods, Jenkins, EC2)"
+#   type              = "ingress"
+#   from_port         = 5432
+#   to_port           = 5432
+#   protocol          = "tcp"
+#   cidr_blocks       = [var.vpc_cidr]
+#   security_group_id = aws_security_group.rds.id
+# }
+
+resource "aws_security_group_rule" "rds_ingress_eks_nodes" {
+  description              = "Postgres access from EKS nodes/pods (shares the cluster's primary SG)"
+  type                     = "ingress"
+  from_port                = 5432
+  to_port                  = 5432
+  protocol                 = "tcp"
+  source_security_group_id = var.eks_cluster_sg_id
+  security_group_id        = aws_security_group.rds.id
 }
 
-resource "aws_security_group_rule" "rds_egress_all" {
-  description       = "Allow all outbound"
-  type              = "egress"
-  from_port         = 0
-  to_port           = 0
-  protocol          = "-1"
-  cidr_blocks       = ["0.0.0.0/0"]
-  security_group_id = aws_security_group.rds.id
+resource "aws_security_group_rule" "rds_ingress_jenkins" {
+  description              = "Postgres access from Jenkins (migrations / debugging)"
+  type                     = "ingress"
+  from_port                = 5432
+  to_port                  = 5432
+  protocol                 = "tcp"
+  source_security_group_id = var.jenkins_sg_id
+  security_group_id        = aws_security_group.rds.id
 }
+
+# No egress rule: RDS does not initiate outbound connections for normal
+# database operation, so an unrestricted 0.0.0.0/0 egress rule here was pure
+# unused blast radius, not a functional requirement.
 
 resource "aws_security_group_rule" "jenkins_to_eks_api" {
   description              = "Allow Jenkins to reach the EKS private API endpoint on port 443"

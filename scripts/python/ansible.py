@@ -25,10 +25,8 @@ def _is_vault_encrypted() -> bool:
     Return True when vault.yaml starts with the $ANSIBLE_VAULT header.
  
     Why this check exists:
-    - ansible-vault decrypt on an already-plaintext file returns exit code 1
-      with a confusing error message.
-    - Checking the header first gives a clear, early error instead of a
-      cryptic ansible-vault failure mid-run.
+    - ansible-vault decrypt on an already-plaintext file returns exit code 1 with a confusing error message.
+    - Checking the header first gives a clear, early error instead of a cryptic ansible-vault failure mid-run.
     """
     if not VAULT_FILE.exists():
         return False
@@ -38,8 +36,7 @@ def _is_vault_password_valid() -> bool:
     """
     Return True when ~/.vault_pass can decrypt vault.yaml.
  
-    Uses ansible-vault view (read-only, no file modification) and discards
-    all output — we only care about the exit code.
+    Uses ansible-vault view (read-only, no file modification) and discards all output — we only care about the exit code.
     """
     if not VAULT_FILE.exists():
         return True  # nothing to validate against yet
@@ -199,12 +196,10 @@ def _prompt_secret(prompt: str, allow_empty: bool = False) -> str:
  
 def _setup_vault_file() -> None:
     """
-    Interactively create and encrypt group_vars/all/vault.yaml if it does
-    not exist.
+    Interactively create and encrypt group_vars/all/vault.yaml if it does not exist.
  
-    Idempotent: exits immediately (with an info message) when the file is
-    already present. Does NOT validate whether it is encrypted — that was
-    already verified in _setup_vault_password_file().
+    Idempotent: exits immediately (with an info message) when the file is already present. 
+    Does NOT validate whether it is encrypted — that was already verified in _setup_vault_password_file().
  
     Secrets written
     ───────────────
@@ -214,7 +209,9 @@ def _setup_vault_file() -> None:
     vault_sonar_token             — intentionally left empty; the SonarQube
                                     Ansible role generates a 'jenkins-token'
                                     in SonarQube and writes the plaintext
-                                    value here after Phase 2 completes.
+                                    value here after Phase 1 completes (the
+                                    sonarqube role runs inside Phase 1 —
+                                    see run_ansible() below).
     """
     if VAULT_FILE.exists():
         info(f"Vault file already exists at {VAULT_FILE}")
@@ -240,9 +237,9 @@ def _setup_vault_file() -> None:
     print("")
  
     secrets = {
-        "vault_jenkins_admin_password": _prompt_secret("Jenkins admin password"),
-        "vault_github_token":           _prompt_secret("GitHub personal access token"),
-        "vault_sonar_admin_password":   _prompt_secret("SonarQube admin password"),
+        "vault_jenkins_admin_password": _prompt_secret("Jenkins Admin Password"),
+        "vault_github_token":           _prompt_secret("GitHub Personal Access Token"),
+        "vault_sonar_admin_password":   _prompt_secret("SonarQube Admin Password"),
         # Populated by the SonarQube Ansible role on first run (Phase 2).
         # Leave empty here — the role generates the token inside SonarQube,
         # then atomically writes it back into this encrypted file.
@@ -339,11 +336,12 @@ def run_ansible() -> None:
     """
     Full provisioning sequence — two phases, two subprocesses.
  
-    Phase 1  --limit all
-      Targets ALL EC2 instances. Runs in order:
-        - 'common' role  : apt packages, timezone (both hosts)
-        - 'docker' role  : Docker CE, user group membership (both hosts)
-        - 'sonarqube' role (sonarqube host only, scoped by 'hosts: sonarqube'):
+    Phase 1  --limit all:!jenkins
+      Targets every EC2 instance EXCEPT jenkins — in this two-host setup,
+      that's the sonarqube host only. Runs in order:
+        - 'common' role  : apt packages, timezone (sonarqube host)
+        - 'docker' role  : Docker CE, user group membership (sonarqube host)
+        - 'sonarqube' role (scoped by 'hosts: sonarqube'):
             * Starts the SonarQube container
             * Waits for SonarQube to report status=UP
             * Changes the default admin password to vault_sonar_admin_password
@@ -352,11 +350,16 @@ def run_ansible() -> None:
               on the Ansible control node
             * Creates the Jenkins webhook in SonarQube
       When this subprocess exits, vault_sonar_token is on disk in vault.yaml.
+      The jenkins host gets its own common+docker pass in Phase 2 below —
+      it's excluded here specifically so it never runs before the token exists.
  
     Phase 2  --limit jenkins
       Fresh subprocess → vault.yaml re-read from disk → vault_sonar_token is
       now populated. Runs in order:
-        - 'devops-tools' role: AWS CLI, kubectl, helm, trivy, terraform
+        - 'common' role       : apt packages, timezone (jenkins host — its
+                                 first and only pass, since Phase 1 excluded it)
+        - 'docker' role       : Docker CE, user group membership (jenkins host)
+        - 'devops-tools' role : AWS CLI, kubectl, helm, trivy, terraform
         - 'jenkins' role:
             * Installs Java 21 and Jenkins
             * Renders /etc/default/jenkins from jenkins_defaults.j2 — all
@@ -369,11 +372,11 @@ def run_ansible() -> None:
             * Verifies admin login (HTTP 200 from /api/json)
     """
     print("")
-    info("Ansible Provisioning — Starting")
+    info("Ansible Configuring — Starting")
     print("")
  
     confirm = input(
-        "This will provision EC2 instances via Ansible. Proceed? (yes/no): "
+        "This will configure EC2 instances via Ansible. Proceed? (yes/no): "
     ).strip().lower()
     if confirm not in ("yes", "y"):
         info("Aborted by user.")
@@ -392,19 +395,21 @@ def run_ansible() -> None:
         cwd=ANSIBLE_DIR,
     )
  
-    # ── Phase 1: common + docker on all hosts, then SonarQube ───────────────
-    # Uses --limit all so the 'all' play and the 'sonarqube' play both execute.
-    # The 'jenkins' play is in the same playbook but scoped to 'hosts: jenkins'
-    # — Ansible skips it when --limit all is combined with hosts: jenkins because
-    # 'jenkins' IS a subset of 'all', so the play runs but only against jenkins
-    # hosts. To prevent that, Phase 1 uses --limit 'all:!jenkins' to explicitly
-    # exclude the jenkins host from this subprocess.
+    # ── Phase 1 (steps 1-2 of 2, one subprocess): baseline + SonarQube ───
+    # --limit all:!jenkins runs the 'all' play (common+docker) and the
+    # 'sonarqube' play in this one subprocess. The ':!jenkins' exclusion is
+    # required, not optional: if this were plain --limit all instead, the
+    # jenkins play (hosts: jenkins) would ALSO run here, because 'jenkins'
+    # is a subset of 'all' — executing the jenkins role before
+    # vault_sonar_token exists, which is exactly the bug the two-phase
+    # split exists to avoid. ':!jenkins' keeps the jenkins host out of this
+    # subprocess entirely; it gets its baseline play in Phase 2 instead.
     _run_playbook(
         limit="all:!jenkins",
         step_label="Phase 1/2 — Common baseline + SonarQube",
     )
  
-    # ── Phase 2: Jenkins ─────────────────────────────────────────────────────
+    # ── Phase 2 (1 of 1, separate subprocess): Jenkins ─────────────────────────
     # New subprocess → vault.yaml re-read from disk → vault_sonar_token is
     # populated → /etc/default/jenkins rendered with real SONARQUBE_TOKEN.
     _run_playbook(
@@ -413,7 +418,7 @@ def run_ansible() -> None:
     )
  
     print("")
-    info("Ansible Provisioning — Complete.")
+    info("Ansible Configuring — Complete.")
     print("")
     info("Access Jenkins at the URL printed above.")
     info("SonarQube is available on its private IP via Jenkins as a jump host.")

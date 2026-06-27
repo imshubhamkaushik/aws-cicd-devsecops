@@ -1,6 +1,6 @@
 output "registry_url" {
   description = "ECR registry base URL (account.dkr.ecr.region.amazonaws.com)"
-  value       = split("/", aws_ecr_repository.repos[keys(aws_ecr_repository.repos)[0]].repository_url)[0]
+  value       = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${data.aws_region.current.region}.amazonaws.com"
 }
 
 output "repository_urls" {

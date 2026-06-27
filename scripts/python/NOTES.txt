@@ -4,12 +4,21 @@ bootstrap.py           → orchestrates backend_bootstrap.py → bootstrap_infra
 backend_bootstrap.py   → provisions backend terraform only
 bootstrap_infra.py     → provisions bootstrap infra only
 ansible.py             → ansible configuration only
-destroy_infra.py       → destroy everything (make sure to remove/delete helm charts too detach resources and delete everything smoothly)
+destroy_infra.py       → destroys bootstrap-infra only (VPC, EC2, IAM, key pair). Run the platform-infra
+                          pipeline with ACTION=Destroy FIRST (it removes the EKS/RDS/ALB/ECR resources that
+                          live inside that VPC), otherwise the VPC delete here will fail with dependency errors.
+                          backend-bootstrap (the S3 state bucket) is intentionally left alone — destroy it
+                          manually if you want zero residual cost once you're fully done.
 
 
 **HOW TO RUN PROJECT**
 - Create an AWS Account.
-- Create an IAM User (Save the Access key and Secret key. You can go for AdministratorAccess for ease).
+- Create an IAM User for running these scripts, scoped to only what backend_bootstrap.py/bootstrap_infra.py
+  actually need (S3, EC2, VPC, IAM role/policy/instance-profile management) — not AdministratorAccess.
+  It's tempting to reach for AdministratorAccess "for ease," but the rest of this project goes out of its way
+  to scope Jenkins's own permissions tightly (see bootstrap-infra/iam.tf) — giving yourself unrestricted
+  account-admin keys on a laptop undercuts that. At minimum, delete this access key once bootstrap-infra has
+  applied successfully once; you shouldn't need it again day to day.
 - Download and Install AWS CLI
 - Configure the AWS CLI using "aws configure"
 - Clone the project repo on the local where you will run the scripts. Make sure Python, Terraform and Ansible are installed on the local system to run the scripts.

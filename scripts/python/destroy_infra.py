@@ -1,6 +1,6 @@
 import sys
 from pathlib import Path
-from utils.command import info, error, run_command
+from utils.command import info, run_command
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
 
@@ -33,8 +33,7 @@ def destroy_infra():
         confirm = input("This will DESTROY all infrastructure. Proceed with the destroy? (yes/no): ").strip().lower()
 
         if confirm not in ["yes", "y"]:
-            info("Destroy aborted by user.")
-            error("Infrastructure destroy cancelled. No changes have been made.")
+            info("Destroy aborted by user. Infrastructure destroy cancelled. No changes have been made.")
             sys.exit(0)
 
         run_command("terraform apply destroy.tfplan", cwd=BOOTSTRAP_INFRA_DIR, env=env)
