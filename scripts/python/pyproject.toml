@@ -1,0 +1,21 @@
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "S"]
+
+# S602/S603 (subprocess with shell=True / subprocess call flagged for review)
+# and S607 (partial executable path, e.g. "terraform" instead of an absolute
+# path) are allowed only in these bootstrap/ansible scripts. This is
+# operator-run local tooling: every command is a fixed string or fixed arg
+# list built from internal constants, never from untrusted external input,
+# and the CLIs invoked (terraform, ansible-vault, aws) are expected to be on
+# the operator's PATH by design. Scoped per-file rather than disabled
+# globally so these rules still fire anywhere they haven't been reviewed.
+[tool.ruff.lint.per-file-ignores]
+"bootstrap.py" = ["S602", "S603", "S607"]
+"bootstrap_infra.py" = ["S603", "S607"]
+"backend_bootstrap.py" = ["S603", "S607"]
+"destroy_infra.py" = ["S603", "S607"]
+"ansible.py" = ["S603", "S607"]
+"utils/command.py" = ["S602"]

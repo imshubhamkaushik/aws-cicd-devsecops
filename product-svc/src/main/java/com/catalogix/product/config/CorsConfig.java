@@ -21,7 +21,7 @@ public class CorsConfig {
 
         String[] origins = Objects.requireNonNull(
             Arrays.stream(allowedOrigins.split(","))
-                  .map(String::trim)
+                  .map(s -> s != null ? s.trim() : "")
                   .toArray(String[]::new),
             "origins array must not be null"
         );
