@@ -1,11 +1,12 @@
 # EC2 Instances for Jenkins
 resource "aws_instance" "jenkins_catalogix" {
-  ami                    = var.ami
-  instance_type          = var.instance_type
-  subnet_id              = aws_subnet.public[0].id
-  key_name               = var.key_name
-  iam_instance_profile   = aws_iam_instance_profile.jenkins_profile.name
-  vpc_security_group_ids = [aws_security_group.jenkins.id]
+  ami                         = var.ami
+  instance_type               = var.instance_type
+  subnet_id                   = aws_subnet.public[0].id
+  associate_public_ip_address = true
+  key_name                    = var.key_name
+  iam_instance_profile        = aws_iam_instance_profile.jenkins_profile.name
+  vpc_security_group_ids      = [aws_security_group.jenkins.id]
 
   root_block_device {
     volume_size = 30
@@ -42,12 +43,13 @@ resource "aws_eip" "jenkins_eip" {
 
 # EC2 Instances for SonarQube
 resource "aws_instance" "sonarqube_catalogix" {
-  ami                    = var.ami
-  instance_type          = var.instance_type
-  subnet_id              = aws_subnet.private[0].id
-  key_name               = var.key_name
-  iam_instance_profile   = aws_iam_instance_profile.sonar_profile.name
-  vpc_security_group_ids = [aws_security_group.sonar.id]
+  ami                          = var.ami
+  instance_type                = var.instance_type
+  subnet_id                    = aws_subnet.private[0].id
+  associate_public_ip_address = false
+  key_name                     = var.key_name
+  iam_instance_profile         = aws_iam_instance_profile.sonar_profile.name
+  vpc_security_group_ids       = [aws_security_group.sonar.id]
 
   root_block_device {
     volume_size = 30

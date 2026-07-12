@@ -88,10 +88,9 @@ resource "aws_security_group_rule" "jenkins_egress_all" {
 # -----------------------------------------------------------------------
 # SonarQube rules
 #
-# SonarQube lives in a private subnet. It has NO inbound path from the
-# internet - the private route table routes 0.0.0.0/0 only to the NAT
-# Gateway (outbound only). Rules allowing your public IP (my_ip_cidr) on
-# ports 22 or 9000 would be permanently unreachable and are not included.
+# SonarQube lives in a private subnet. 
+# It has NO inbound path from the internet - the private route table routes 0.0.0.0/0 only to the NAT Gateway (outbound only). 
+# Rules allowing your public IP (my_ip_cidr) on ports 22 or 9000 would be permanently unreachable and are not included.
 #
 # Access pattern:
 #   SSH  → SSH into Jenkins (public), then ProxyJump to SonarQube (private)
