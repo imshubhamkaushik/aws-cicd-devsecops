@@ -190,12 +190,9 @@ kube-prometheus-stack:
         - name: service-availability
           rules:
             - alert: ServiceUnavailable
-              # FIX: original expr used up{job="kubernetes-service-endpoints"} — a static
-              # Prometheus scrape job that does not exist in kube-prometheus-stack.
-              # With ServiceMonitor-based discovery, catalogix services have a different
-              # job label. kube_deployment_status_replicas_available comes from
-              # kube-state-metrics (bundled in kube-prometheus-stack) and correctly
-              # targets the catalogix namespace.
+              # original expr used up{job="kubernetes-service-endpoints"} — a static Prometheus scrape job that does not exist in kube-prometheus-stack.
+              # With ServiceMonitor-based discovery, catalogix services have a different job label. 
+              # kube_deployment_status_replicas_available comes from kube-state-metrics (bundled in kube-prometheus-stack) and correctly targets the catalogix namespace.
               expr: |
                 kube_deployment_status_replicas_available{namespace="catalogix"} == 0
               for: 3m
@@ -208,11 +205,10 @@ kube-prometheus-stack:
         - name: error-rate
           rules:
             - alert: HighErrorRate
-              # FIX 1: added namespace filter so the alert only fires for catalogix services,
-              # not Prometheus/Grafana/Alertmanager internal traffic.
-              # FIX 2: sum by namespace so the ratio is calculated per-namespace.
-              # The original collapsed all namespaces into one ratio, masking which service
-              # was the source and diluting the signal with unrelated traffic.
+              # added namespace filter so the alert only fires for catalogix services, not Prometheus/Grafana/Alertmanager internal traffic.
+              # 
+              # sum by namespace so the ratio is calculated per-namespace.
+              # The original collapsed all namespaces into one ratio, masking which service was the source and diluting the signal with unrelated traffic.
               expr: |
                 (
                   sum by (namespace) (
@@ -234,12 +230,11 @@ kube-prometheus-stack:
         - name: high-latency
           rules:
             - alert: HighLatencyP95
-              # FIX 1: added namespace filter (same reason as HighErrorRate).
-              # FIX 2: sum by (le, job) not (le, service). Spring Boot Actuator metrics
-              # do not expose a 'service' label — the per-service identifier in
+              # added namespace filter (same reason as HighErrorRate).
+              # 
+              # sum by (le, job) not (le, service) -- Spring Boot Actuator metrics do not expose a 'service' label — the per-service identifier in
               # kube-prometheus-stack is the 'job' label set by the ServiceMonitor.
-              # Summing by 'service' collapsed all series into one bucket set and
-              # produced a meaningless quantile across all services combined.
+              # Summing by 'service' collapsed all series into one bucket set and produced a meaningless quantile across all services combined.
               expr: |
                 histogram_quantile(
                   0.95,

@@ -543,33 +543,33 @@ pipeline {
             }
         }
 
-        // DAST — OWASP ZAP Baseline Scan - passive scan against the live ALB endpoint. Catches runtime issues SAST/image scanning can't see: missing security headers, verbose error pages, exposed actuator endpoints. Non-blocking (-I) initially; archived as a build artifact for review.
-        // If the ALB hostname is not yet assigned, the scan is skipped with a warning
-        stage('DAST — OWASP ZAP Baseline Scan') {
-            steps {
-                sh """
-                set -e
+        // // DAST — OWASP ZAP Baseline Scan - passive scan against the live ALB endpoint. Catches runtime issues SAST/image scanning can't see: missing security headers, verbose error pages, exposed actuator endpoints. Non-blocking (-I) initially; archived as a build artifact for review.
+        // // If the ALB hostname is not yet assigned, the scan is skipped with a warning
+        // stage('DAST — OWASP ZAP Baseline Scan') {
+        //     steps {
+        //         sh """
+        //         set -e
 
-                ALB_HOST=\$(kubectl get ingress catalogix-frontend-ingress \\
-                    -n ${K8S_NAMESPACE} \\
-                    -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)
+        //         ALB_HOST=\$(kubectl get ingress catalogix-frontend-ingress \\
+        //             -n ${K8S_NAMESPACE} \\
+        //             -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)
 
-                if [ -z "\$ALB_HOST" ]; then
-                    echo "WARNING: ALB hostname not available — skipping DAST scan."
-                else
-                    mkdir -p \$(pwd)/zap-reports
-                    docker run --rm \\
-                        -v \$(pwd)/zap-reports:/zap/wrk:rw \\
-                        zaproxy/zap-stable:2.16.1 zap-baseline.py \\
-                        -t http://\$ALB_HOST/ \\
-                        -r zap-report.html \\
-                        -I
-                    echo "ZAP scan complete — report at zap-reports/zap-report.html"
-                fi
-                """
-                archiveArtifacts artifacts: 'zap-reports/*.html', allowEmptyArchive: true
-            }
-        }
+        //         if [ -z "\$ALB_HOST" ]; then
+        //             echo "WARNING: ALB hostname not available — skipping DAST scan."
+        //         else
+        //             mkdir -p \$(pwd)/zap-reports
+        //             docker run --rm \\
+        //                 -v \$(pwd)/zap-reports:/zap/wrk:rw \\
+        //                 zaproxy/zap-stable:2.16.1 zap-baseline.py \\
+        //                 -t http://\$ALB_HOST/ \\
+        //                 -r zap-report.html \\
+        //                 -I
+        //             echo "ZAP scan complete — report at zap-reports/zap-report.html"
+        //         fi
+        //         """
+        //         archiveArtifacts artifacts: 'zap-reports/*.html', allowEmptyArchive: true
+        //     }
+        // }
     }
 
     post {

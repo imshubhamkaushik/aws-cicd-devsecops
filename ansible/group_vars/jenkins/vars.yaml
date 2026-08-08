@@ -7,8 +7,6 @@
 #   vault_jenkins_admin_password: <strong password>
 #   vault_github_token:           <GitHub personal access token>
 #   vault_sonar_token:            <SonarQube user token>
-#   vault_aws_access_key_id:      <AWS IAM user access key ID>
-#   vault_aws_secret_access_key:  <AWS IAM user secret access key>
 #
 # Reference vault vars in tasks via: "{{ vault_jenkins_admin_password }}"
 
