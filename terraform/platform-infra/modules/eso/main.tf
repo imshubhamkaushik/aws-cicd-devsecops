@@ -12,12 +12,9 @@ terraform {
       source  = "hashicorp/helm"
       version = "~> 3.0"
     }
-    # Replaces local-exec for CRD-based resources.
-    # Unlike hashicorp/kubernetes, this does NOT validate CRD schemas at plan time.
-    # Safe to use on fresh deploys where the cluster doesn't exist yet at plan time.
-    # gavinbunney/kubectl is unmaintained (last release Jan 2025, validated
-    # only through k8s 1.32) while this cluster targets 1.35+. alekc/kubectl
-    # is a maintained fork with the same resource/provider schema.
+    # Does not validate CRD schemas at plan time, so it works on fresh deploys
+    # where the cluster does not exist yet. alekc/kubectl is the maintained
+    # fork of gavinbunney/kubectl.
     kubectl = {
       source  = "alekc/kubectl"
       version = "~> 2.0"
@@ -122,6 +119,12 @@ resource "kubectl_manifest" "cluster_secret_store" {
     metadata:
       name: aws-secrets-manager
     spec:
+      # Restrict the store to these namespaces; otherwise any namespace could
+      # read every secret the ESO IAM role can reach.
+      conditions:
+        - namespaces:
+            - catalogix
+            - monitoring
       provider:
         aws:
           service: SecretsManager

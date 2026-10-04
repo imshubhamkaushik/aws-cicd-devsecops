@@ -356,9 +356,7 @@
       - "Password: (vault_jenkins_admin_password)"
       - "JCasC   : /var/lib/jenkins/casc_configs/jcasc.yaml"
 
-# -----------------------------
-# Correct debug condition variable
-# -----------------------------
+# Dump logs for troubleshooting when authentication fails
 - name: Dump Jenkins logs if auth fails
   shell: journalctl -u jenkins -n 200
   when: jenkins_auth_check is failed

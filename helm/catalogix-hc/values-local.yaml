@@ -1,0 +1,119 @@
+# Local-cluster overlay for kind / minikube / Docker Desktop Kubernetes.
+#
+# Not standalone: it overrides only what differs on a laptop and inherits the rest
+# from values-dev.yaml. Helm deep-merges maps across -f files (last wins), so install with both:
+#
+#   helm upgrade --install catalogix ./helm/catalogix-hc \
+#     -f helm/catalogix-hc/values-dev.yaml \
+#     -f helm/catalogix-hc/values-local.yaml \
+#     -n catalogix --create-namespace
+#
+# Versus the AWS setup:
+#   - No RDS: templates/postgres-local.yaml runs an in-cluster Postgres.
+#   - No Secrets Manager / ESO: templates/secrets-local.yaml creates 'catalogix-secrets'
+#     on first install and keeps it stable across `helm upgrade`.
+#   - No ALB / WAF / TLS: ingress is disabled and the gateway Service is a LoadBalancer.
+#     Docker Desktop binds it to localhost: open http://localhost:11000.
+#   - No autoscaling: HPA off, every service pinned to 1 replica to fit a laptop.
+#   - No tracing backend: no in-cluster collector is deployed.
+
+global:
+  cloudProvider: "local"
+
+database:
+  host: "postgres-local"
+  sslMode: "disable"
+  local:
+    # kind and Docker Desktop both ship a default StorageClass; run `kubectl get storageclass`
+    # if the PVC stays Pending and set this (and rabbitmq.storageClass) to match.
+    storageClass: "hostpath" # "standard" for kind, "hostpath" for Docker Desktop
+    storageSize: "1Gi"
+
+rabbitmq:
+  storageClass: "hostpath" # "standard" for kind, "hostpath" for Docker Desktop
+  storageSize: "1Gi"
+
+ingress:
+  enabled: false
+
+hpa:
+  # Disables all backend HPAs and the frontend HPA (nested under this same flag in
+  # templates/hpa.yaml); gateway.hpa below has its own switch.
+  enabled: false
+
+backendServices:
+  user-svc:
+    replicaCount: 1
+    # Plain HTTP on localhost: opt out of the derived FRONTEND_BASE_URL / REFRESH_COOKIE_SECURE
+    # and set them below.
+    publicUrlEnv: false
+    # Helm replaces list values across -f files, so extraEnv is re-declared in full; keep it
+    # in sync with values-dev.yaml. SEED_ADMIN_PASSWORD is a fixed local value and the
+    # cookie/URL settings are explicit.
+    extraEnv:
+      - name: REFRESH_COOKIE_SECURE
+        value: "false"
+      - name: FRONTEND_BASE_URL
+        value: "http://localhost:11000"
+      - name: SEED_ADMIN_EMAIL
+        value: "admin@catalogix.local"
+      - name: SEED_ADMIN_PASSWORD
+        value: "Admin@12345"
+    image:
+      repository: "catalogix-user-svc"
+      tag: "latest"
+  
+  catalog-svc: 
+    replicaCount: 1
+    image:
+      repository: "catalogix-catalog-svc"
+      tag: "latest"
+  
+  inventory-svc: 
+    replicaCount: 1
+    image:
+      repository: "catalogix-inventory-svc"
+      tag: "latest"
+  
+  cart-svc: 
+    replicaCount: 1
+    image:
+      repository: "catalogix-cart-svc"
+      tag: "latest"
+  
+  payment-svc: 
+    replicaCount: 1
+    image:
+      repository: "catalogix-payment-svc"
+      tag: "latest"
+  
+  checkout-svc: 
+    replicaCount: 1
+    image:
+      repository: "catalogix-checkout-svc"
+      tag: "latest"
+
+  notification-svc:
+    replicaCount: 1
+    image:
+      repository: "catalogix-notification-svc"
+      tag: "latest"
+
+gateway:
+  replicaCount: 1
+  hpa:
+    enabled: false
+  image:
+      repository: "catalogix-gateway"
+      tag: "latest"
+  service:
+    # Docker Desktop gives a LoadBalancer Service an EXTERNAL-IP of localhost, so no
+    # port-forward is needed. On kind this needs extraPortMappings at cluster creation;
+    # on minikube it needs `minikube tunnel`.
+    type: "LoadBalancer"
+
+frontend:
+  replicaCount: 1
+  image:
+      repository: "catalogix-frontend"
+      tag: "latest"

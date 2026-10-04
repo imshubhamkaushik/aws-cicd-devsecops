@@ -1,20 +1,11 @@
 // =============================================================================
-// DRAFT — NOT ACTIVE. This file is not referenced by jcasc.yaml's jobs: block,
-// so no Jenkins job runs it and nothing triggers it. It exists so the stages
-// are ready to go when you decide to turn this on — at that point:
-//   1. Add a pipelineJob('lint') entry to jcasc.yaml (model it on the
-//      existing 'app-cicd' job — same githubPush() trigger pattern).
-//   2. Decide whether to move 'Secrets Scanning' out of Jenkinsfile.app-cicd
-//      into here instead, or leave it duplicated in both. Moving it is more
-//      correct (it's a full-repo scan either way, so running it twice is
-//      redundant work, not extra protection) but duplicating it costs
-//      nothing except a slightly slower app-cicd run, and means secret
-//      scanning doesn't depend on this file actually being wired up
-//      correctly on day one. Your call once this is real.
-//   3. Run terraform fmt -check and helm lint by hand once, locally, before
-//      trusting them as gates — see the comment on those two stages below
-//      for why those two specifically haven't been verified the way the
-//      others have.
+// Lint / static-analysis pipeline. Wired into jcasc.yaml's jobs: block with
+// a githubPush() trigger, same as app-cicd — this runs on every push so
+// formatting, lint, and secret-scan failures show up before a deploy does.
+//
+// This is also the single home for checks that don't need a running
+// cluster or built images (Dockerfile lint, Helm chart lint/scan, secrets
+// scan) — app-cicd does not repeat any of them.
 // =============================================================================
 
 pipeline {
@@ -26,32 +17,55 @@ pipeline {
         timeout(time: 10, unit: 'MINUTES')
     }
 
+    environment {
+        HELM_CHART_DIR = "helm/catalogix-hc"
+    }
+
     stages {
 
-        stage('Clean Workspace') {
+        stage('Checkout') {
             steps { cleanWs() }
+            steps { checkout scm }
         }
 
-        stage('Checkout') {
-            steps { checkout scm }
+        // Reads the Trivy version from Ansible vars, same source of truth
+        // app-cicd uses, so both pipelines always run the same scanner version.
+        stage('Resolve Tool Versions') {
+            steps {
+                script {
+                    env.TRIVY_TAG = sh(
+                        script: "grep '^trivy_version:' ansible/group_vars/all/vars.yaml | awk -F'\"' '{print \$2}'",
+                        returnStdout: true).trim()
+                    if (!env.TRIVY_TAG) {
+                        error("TRIVY_TAG is empty — check 'trivy_version' in ansible/group_vars/all/vars.yaml")
+                    }
+                    env.TRIVY_IMAGE = "aquasec/trivy:${env.TRIVY_TAG}"
+                }
+            }
+        }
+
+        // Pure Dockerfile lint, no build required — runs here instead of in
+        // app-cicd so a Dockerfile mistake is caught before a deploy run,
+        // not during one.
+        stage('Hadolint — Dockerfile Linting') {
+            steps {
+                sh '''
+                set -e
+                for dockerfile in $(find backend frontend gateway -maxdepth 2 -name Dockerfile); do
+                    echo "=== hadolint: ${dockerfile} ==="
+                    docker run --rm -i hadolint/hadolint:v2.12.0 hadolint --config /dev/null - < "${dockerfile}"
+                done
+                '''
+            }
         }
 
         // ── Terraform ────────────────────────────────────────────────────────
         //
-        // fmt -check is safe repo-wide — pure formatting, independent of
-        // provider configuration. NOT verified locally (no network access to
-        // the real terraform binary in the sandbox this was written in) —
-        // run it once by hand before trusting it as a hard gate.
-        //
-        // validate only runs against the three real root configs, not module
-        // directories (most don't declare their own required_providers, so
-        // validating one directly always fails on a missing-provider error
-        // regardless of whether the module's own code is correct) and not
-        // platform-infra/env/staging (known, deliberately-unfixed validate
-        // errors — see the full review. Validating it would make this stage
-        // permanently red for a reason everyone already knows, which trains
-        // people to ignore red builds. Revisit once staging reaches parity
-        // with dev).
+        // fmt -check is pure formatting and safe to run repo-wide, regardless
+        // of provider config. (terraform validate is intentionally not run
+        // here — module directories don't declare their own providers, so
+        // validating them directly fails for reasons unrelated to the actual
+        // code; real validation happens per-environment in the infra pipeline.)
         stage('Terraform Format Check') {
             steps {
                 sh '''
@@ -61,31 +75,11 @@ pipeline {
             }
         }
 
-        stage('Terraform Validate') {
-            steps {
-                sh '''
-                set -e
-                for dir in \\
-                    terraform/backend-bootstrap \\
-                    terraform/bootstrap-infra \\
-                    terraform/platform-infra/env/dev
-                do
-                    echo "=== terraform validate: ${dir} ==="
-                    terraform -chdir="${dir}" init -backend=false -input=false >/dev/null
-                    terraform -chdir="${dir}" validate
-                done
-                '''
-            }
-        }
-
         // ── Ansible ──────────────────────────────────────────────────────────
         //
-        // .ansible-lint-ignore is a real baseline, generated by actually
-        // running `ansible-lint --generate-ignore` against this repo's
-        // playbook.yaml (180 pre-existing findings, almost entirely style:
-        // missing FQCNs, CRLF trailing whitespace, an internal var-naming
-        // convention). Confirmed this stage exits 0 with the ignore file in
-        // place — it only fails on NEW violations, not the backlog.
+        // .ansible-lint-ignore holds the pre-existing style findings
+        // (missing FQCNs, var-naming, etc.) so this stage only fails on
+        // new violations, not the existing backlog.
         stage('Ansible Lint') {
             steps {
                 sh '''
@@ -98,12 +92,9 @@ pipeline {
 
         // ── Python ───────────────────────────────────────────────────────────
         //
-        // ruff covers both jobs a separate flake8 + bandit pairing would —
-        // confirmed by actually running `ruff check --select S` against
-        // scripts/python/: it catches the identical subprocess-shell=True
-        // findings bandit does (ruff's S602 = bandit's B602), so there's no
-        // coverage gap from using one tool instead of two. Default ruleset
-        // (style/correctness) plus S (security) both run here.
+        // ruff's default ruleset covers style/correctness; --select S adds
+        // its security checks (bandit-equivalent), so one tool covers what
+        // would otherwise be flake8 + bandit.
         stage('Python Lint') {
             steps {
                 sh '''
@@ -114,11 +105,31 @@ pipeline {
             }
         }
 
+        // Password policy + Secrets Manager handling of the credentials tool
+        // (scripts/python/credentials.py) — pure unit tests, no AWS access needed.
+        stage('Python Unit Tests') {
+            steps {
+                sh 'python3 -m unittest discover -s scripts/python/tests'
+            }
+        }
+
         // ── Helm ─────────────────────────────────────────────────────────────
-        //
-        // NOT verified locally — same reason as Terraform fmt above (no
-        // network access to the real helm binary in the sandbox this was
-        // written in). Run it once by hand before trusting it as a gate.
+        stage('Helm Dependencies') {
+            steps {
+                // helm/monitoring's sub-charts (kube-prometheus-stack, loki,
+                // promtail, tempo) must be present before it can be linted or
+                // rendered; without this both `helm lint` and `helm template`
+                // fail on a clean workspace.
+                sh '''
+                set -e
+                helm repo add prometheus-community https://prometheus-community.github.io/helm-charts >/dev/null 2>&1 || true
+                helm repo add grafana https://grafana.github.io/helm-charts >/dev/null 2>&1 || true
+                helm repo update prometheus-community grafana >/dev/null
+                helm dependency build helm/monitoring
+                '''
+            }
+        }
+
         stage('Helm Lint') {
             steps {
                 sh '''
@@ -130,23 +141,70 @@ pipeline {
             }
         }
 
+        // `helm lint` only checks the chart's structure. Rendering the chart
+        // and validating it against the Kubernetes schemas also catches typo'd
+        // fields and wrong apiVersions. Two details matter here:
+        //   * -ignore-missing-schemas — ExternalSecret / ServiceMonitor etc.
+        //     are CRDs with no schema in kubeconform's default catalogue;
+        //     without the flag every one of them is reported as a failure.
+        //   * render to a FILE first — in plain `sh`, `set -e` does not catch
+        //     a failing left side of a pipe, so a chart that fails to render
+        //     would feed kubeconform an empty stream and "pass".
+        stage('Helm Rendered-Manifest Validation') {
+            steps {
+                sh '''
+                set -e
+                for values in values-dev.yaml values-staging.yaml; do
+                    echo "=== kubeconform: helm/catalogix-hc (${values}) ==="
+                    helm template helm/catalogix-hc --values helm/catalogix-hc/${values} > rendered.yaml
+                    docker run --rm -i ghcr.io/yannh/kubeconform:v0.6.7 \\
+                        -strict -summary -ignore-missing-schemas < rendered.yaml
+                done
+
+                echo "=== kubeconform: helm/monitoring ==="
+                helm template helm/monitoring > rendered.yaml
+                docker run --rm -i ghcr.io/yannh/kubeconform:v0.6.7 \\
+                    -strict -summary -ignore-missing-schemas < rendered.yaml
+                '''
+            }
+        }
+
+        // The pipeline's per-service image tag/repository keys must match what
+        // the chart reads (see the script's header for the bug this prevents).
+        stage('Helm Image Tag Contract') {
+            steps {
+                sh 'scripts/ci/check-helm-image-tags.sh helm/catalogix-hc/values-dev.yaml'
+            }
+        }
+
+        stage('Helm Charts Trivy Scan') {
+            steps {
+                sh """
+                set -e
+                docker run --rm \\
+                  -v \$(pwd)/${HELM_CHART_DIR}:/chart \\
+                  ${TRIVY_IMAGE} config \\
+                  --severity HIGH,CRITICAL \\
+                  --exit-code 1 \\
+                  /chart
+                """
+            }
+        }
+
         // ── Shell scripts ────────────────────────────────────────────────────
         stage('Shellcheck') {
             steps {
                 sh '''
                 set -e
-                shellcheck create-key-pair.sh
-                shellcheck scripts/bash/*.sh
+                shellcheck scripts/bash/*.sh scripts/ci/*.sh
                 '''
             }
         }
 
         // ── Secrets ──────────────────────────────────────────────────────────
         //
-        // Full-repo scan. Currently duplicated with app-cicd's own
-        // 'Secrets Scanning' stage — see the header comment at the top of
-        // this file for the tradeoff on whether to de-duplicate once this
-        // is actually wired up.
+        // Full-repo scan. Lives only here, not in app-cicd, so a push is
+        // never scanned twice.
         stage('Secrets Scanning') {
             steps {
                 sh '''
@@ -164,7 +222,7 @@ pipeline {
 
     post {
         success {
-            echo "Lint pipeline passed — terraform fmt/validate, ansible-lint, ruff, helm lint, shellcheck, gitleaks all clean."
+            echo "Lint pipeline passed — hadolint, terraform fmt, ansible-lint, ruff, helm lint, kubeconform, shellcheck, gitleaks all clean."
         }
         failure {
             echo "Lint pipeline failed — check which stage above for the specific tool and finding."

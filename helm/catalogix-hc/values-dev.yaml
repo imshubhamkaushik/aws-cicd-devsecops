@@ -1,99 +1,254 @@
 global:
   imageRegistry: ""
-  imageTag: "1.0-0"
+  imageTag: "2.0-0"
   cloudProvider: "aws"
 
 database:
-  host: ""
+  host: "" # set at deploy time: --set database.host=<RDS endpoint from SSM>
   port: 5432
-  name: "catalogix"
-  username: "catalogix"  # username must match the RDS master username set in Terraform (local.db_username = "catalogix")
+  # RDS enforces TLS, so require it from the client too. The local overlay sets "disable".
+  sslMode: "require"
+  # HikariCP pool per pod. Total connections = pods x pool across all services on one small RDS;
+  # dev worst case (every HPA at max) is 72, under the ~100 max_connections of a db.t4g.micro.
+  # Raise pool and instance class together.
+  maxPoolSize: 3
+  # Each service authenticates with its own role (db_user_<svc>/db_password_<svc>, see
+  # _helpers.tpl commonEnv), created by terraform/platform-infra/modules/db-roles.
 
-# DB password is NOT stored here. It is pulled from AWS Secrets Manager by the
-# ExternalSecret template and placed into the 'catalogix-secrets' Kubernetes Secret.
+# Per-service DB credentials, JWT secret, RabbitMQ credentials and the bootstrap admin
+# password come from AWS Secrets Manager via templates/external-secrets.yaml, not from here.
+# The pipeline overrides appSecretName with "<cluster name>/app-secrets".
 secretsManager:
-  secretName: "catalogix-cluster-dev/db-credentials"
+  appSecretName: "catalogix-cluster-dev/app-secrets"
+  # Operator-chosen passwords (RabbitMQ, bootstrap admin), read directly by External Secrets.
+  # Leave empty to fall back to appSecretName.
+  operatorSecretName: "catalogix-cluster-dev/operator-credentials"
+
+rabbitmq:
+  host: "rabbitmq" # in-cluster headless Service, see templates/rabbitmq.yaml
+  port: 5672
+  replicas: 1 # 3-replica clustering only gives real HA with >=3 nodes, one replica each
+  image: "rabbitmq:4-management-alpine"
+  storageClass: "gp3-sc"
+  storageSize: "1Gi" # per replica: each pod gets its own PVC
+  resources:
+    requests: { cpu: "100m", memory: "256Mi" }
+    limits: { cpu: "500m", memory: "512Mi" }
 
 ingress:
   enabled: true
+  # Public DNS name and ACM certificate, normally supplied by the pipeline (INGRESS_HOST /
+  # TLS_CERT_ARN) and empty here. They drive the ALB host rule, HTTPS listener and redirect,
+  # the public URL in emails and the refresh-cookie Secure flag (see _helpers.tpl).
   host: ""
-  paths:
-    frontend: /
-    users: /users
-    products: /products
-
-frontendSvc:
-  image:
-    repository: "frontend-svc"
-    pullPolicy: "IfNotPresent"
-  replicaCount: 2
-  service:
-    type: "ClusterIP"
-    port: 80
-  resources:
-    requests:
-      cpu: "50m"
-      memory: "64Mi"
-    limits:
-      cpu: "200m"
-      memory: "256Mi"
-  hpa:
-    minReplicas: 2
-    maxReplicas: 4
-    cpuUtilization: 75
-
-userSvc:
-  image:
-    repository: "user-svc"
-    pullPolicy: "IfNotPresent"
-  replicaCount: 2
-  service:
-    port: 8081
-    targetPort: 8081
-  resources:
-    requests:
-      cpu: "100m"
-      memory: "128Mi"
-    limits:
-      cpu: "500m"
-      memory: "512Mi"
-  env:
-    ALLOWED_ORIGINS: "*"
-  hpa:
-    minReplicas: 2
-    maxReplicas: 4
-    cpuUtilization: 75
-    memoryUtilization: 75
-
-productSvc:
-  image:
-    repository: "product-svc"
-    pullPolicy: "IfNotPresent"
-  replicaCount: 2
-  service:
-    port: 8082
-    targetPort: 8082
-  resources:
-    requests:
-      cpu: "100m"
-      memory: "128Mi"
-    limits:
-      cpu: "500m"
-      memory: "512Mi"
-  env:
-    ALLOWED_ORIGINS: "*"
-  hpa:
-    minReplicas: 2
-    maxReplicas: 4
-    cpuUtilization: 75
-    memoryUtilization: 75
+  tlsCertArn: ""
+  # Optional explicit public URL, e.g. the raw ALB URL for an HTTP-only environment.
+  publicUrl: ""
+  # Must be unique per AWS account + region; the pipeline sets catalogix-<env>-alb.
+  loadBalancerName: "catalogix-dev-alb"
 
 hpa:
   enabled: true
 
-monitoring:
-  enabled: true
+# One entry per backend service; consumed generically by the backend templates.
+backendServices:
+  user-svc:
+    dbName: catalogix-users
+    usesRabbitMQ: true   # publishes user.email-verification-requested / user.password-reset-requested
+    image: { repository: "catalogix-user-svc", pullPolicy: "IfNotPresent" }
+    port: 11005
+    # FRONTEND_BASE_URL and REFRESH_COOKIE_SECURE are derived from ingress.host /
+    # ingress.tlsCertArn (see templates/_helpers.tpl) — never set them in extraEnv.
+    publicUrlEnv: true
+    replicaCount: 2
+    resources:
+      requests: { cpu: "150m", memory: "256Mi" }
+      limits: { cpu: "500m", memory: "512Mi" }
+    hpa:
+      {
+        minReplicas: 2,
+        maxReplicas: 3,
+        cpuUtilization: 75,
+      }
+    extraEnv:
+      # Bootstrap admin, created on first start if no admin exists. The password is the
+      # operator-chosen seed_admin_password synced by External Secrets; the pipelines refuse
+      # to run without it. `optional: true` only keeps startup alive if that check is bypassed.
+      - name: SEED_ADMIN_EMAIL
+        value: "admin@catalogix.local"
+      - name: SEED_ADMIN_PASSWORD
+        valueFrom:
+          secretKeyRef:
+            name: catalogix-secrets
+            key: seed_admin_password
+            optional: true
 
-aws:
-  accountId: ""
-  region: "ap-south-1"
+  catalog-svc:
+    dbName: catalogix-catalog
+    image: { repository: "catalogix-catalog-svc", pullPolicy: "IfNotPresent" }
+    port: 11002
+    replicaCount: 2
+    resources:
+      requests: { cpu: "150m", memory: "256Mi" }
+      limits: { cpu: "500m", memory: "512Mi" }
+    hpa:
+      {
+        minReplicas: 2,
+        maxReplicas: 3,
+        cpuUtilization: 75,
+      }
+    extraEnv:
+      - name: INVENTORY_SVC_URL
+        value: "http://inventory-svc:11003"
+      - name: SEED_DATA
+        value: "true"
+
+  inventory-svc:
+    dbName: catalogix-inventory
+    image: { repository: "catalogix-inventory-svc", pullPolicy: "IfNotPresent" }
+    port: 11003
+    replicaCount: 2
+    # Internal-only, no ALB path (same rule as the gateway's nginx.conf).
+    resources:
+      requests: { cpu: "150m", memory: "256Mi" }
+      limits: { cpu: "400m", memory: "384Mi" }
+    hpa:
+      {
+        minReplicas: 2,
+        maxReplicas: 3,
+        cpuUtilization: 75,
+      }
+
+  cart-svc:
+    dbName: catalogix-cart
+    image: { repository: "catalogix-cart-svc", pullPolicy: "IfNotPresent" }
+    port: 11004
+    replicaCount: 2
+    resources:
+      requests: { cpu: "150m", memory: "256Mi" }
+      limits: { cpu: "400m", memory: "384Mi" }
+    hpa:
+      {
+        minReplicas: 2,
+        maxReplicas: 3,
+        cpuUtilization: 75,
+      }
+    extraEnv:
+      - name: CATALOG_SVC_URL
+        value: "http://catalog-svc:11002"
+      - name: INVENTORY_SVC_URL
+        value: "http://inventory-svc:11003"
+
+  payment-svc:
+    dbName: catalogix-payment
+    image: { repository: "catalogix-payment-svc", pullPolicy: "IfNotPresent" }
+    port: 11006
+    replicaCount: 2
+    # Internal-only: checkout-svc is its only caller. No ALB path.
+    resources:
+      requests: { cpu: "150m", memory: "256Mi" }
+      limits: { cpu: "400m", memory: "384Mi" }
+    hpa:
+      {
+        minReplicas: 2,
+        maxReplicas: 3,
+        cpuUtilization: 75,
+      }
+
+  checkout-svc:
+    dbName: catalogix-checkout
+    usesRabbitMQ: true   # publishes order.confirmed / order.cancelled
+    image: { repository: "catalogix-checkout-svc", pullPolicy: "IfNotPresent" }
+    port: 11007
+    # Each checkout holds its DB connection for the whole multi-service call
+    # chain, so it needs a bigger pool than the other services.
+    dbPoolSize: 6
+    replicaCount: 2
+    resources:
+      requests: { cpu: "200m", memory: "320Mi" } # orchestrates 5 downstream calls per checkout — a bit more headroom
+      limits: { cpu: "600m", memory: "640Mi" }
+    hpa:
+      {
+        minReplicas: 2,
+        maxReplicas: 3,
+        cpuUtilization: 70,
+      }
+    extraEnv:
+      - name: CATALOG_SVC_URL
+        value: "http://catalog-svc:11002"
+      - name: INVENTORY_SVC_URL
+        value: "http://inventory-svc:11003"
+      - name: PAYMENT_SVC_URL
+        value: "http://payment-svc:11006"
+      - name: CART_SVC_URL
+        value: "http://cart-svc:11004"
+      # Required: without it AddressClient falls back to localhost and address lookups
+      # fail during checkout.
+      - name: USER_SVC_URL
+        value: "http://user-svc:11005"
+
+  notification-svc:
+    dbName: catalogix-notification
+    usesRabbitMQ: true
+    image: { repository: "catalogix-notification-svc", pullPolicy: "IfNotPresent" }
+    port: 11008
+    replicaCount: 1
+    hpa:
+      {
+        minReplicas: 1,
+        maxReplicas: 2,
+        cpuUtilization: 75,
+      }
+    resources:
+      requests: { cpu: "50m", memory: "128Mi" }
+      limits: { cpu: "250m", memory: "384Mi" }
+    routeToALB: true
+    ingressPaths:
+      - /notifications
+    extraEnv:
+      - name: MAIL_HOST
+        value: "mailpit"
+      - name: MAIL_PORT
+        value: "1025"
+      - name: MAIL_SMTP_AUTH
+        value: "false"
+      - name: MAIL_SMTP_STARTTLS
+        value: "false"
+      - name: MAIL_FROM
+        value: "noreply@catalogix.local"
+      - name: USER_SVC_URL
+        value: "http://user-svc:11005"
+
+gateway:
+  image:
+    repository: "catalogix-gateway"
+    pullPolicy: "IfNotPresent"
+  replicaCount: 2
+  service:
+    type: "ClusterIP"
+    port: 11000
+  resources:
+    requests: { cpu: "50m", memory: "64Mi" }
+    limits: { cpu: "250m", memory: "128Mi" }
+  hpa:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 4
+    cpuUtilization: 75
+
+
+frontend:
+  image:
+    repository: "catalogix-frontend"
+    pullPolicy: "IfNotPresent"
+  replicaCount: 2
+  service:
+    type: "ClusterIP"
+    port: 11001
+  resources:
+    requests: { cpu: "50m", memory: "64Mi" }
+    limits: { cpu: "200m", memory: "256Mi" }
+  hpa:
+    minReplicas: 2
+    maxReplicas: 4
+    cpuUtilization: 75

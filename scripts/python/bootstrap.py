@@ -7,6 +7,7 @@ from utils.command import info, error, warn, run_command
 from backend_bootstrap import backend_bootstrap
 from bootstrap_infra import bootstrap_infra, wait_for_ec2
 from ansible import run_ansible
+from credentials import main as credentials_main, CLUSTER_NAMES
 
 
 DEPENDENCIES = [
@@ -142,6 +143,22 @@ def check_aws_auth():
         error("AWS credentials invalid or not configured. Run: aws configure")
     
 
+def run_credentials(env=None):
+    """Prompt for the operator-chosen credentials and store them in AWS Secrets Manager.
+
+    This is the handoff to everything that runs later: the platform-infra pipeline (Terraform on
+    the Jenkins host), External Secrets and the app pipeline all READ the secret this writes —
+    nothing has to be passed to them. See credentials.py for the details.
+    """
+    if env is None:
+        choices = "/".join(sorted(CLUSTER_NAMES))
+        env = input(f"Which environment are these credentials for? ({choices}) [dev]: ").strip().lower() or "dev"
+        if env not in CLUSTER_NAMES:
+            error(f"Unknown environment '{env}'.")
+    if credentials_main(["--env", env]) != 0:
+        error("Credentials were not saved. Re-run:  python bootstrap.py credentials")
+
+
 def run_full_bootstrap():
 
     backend_bootstrap()
@@ -158,9 +175,14 @@ def run_full_bootstrap():
     wait_for_ec2()
     
     run_ansible()
-    
+
+    print("")
+    info("Next: the passwords YOU choose for the application (RDS, RabbitMQ, app admin, Grafana).")
+    run_credentials()
+
     print("")
     info("Full Bootstrap Completed Successfully.")
+    info("Now run the platform-infra pipeline in Jenkins.")
 
 
 def main():
@@ -172,7 +194,7 @@ def main():
         "command",
         nargs="?",
         default="full",
-        choices=["backend", "infra", "ansible", "full"],
+        choices=["backend", "infra", "ansible", "credentials", "full"],
         help="Command to run (default: full)"
     )
 
@@ -195,7 +217,11 @@ def main():
     elif args.command == "ansible":
         run_ansible()
         
-    # For full bootstrap (backend + infra + ansible)
+    # For the operator-chosen application credentials (re-run any time to change a password)
+    elif args.command == "credentials":
+        run_credentials()
+
+    # For full bootstrap (backend + infra + ansible + credentials)
     elif args.command == "full":
         run_full_bootstrap()
 

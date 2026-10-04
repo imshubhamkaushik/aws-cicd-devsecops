@@ -6,7 +6,7 @@
 
 # Details   : Heap buffer over-read in png_image_finish_read() in libpng's simplified read API. Triggered only when an application actively reads PNG images through libpng's simplified API with a crafted input image.
 
-# Why ignored : None of the services in this project (Spring Boot user-svc / product-svc, React/Nginx frontend) call libpng's simplified read API at runtime. The Jenkins EC2 host and SonarQube instance also do not process PNG images through this code path. The library is present as an indirect OS dependency only; no network-reachable application code path invokes it.
+# Why ignored : None of the services in this project (Spring Boot user-svc / catalog-svc, React/Nginx frontend) call libpng's simplified read API at runtime. The Jenkins EC2 host and SonarQube instance also do not process PNG images through this code path. The library is present as an indirect OS dependency only; no network-reachable application code path invokes it.
 
 # Revisit   : When base image is next updated; remove if libpng >= patched version is shipped by the distro.
 

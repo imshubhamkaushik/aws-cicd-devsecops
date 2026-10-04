@@ -13,13 +13,19 @@ pipeline {
 
     environment {
         AWS_REGION   = "ap-south-1"
-        CLUSTER_NAME = "catalogix-cluster-${params.ENV}"
+        // Must equal Terraform's local.env_prefix for the selected environment.
+        // dev and staging use var.cluster_name="catalogix-cluster", so the
+        //  real names are "catalogix-cluster-dev" and"catalogix-staging".
+        //  Keep this expression identical in Jenkinsfile.app-cicd — see the explanation there. 
+        // Every SSM path below and the Secrets Manager names
+        // and every `aws eks`/`kubectl` call derive from this one value.
+        CLUSTER_NAME = "${params.ENV == 'dev' ? 'catalogix-cluster-dev' : 'catalogix-cluster-' + params.ENV}"
         TF_DIR       = "terraform/platform-infra/env/${params.ENV}"
         // GIT_REPO_URL is injected by JCasC from /etc/default/jenkins — update group_vars/all/jenkins.yaml
         GIT_REPO_URL = "${env.GIT_REPO_URL}"
-        // KUBECONFIG is pre-configured by Ansible at /var/lib/jenkins/.kube/config
-        // Pipelines use it directly — no aws eks update-kubeconfig needed
-        KUBECONFIG   = "/var/lib/jenkins/.kube/config"
+        // One kubeconfig per cluster, written and verified on every run by
+        // ensureKubernetesAccess() (Ansible does not create a kubeconfig).
+        KUBECONFIG   = "/var/lib/jenkins/.kube/${CLUSTER_NAME}.config"
     }
 
     parameters { 
@@ -40,6 +46,28 @@ pipeline {
             description: 'Select the deployment environment. This determines which EKS cluster and Helm values are used.'
         )
 
+        // Non-secret email alert config — the actual secret (SMTP auth
+        // password) flows through Terraform -> Secrets Manager -> ESO ->
+        // mounted file, same as every other credential in this project.
+        // These three aren't secrets, so routing them through that whole
+        // pipeline would just be extra indirection for no security benefit
+        // — a plain pipeline parameter is the right amount of ceremony here.
+        string(
+            name: 'ALERT_EMAIL_TO',
+            defaultValue: '',
+            description: 'Email address critical alerts are sent to. Leave empty to keep alerting disabled.'
+        )
+        string(
+            name: 'SMTP_HOST',
+            defaultValue: '',
+            description: 'SMTP smarthost, host:port form (e.g. smtp.gmail.com:587). Leave empty to keep alerting disabled.'
+        )
+        string(
+            name: 'SMTP_USERNAME',
+            defaultValue: '',
+            description: 'SMTP auth username. Leave empty to keep alerting disabled.'
+        )
+
         booleanParam( 
             name: 'DEPLOY_APP_AFTER_INFRA', 
             defaultValue: false, 
@@ -58,7 +86,9 @@ pipeline {
 
     options {
         timestamps()
-        disableConcurrentBuilds(abortPrevious: true)
+        // Queue, never abort: killing a run mid `terraform apply/destroy`
+        // leaves a stale state lock and half-created resources.
+        disableConcurrentBuilds()
         timeout(time: 90, unit: 'MINUTES')
     }
 
@@ -111,16 +141,23 @@ pipeline {
             }
         }
 
-        stage("Terraform Format Check - terraform/platform-infra/"){ 
+        // The passwords YOU chose (RDS master, RabbitMQ, app admin, Grafana) are read from
+        // "<cluster>/operator-credentials" in Secrets Manager — nothing is passed to this
+        // pipeline. Fail early, with a message that says what to do, if they aren't there
+        // yet or don't meet the policy, instead of a cryptic Terraform error mid-apply.
+        // (Staging's Terraform still generates its own passwords — deferred with the rest of staging.)
+        stage("Verify Operator Credentials") {
             when {
-                expression { params.ACTION == 'Apply' }
+                expression { params.ACTION == 'Apply' && params.ENV == 'dev' }
             }
-            steps { 
-                sh "terraform fmt -check -recursive terraform/platform-infra/"
-            } 
+            steps {
+                sh "python3 scripts/python/credentials.py --env ${params.ENV} --check"
+            }
         }
 
-        stage("Trivy IaC Scan") {
+        // Terraform formatting for this directory is already gated in
+        // Application CI/CD owns application test and scan execution.
+        stage("Trivy Terraform IaC Scan") {
             when {
                 expression { params.ACTION == 'Apply' }
             }
@@ -169,30 +206,52 @@ pipeline {
                 expression { params.ACTION == 'Apply' }
             }
             steps {
-                dir("${TF_DIR}") {
-                    sh """
-                    set -e
-                    echo "========================================================"
-                    echo "  Running terraform plan ..."
-                    echo "========================================================"
-                    terraform plan -out main.tfplan
-                    echo "========================================================"
-                    """
-                }
-                // input is a Jenkins DSL step, must be at Groovy level — CANNOT go inside sh.
-                input message: "Review the terraform plan above. Approve apply?", ok: "Apply"
+                script {
+                    dir("${TF_DIR}") {
+                        // -detailed-exitcode: 0 = no changes, 1 = error,
+                        // Exit code 2 means Terraform found changes to apply.
+                        // (plain `terraform plan`, always exit 0 on
+                        // success) — every single run paused for a human
+                        // approval below even when the plan showed nothing
+                        // to apply at all, which is the common case for a
+                        // re-run against infrastructure nobody has touched.
+                        // returnStatus (not the default sh() behavior)
+                        // because exit code 2 here means "succeeded, with
+                        // changes" — not a failure to react to with `set -e`.
+                        env.TF_PLAN_EXIT_CODE = sh(
+                            script: '''
+                            set +e
+                            terraform plan -detailed-exitcode -out main.tfplan
+                            echo $?
+                            ''',
+                            returnStdout: true
+                        ).trim().tokenize('\n').last()
+                    }
 
-                dir("${TF_DIR}") {
-                    sh """
-                    set -e
-                    echo "========================================================"
-                    echo "  Running terraform apply main.tfplan ..."
-                    echo "========================================================"
-                    terraform apply -auto-approve main.tfplan
-                    echo "========================================================"
-                    echo "  Apply complete."
-                    echo "========================================================"
-                    """
+                    if (env.TF_PLAN_EXIT_CODE == '1') {
+                        error("terraform plan failed — see output above.")
+                    }
+
+                    if (env.TF_PLAN_EXIT_CODE == '0') {
+                        echo "terraform plan reports no changes — skipping apply and the approval gate below."
+                        return
+                    }
+
+                    input message: "Review the terraform plan above. Approve apply?", ok: "Apply",
+                          submitter: (env.JENKINS_ADMIN_USER ?: '')
+
+                    dir("${TF_DIR}") {
+                        sh """
+                        set -e
+                        echo "========================================================"
+                        echo "  Running terraform apply main.tfplan ..."
+                        echo "========================================================"
+                        terraform apply -auto-approve main.tfplan
+                        echo "========================================================"
+                        echo "  Apply complete."
+                        echo "========================================================"
+                        """
+                    }
                 }
             }
         }
@@ -299,21 +358,36 @@ pipeline {
             }
         }
 
-        // Monitoring is deployed here — after the cluster and ESO are ready — rather than as a separate manual step. 
+        // Monitoring is deployed here — after the cluster and ESO are ready — rather than as a separate manual step.
         // This makes the platform-infra pipeline the single entry point for all cluster-level infrastructure, with app deployments handled separately.
         stage('Deploy Monitoring Stack') {
             when {
                 expression { params.ACTION == 'Apply' }
             }
             steps {
+                script {
+                    // Grafana's login comes from the operator-chosen credentials (dev only —
+                    // staging keeps the chart default until it is brought up to parity).
+                    env.OPERATOR_HELM_ARGS = (params.ENV == 'dev')
+                        ? "--set global.operatorSecretName=${env.CLUSTER_NAME}/operator-credentials --set kube-prometheus-stack.grafana.admin.existingSecret=grafana-admin-secret"
+                        : ""
+                }
+
+                // Free-form job parameters are passed as ENVIRONMENT VARIABLES and
+                // referenced as "$VAR" in the shell — never interpolated into
+                // the script text, where a crafted value could run commands.
+                withEnv([
+                    "ALERT_EMAIL_TO_PARAM=${params.ALERT_EMAIL_TO}",
+                    "SMTP_HOST_PARAM=${params.SMTP_HOST}",
+                    "SMTP_USERNAME_PARAM=${params.SMTP_USERNAME}",
+                ]) {
                 sh """
                 set -e
 
                 # helm repo add is idempotent — safe on every run.
                 # Without this, helm dependency update fails on a clean Jenkins workspace.
                 helm repo add prometheus-community https://prometheus-community.github.io/helm-charts 2>/dev/null || true
-                helm repo add grafana https://grafana.github.io/helm-charts 2>/dev/null || true
-                helm repo update prometheus-community grafana
+                helm repo update prometheus-community
 
                 # Resolve the kube-prometheus-stack dependency before install
                 helm dependency update helm/monitoring
@@ -321,8 +395,14 @@ pipeline {
                 helm upgrade --install monitoring helm/monitoring \\
                     --namespace monitoring \\
                     --create-namespace \\
+                    --set global.alertingSecretName=${CLUSTER_NAME}/alerting-secrets \\
+                    ${OPERATOR_HELM_ARGS} \\
+                    --set "kube-prometheus-stack.alertmanager.config.receivers[1].email_configs[0].to=\$ALERT_EMAIL_TO_PARAM" \\
+                    --set "kube-prometheus-stack.alertmanager.config.receivers[1].email_configs[0].smarthost=\$SMTP_HOST_PARAM" \\
+                    --set "kube-prometheus-stack.alertmanager.config.receivers[1].email_configs[0].auth_username=\$SMTP_USERNAME_PARAM" \\
                     --wait --timeout 300s
                 """
+                }
             }
         }
 
@@ -377,7 +457,8 @@ You are about to PERMANENTLY DELETE all infrastructure managed by this Terraform
  
 This action is IRREVERSIBLE. Review the destroy plan in the stage above carefully.
 Are you absolutely sure?""",
-                      ok: "Yes, destroy everything"
+                      ok: "Yes, destroy everything",
+                      submitter: (env.JENKINS_ADMIN_USER ?: '')
             }
         }
 
@@ -452,6 +533,27 @@ Are you absolutely sure?""",
                 }
             }
         }
+
+        // Terraform never created "<cluster>/operator-credentials" — it can't (see
+        // credentials.py's module docstring: the RDS master password must exist in it BEFORE
+        // Terraform's first apply, so Terraform can't be the thing that creates the container).
+        // Without this, a plain terraform destroy silently leaves it behind, and a later
+        // rebuild of this environment would quietly inherit the old passwords. Runs only for
+        // dev (--check earlier in this pipeline is dev-only for the same reason: staging's
+        // Terraform still generates its own secrets internally, deferred with the rest of
+        // staging) and only after the destroy above actually succeeded — never delete
+        // credentials for a cluster that destroy failed to tear down.
+        stage("Delete Operator Credentials") {
+            when {
+                allOf {
+                    expression { params.ACTION == 'Destroy' }
+                    expression { params.ENV == 'dev' }
+                }
+            }
+            steps {
+                sh "python3 scripts/python/credentials.py --env ${params.ENV} --delete --yes"
+            }
+        }
     }
 
     post {
@@ -484,7 +586,7 @@ Are you absolutely sure?""",
                         # Without this wait, Spring Boot starts, fails to read credentials,
                         # and enters CrashLoopBackOff before the Secret is created.
                         
-                        kubectl wait externalsecret/catalogix-db-credentials \\
+                        kubectl wait externalsecret/catalogix-app-secrets \\
                             -n catalogix --for=condition=Ready --timeout=120s || true
                         """
                         echo "Triggering app deployment pipeline..."

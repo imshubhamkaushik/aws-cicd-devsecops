@@ -39,13 +39,8 @@ variable "public_key" {
     SSH public key material (e.g. contents of ~/.ssh/id_ed25519.pub),
     generated OUTSIDE Terraform on your own machine.
 
-    Required — no default. Terraform previously generated the key pair
-    itself (tls_private_key) and wrote the private key to disk, which means
-    the private key material ended up in the Terraform state file in
-    plaintext (state is read by every principal with s3:GetObject on the
-    tfstate bucket, including the Jenkins role). Generating it yourself and
-    handing Terraform only the public half keeps the private key off of
-    every machine Terraform touches.
+    Required — no default. Provide only the public half so the private key
+    stays outside Terraform state and CI infrastructure.
 
     Generate one with: ssh-keygen -t ed25519 -f ./catalogix-key -C "catalogix"
     then set public_key = file("./catalogix-key.pub") in terraform.tfvars.

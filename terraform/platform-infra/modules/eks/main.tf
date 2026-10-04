@@ -1,6 +1,3 @@
-# Auto-detect the public IP of whoever runs terraform apply.
-# Same pattern used in bootstrap-infra/security-groups.tf.
-# This locks EKS public API access to your machine only — never 0.0.0.0/0
 
 data "aws_caller_identity" "current" {}
 
@@ -41,20 +38,16 @@ resource "aws_eks_cluster" "cluster" {
   vpc_config {
     subnet_ids              = var.private_subnets
     endpoint_private_access = true
-    # DEV NOTE: public access is on so you can run kubectl from your laptop.
-    # For production set this to false and access only from within the VPC.
-    endpoint_public_access = true # for production, set to false
+    # Public endpoint is limited to the Jenkins and operator IPs; use private-only in production.
+    endpoint_public_access = true
     public_access_cidrs    = ["${var.jenkins_public_ip}/32", var.my_ip_cidr]
-    # auto-locked to your IP at apply time | use this if endpoint_public_access = true
   }
 
   access_config {
     authentication_mode = "API_AND_CONFIG_MAP"
-    # Set to false — we manage ALL access entries explicitly below.
-    # With true, AWS silently creates a Jenkins entry outside Terraform's state,
-    # which causes ResourceInUseException when Terraform also tries to create it.
+    # All access entries are managed explicitly below. Letting AWS create the
+    # creator entry would conflict with them (ResourceInUseException).
     bootstrap_cluster_creator_admin_permissions = false
-    # DEV NOTE: for security, this is set to false.  If you want to allow cluster creation via the AWS Console, set to true.
   }
 
   enabled_cluster_log_types = ["api", "audit", "authenticator"]
@@ -217,11 +210,7 @@ resource "aws_iam_role_policy_attachment" "ebs_csi" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy"
 }
 
-# to check for version update:
-# aws eks describe-addon-versions 
-#   --kubernetes-version 1.35 
-#   --addon-name aws-ebs-csi-driver 
-#   --query 'addons[0].addonVersions[0].addonVersion'
+# Check for newer versions: aws eks describe-addon-versions --kubernetes-version 1.35 --addon-name aws-ebs-csi-driver
 resource "aws_eks_addon" "ebs_csi" {
   cluster_name                = aws_eks_cluster.cluster.name
   addon_name                  = "aws-ebs-csi-driver"
@@ -235,20 +224,12 @@ resource "aws_eks_addon" "ebs_csi" {
   ]
 }
 
-# 
+# The gp3 StorageClass (used by Prometheus and Grafana PVCs) lives in env/dev, not
+# here: the kubernetes provider needs this cluster's endpoint, which is unknown
+# during a targeted apply of module.eks.
 
-# NOTE: kubernetes_storage_class_v1.gp3 resource for gp3 StorageClass — used by Prometheus and Grafana PVC requests. This was intentionally moved to env/dev/main.tf.
-# Reason: this resource uses the kubernetes provider, which is configured with
-# local.cluster_endpoint = module.eks.cluster_endpoint. 
-# During (terraform apply -target=module.eks), the endpoint is not yet in provider config — 
-# it was "(known after apply)" at plan time, so Terraform initialises the kubernetes provider pointing at localhost:80. 
-# The StorageClass apply then fails immediately with "dial tcp 127.0.0.1:80: connection refused".
-#
-# Moving it to the root module means it only runs in (full apply), 
-# by which time module.eks is already in state, the endpoint is known, 
-# and the kubernetes provider connects to the real cluster.
-
-# Access Entry + Policy for Jenkins IAM user/role. This is the main way to access the cluster — the root user access entry is just a fallback to prevent lockout from the console.
+# Access entry for the Jenkins role: the primary way to administer the cluster.
+# The root entry below is only a console fallback.
 resource "aws_eks_access_entry" "jenkins_admin" {
   cluster_name  = aws_eks_cluster.cluster.name
   principal_arn = var.jenkins_role_arn
@@ -292,9 +273,8 @@ resource "aws_eks_access_policy_association" "console_admin_policy" {
   depends_on = [aws_eks_access_entry.console_admin]
 }
 
-# Root account always gets console admin access.
-# This is a permanent fix so the AWS Console never shows the
-# "IAM principal doesn't have access" banner regardless of who runs apply.
+# Root account always gets console admin access, so the AWS Console works
+# regardless of who ran apply.
 resource "aws_eks_access_entry" "root_admin" {
   cluster_name  = aws_eks_cluster.cluster.name
   principal_arn = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"

@@ -1,7 +1,6 @@
-# This is the root module for the "platform-infra" Terraform project, which provisions the shared infrastructure components for the EKS cluster and its dependencies.
+# Root module for platform-infra: EKS, RDS, ECR, ALB controller, ESO and secrets.
 
-# terraform_remote_state - Read outputs from bootstrap-infra (VPC, subnets).
-# bootstrap-infra must be applied first before running platform-infra.
+# Read VPC and subnet outputs from bootstrap-infra, which must be applied first.
 data "terraform_remote_state" "bootstrap" {
   backend = "s3"
   config = {
@@ -18,28 +17,70 @@ data "aws_iam_session_context" "current" {
   arn = data.aws_caller_identity.current.arn
 }
 
-# random_password - Generates a random password for the RDS instance, stored in Secrets Manager and synced to K8s via ESO.
-resource "random_password" "db" {
-  length  = 16
-  special = false # avoids JDBC URL encoding issues with special characters 
+# Credentials chosen by the operator (python bootstrap.py credentials) live in one
+# Secrets Manager secret, "<env_prefix>/operator-credentials", which this pipeline reads.
+# Only the RDS master password passes through Terraform (and so lands in the encrypted
+# state); the app admin, RabbitMQ and Grafana passwords go straight to External Secrets.
+data "aws_secretsmanager_secret_version" "operator" {
+  secret_id = "${local.env_prefix}/operator-credentials"
+}
 
-  # keepers tie the password lifecycle to the RDS instance name.
-  # Without keepers, a terraform state refresh or re-import silently regenerates the password, rotating the secret and breaking the running app.
-  # Password only changes if the RDS name changes — which is always intentional.
-  keepers = {
-    rds_name = "${local.env_prefix}-db"
+locals {
+  operator_credentials = jsondecode(data.aws_secretsmanager_secret_version.operator.secret_string)
+
+  db_master_password = lookup(local.operator_credentials, "db_master_password", "")
+
+  # Optional read-only database login (both keys, or neither).
+  db_readonly_username = lookup(local.operator_credentials, "db_readonly_username", "")
+  db_readonly_password = lookup(local.operator_credentials, "db_readonly_password", "")
+}
+
+# Same password policy as scripts/python/credentials.py; backstop for manual runs.
+resource "terraform_data" "operator_credentials_check" {
+  lifecycle {
+    precondition {
+      condition     = length(local.db_master_password) > 0
+      error_message = "db_master_password is missing from ${local.env_prefix}/operator-credentials. Run: python scripts/python/credentials.py --env dev"
+    }
+    precondition {
+      condition = (
+        length(local.db_master_password) >= 8 &&
+        length(local.db_master_password) <= 64 &&
+        can(regex("[a-z]", local.db_master_password)) &&
+        can(regex("[A-Z]", local.db_master_password)) &&
+        can(regex("[0-9]", local.db_master_password)) &&
+        !can(regex("[/\"@[:space:]]", local.db_master_password))
+      )
+      error_message = "db_master_password must be 8-64 characters with a lowercase letter, an uppercase letter and a digit, and must not contain / \" @ or whitespace (RDS rejects those). Change it with: python scripts/python/credentials.py --env dev --only db_master_password"
+    }
+    precondition {
+      condition     = (local.db_readonly_username == "") == (local.db_readonly_password == "")
+      error_message = "db_readonly_username and db_readonly_password must be set together (or both left out) in ${local.env_prefix}/operator-credentials."
+    }
   }
 }
 
-# KMS key for EKS secrets encryption. Using a customer-managed key is a best practice for production workloads, but not strictly required for this demo since the default AWS-managed key would work fine for encrypting EKS secrets.
+# JWT signing key shared by all backend services. keepers prevent rotation on refresh,
+# since rotating invalidates every live session.
+resource "random_password" "jwt" {
+  length  = 48
+  special = false
+
+  keepers = {
+    cluster_name = local.env_prefix
+  }
+}
+
+
+
+# Customer-managed KMS key for EKS secrets encryption.
 resource "aws_kms_key" "eks" {
   description             = "EKS secrets encryption key - dev environment"
   deletion_window_in_days = 7
-  # enable_key_rotation is a best practice for long-lived keys, but not required for this demo since the key is only used to encrypt EKS secrets and doesn't have any direct human access or permissions attached to it. Enabling rotation adds complexity by creating new key versions every year, which would require updating the eks module with the new key ARN to avoid breaking changes.
   enable_key_rotation = true
 }
 
-# locals - centralize commonly used values and outputs from other modules to avoid duplication and ensure consistency across the configuration. This is a best practice for larger Terraform projects to improve maintainability and reduce the risk of errors from hardcoding values or referencing outputs directly in multiple places.
+# Shared values from other modules and remote state.
 locals {
   # Pulled from remote state so every module uses the same source of truth
   vpc_id          = data.terraform_remote_state.bootstrap.outputs.vpc_id
@@ -51,11 +92,10 @@ locals {
   cluster_endpoint    = module.eks.cluster_endpoint
   cluster_certificate = module.eks.cluster_certificate
 
-  # Required on every IAM role created below — see bootstrap-infra/iam.tf
-  # for why, and modules/eks/variables.tf for the per-module rationale.
+  # Required on every IAM role created below; see bootstrap-infra/iam.tf.
   permissions_boundary_arn = data.terraform_remote_state.bootstrap.outputs.jenkins_boundary_arn
 
-  # Env-specific prefix — change to "catalogix-staging" or "catalogix-prod" in other workspaces
+  # Env-specific prefix
   env_prefix = "${var.cluster_name}-${var.environment}"
 
   # Single source of truth for the DB username - referenced by RDS, Secrets Manager, and Helm
@@ -78,12 +118,13 @@ module "eks" {
   source = "../../modules/eks"
 
   cluster_name    = local.env_prefix
-  cluster_version = "1.35"
+  cluster_version = "1.36"
   private_subnets = local.private_subnets
 
-  min_size     = 1
-  max_size     = 4
-  desired_size = 2
+  # Desired size leaves room for RabbitMQ replicas to spread across nodes.
+  min_size     = 2
+  max_size     = 5
+  desired_size = 4
 
   # KMS key for EKS secrets
   kms_key_arn = aws_kms_key.eks.arn
@@ -91,10 +132,7 @@ module "eks" {
   jenkins_role_arn  = data.terraform_remote_state.bootstrap.outputs.jenkins_role_arn
   jenkins_public_ip = data.terraform_remote_state.bootstrap.outputs.public_ip_jenkins
 
-  # my_ip_cidr comes from bootstrap-infra's remote state, captured
-  # once at bootstrap-infra apply time, instead of this module independently
-  # querying checkip.amazonaws.com again at a potentially much later time.
-  # See modules/eks/main.tf for the full rationale.
+  # my_ip_cidr is captured once from bootstrap-infra state rather than re-queried here.
   my_ip_cidr = data.terraform_remote_state.bootstrap.outputs.jenkins_my_ip_cidr
 
   # Whoever runs terraform apply automatically gets console access.
@@ -105,24 +143,21 @@ module "eks" {
   permissions_boundary_arn = local.permissions_boundary_arn
 }
 
-# EKS DATA (safe, resolves after creation)
+# EKS data
 data "aws_eks_cluster" "this" {
   name = module.eks.cluster_name
 
   depends_on = [module.eks]
 }
 
-# # EKS AUTH (safe, resolves after creation)
-# data "aws_eks_cluster_auth" "this" {
-#   name = module.eks.cluster_name
-
-#   depends_on = [module.eks]
-# }
-
 # ECR — global, no VPC dependency
 module "ecr" {
-  source       = "../../modules/ecr"
-  repositories = ["frontend-svc", "user-svc", "product-svc"]
+  source = "../../modules/ecr"
+  repositories = [
+    "catalogix-user-svc", "catalogix-catalog-svc", "catalogix-inventory-svc", "catalogix-cart-svc", 
+    "catalogix-payment-svc", "catalogix-checkout-svc", "catalogix-notification-svc",
+    "catalogix-frontend", "catalogix-gateway"
+  ]
 }
 
 # ALB Controller (installs the AWS Load Balancer Controller into EKS)
@@ -137,28 +172,16 @@ module "alb" {
   depends_on = [module.eks, module.sg]
 }
 
-# WAF — creates the Web ACL and publishes its ARN to SSM. The ALB itself is
-# created later by the AWS Load Balancer Controller (via the Ingress in
-# helm/catalogix-hc), which is what actually performs the association using
-# the wafv2-acl-arn annotation. See modules/waf/main.tf for the full reasoning.
-module "waf" {
-  source = "../../modules/waf"
-
-  name               = local.env_prefix
-  region             = var.aws_region
-  ssm_parameter_path = "/${local.env_prefix}/waf-acl-arn"
-
-  depends_on = [module.alb]
-}
-
 # RDS
 module "rds" {
   source = "../../modules/rds"
 
-  project_name            = "${local.env_prefix}-db"
-  db_name                 = "catalogix"
+  project_name = "${local.env_prefix}-db"
+  # Initial database required by RDS; unused. Per-service databases come from
+  # module.db_roles below.
+  db_name                 = "catalogix-admin"
   username                = local.db_username
-  password                = random_password.db.result
+  password                = local.db_master_password
   private_subnets         = local.private_subnets
   security_group_id       = module.sg.rds_sg
   db_engine_version       = "18.1"
@@ -167,25 +190,81 @@ module "rds" {
   skip_final_snapshot     = true
 
   ssm_parameter_path = "/${local.env_prefix}/rds-endpoint"
+
+  # Never create the database with a password that failed the policy check.
+  depends_on = [terraform_data.operator_credentials_check]
 }
 
-# Secrets Manager
-# Stores the generated credentials so the ap can read them via ESO
-# No one ever needs to know or handle the password except the app itself
+# Per-service databases + roles (see modules/db-roles/main.tf). Database names use
+# hyphens (catalogix-users, catalogix-catalog, ...) and must match
+# postgres-init/01-create-databases.sh and helm/catalogix-hc values-*.yaml `dbName`.
+module "db_roles" {
+  source = "../../modules/db-roles"
+
+  services = {
+    "user-svc"         = "catalogix-users"
+    "catalog-svc"      = "catalogix-catalog"
+    "inventory-svc"    = "catalogix-inventory"
+    "cart-svc"         = "catalogix-cart"
+    "payment-svc"      = "catalogix-payment"
+    "checkout-svc"     = "catalogix-checkout"
+    "notification-svc" = "catalogix-notification"
+  }
+
+  # Optional read-only login, active only when both keys are in the operator secret.
+  readonly_username = local.db_readonly_username
+  readonly_password = local.db_readonly_password
+
+  depends_on = [module.rds]
+}
+
+# Secrets Manager: stores generated DB credentials for the app to read via ESO.
 module "secrets" {
   source = "../../modules/secrets-manager"
 
-  # Namespaced name avoids collision if you add more envs (staging, prod).
+  # Namespaced to avoid collisions across environments.
   secret_name = "${local.env_prefix}/db-credentials"
 
   secret_values = {
     db_user = local.db_username
-    db_pass = random_password.db.result
+    db_pass = local.db_master_password
   }
 }
 
-# External Secrets Operator - syncs Secrets Manager secrets into K8s Secrets
-# This replaces the manual process of creating K8s Secrets wth `kubectl create secrets` in the Jenkins pipeline
+# JWT signing key and per-service DB credentials, separate from db-credentials so the
+# two rotate independently. Key names are copied verbatim into the 'catalogix-secrets'
+# K8s Secret by helm/catalogix-hc/templates/external-secrets.yaml; rename with care.
+module "app_secrets" {
+  source = "../../modules/secrets-manager"
+
+  secret_name = "${local.env_prefix}/app-secrets"
+
+  # Single merged map: one Terraform resource owns the whole secret version.
+  secret_values = merge(
+    {
+      # Machine secrets only. Human-chosen passwords live in "<env_prefix>/operator-credentials";
+      # helm/catalogix-hc's ExternalSecret merges the two.
+      jwt_secret = random_password.jwt.result
+    },
+    { for svc, creds in module.db_roles.credentials : "db_user_${replace(svc, "-", "_")}" => creds.username },
+    { for svc, creds in module.db_roles.credentials : "db_password_${replace(svc, "-", "_")}" => creds.password }
+  )
+}
+
+# Separate secret because Alertmanager runs in the `monitoring` namespace and K8s
+# Secrets are namespace-scoped, so it needs its own ExternalSecret.
+module "alerting_secrets" {
+  source = "../../modules/secrets-manager"
+
+  secret_name = "${local.env_prefix}/alerting-secrets"
+
+  secret_values = {
+    # Empty until var.smtp_password is supplied; no mail is sent until then.
+    smtp_password = var.smtp_password
+  }
+}
+
+# External Secrets Operator: syncs Secrets Manager secrets into K8s Secrets.
 module "eso" {
   source = "../../modules/eso"
 
@@ -201,32 +280,28 @@ module "eso" {
     kubectl    = kubectl.after_eks
   }
 
-  # ESO must come after EKS nodes and ALB controller so the cluster is stable
+  # ESO needs a stable cluster, so it waits for nodes and the ALB controller.
   depends_on = [module.eks, module.alb, module.sg]
 
 }
 
-# gp3 StorageClass — used by Prometheus and Grafana — moved here from modules/eks/main.tf.
-#
-# This resource uses the kubernetes provider. Keeping it inside module.eks caused it to be included in the targeted apply (-target=module.eks),
-# where the kubernetes provider resolves to localhost:80 because local.cluster_endpoint was "(known after apply)" at plan time.
-# Placing it in the root module ensures it runs only in (full apply), when module.eks is in state, the endpoint is known, and the provider connects to the real cluster.
-#
-# WaitForFirstConsumer ensures the EBS volume is created in the same AZ as
-# the pod that claims it — required for single-AZ deployments.
+
+# gp3 StorageClass for Prometheus and Grafana. Lives in the root module because the
+# kubernetes provider needs the cluster endpoint, which is unknown during a targeted
+# apply of module.eks. WaitForFirstConsumer creates the EBS volume in the pod's AZ.
 resource "kubernetes_storage_class_v1" "gp3" {
   provider = kubernetes.after_eks
 
   metadata {
     name = "gp3-sc"
     annotations = {
-      # Not set as default to avoid silently provisioning volumes for other workloads
+      # Not default, to avoid provisioning volumes for unrelated workloads
       "storageclass.kubernetes.io/is-default-class" = "false"
     }
   }
 
   storage_provisioner = "ebs.csi.aws.com"
-  # reclaim_policy = Delete ensures the EBS volume is deleted when the PVC is deleted, avoiding orphaned volumes and unexpected AWS charges.
+  # Delete reclaim policy removes the EBS volume with the PVC, avoiding orphans and charges.
   reclaim_policy         = "Delete"
   volume_binding_mode    = "WaitForFirstConsumer"
   allow_volume_expansion = true
@@ -239,8 +314,7 @@ resource "kubernetes_storage_class_v1" "gp3" {
     prevent_destroy = false
   }
 
-  # depends_on updated from aws_eks_addon.ebs_csi (module-internal ref)
-  # to module.eks — the root-level handle for the entire EKS module, which includes the ebs_csi addon internally.
+  # module.eks covers the ebs_csi addon.
   depends_on = [
     module.eks,
     module.alb,
@@ -249,7 +323,7 @@ resource "kubernetes_storage_class_v1" "gp3" {
   ]
 }
 
-# ALB Controller - Helm release to install the AWS Load Balancer Controller into the EKS cluster. This is required for the Ingress resources in the app to work, and is a common component in EKS clusters that use ALB for ingress.
+# ALB Controller: required for Ingress resources to produce ALBs.
 resource "helm_release" "alb_controller" {
   provider   = helm.after_eks
   name       = "aws-load-balancer-controller"
@@ -279,30 +353,13 @@ resource "helm_release" "alb_controller" {
   depends_on = [module.eks, module.alb]
 }
 
-# aws-auth ConfigMap — allows EKS worker nodes to join the cluster.
-#
-# Moved here from modules/eks/main.tf (was terraform_data + local-exec).
-# Reason: local-exec required kubectl and the aws CLI to be installed on
-# whichever machine runs terraform apply — a hidden runtime dependency that
-# broke on clean CI runners and the Jenkins EC2 after a fresh Ansible run.
-#
-# The alecks/kubectl provider (alias = after_eks) is already configured in providers.tf and already used for the ClusterSecretStore in the ESO module.
-# It authenticates via "aws eks get-token" exec block, so no local kubeconfig file is needed (load_config_file = false). 
-# This is consistent with how every other Kubernetes resource is managed in this root module.
-#
-# replace_on_change = [module.eks.node_role_arn, module.eks.cluster_name]
-# mirrors the triggers_replace on the old terraform_data: if the node role or cluster is replaced, the ConfigMap is re-applied automatically.
+# aws-auth ConfigMap: lets EKS worker nodes join the cluster. Applied through the
+# kubectl provider (exec-based token, no local kubeconfig or CLI dependency).
 resource "kubectl_manifest" "aws_auth" {
   provider = kubectl.after_eks
 
-  # Heredoc keeps the format identical to what aws-iam-authenticator expects.
-  # Double-yamlencode (outer manifest + inner mapRoles) introduces key-ordering and quoting edge cases with yamlencode — this is simpler and explicit.
-  #
-  # force_conflicts = true: if someone runs `kubectl apply` on this ConfigMap manually (e.g. to add a mapUsers entry), Terraform wins the field-manager conflict on the next apply and restores the desired state. 
-  # This is intentional — additional mapRoles entries (e.g. for Fargate profiles or cluster access entries) should be added here, not outside Terraform.
-  #
-  # Drift detection: if the ConfigMap is deleted or corrupted, Terraform detects the diff via normal state comparison and re-applies on the next apply.
-  # No triggers_replace needed — kubectl_manifest tracks real resource state, unlike terraform_data + local-exec which tracked nothing.
+  # Heredoc matches the format aws-iam-authenticator expects. force_conflicts makes
+  # Terraform win over manual kubectl edits; add extra mapRoles entries here.
   yaml_body = <<-YAML
 apiVersion: v1
 kind: ConfigMap

@@ -1,108 +1,53 @@
 {{ if .Values.ingress.enabled }}
-# BACKEND INGRESS
-apiVersion: networking.k8s.io/v1 
-kind: Ingress
-metadata:
-  name: catalogix-backend-ingress
-  namespace: {{ .Release.Namespace }}
-  annotations:
-    alb.ingress.kubernetes.io/load-balancer-name: catalogix-alb
-    alb.ingress.kubernetes.io/group.name: catalogix
-    alb.ingress.kubernetes.io/group.order: "10"
-
-    alb.ingress.kubernetes.io/scheme: internet-facing
-    # Application is intentionally internet-facing(Public ALB). Backend services remain private behind the ALB.
-    alb.ingress.kubernetes.io/target-type: ip
-    # Targets pods directly instead of nodes. Required best practice for EKS + ALB.
-    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80}]'
-    # DEV NOTE: Only HTTP for now. For production add:
-    #   alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:...
-    #   alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443}]'
-    #   alb.ingress.kubernetes.io/ssl-redirect: '443'
-    # TLS-ready design (ACM can be attached later).
-    # Enforces HTTPS without app-level changes.
-    alb.ingress.kubernetes.io/healthcheck-path: /actuator/health
-    alb.ingress.kubernetes.io/healthcheck-port: traffic-port
-    alb.ingress.kubernetes.io/success-codes: "200-399"
-    
-    # Health checks terminate at service layer, not pod IPs.
-    alb.ingress.kubernetes.io/healthcheck-interval-seconds: "15"
-    alb.ingress.kubernetes.io/healthy-threshold-count: "2"
-    alb.ingress.kubernetes.io/unhealthy-threshold-count: "2"
-
-    # Jenkins fetches the ARN from SSM and passes it via --set ingress.wafAclArn=<arn>,
-    # but without this annotation the ALB Ingress Controller never attaches the WAF rule.
-    # The WAF module was provisioned, its ARN stored, fetched, and passed to Helm —
-    # then silently discarded because no template consumed .Values.ingress.wafAclArn.
-    {{ if .Values.ingress.wafAclArn }}
-    alb.ingress.kubernetes.io/wafv2-acl-arn: {{ .Values.ingress.wafAclArn }}
-    {{ end }}
-spec:
-  ingressClassName: alb
-  rules:
-    # - host: {{ .Values.ingress.host | default "shop.local" }}
-    # Remove the host line and unindent the http block below so it applies to ALL hosts
-    - http:
-        paths:
-          # User Service
-          - path: {{ .Values.ingress.paths.users | default "/users" }}
-            pathType: Prefix
-            backend:
-              service:
-                name: user-svc
-                port:
-                  number: {{ .Values.userSvc.service.port | int }}
-
-          # Product service
-          - path: {{ .Values.ingress.paths.products | default "/products" }}
-            pathType: Prefix
-            backend:
-              service:
-                name: product-svc
-                port:
-                  number: {{ .Values.productSvc.service.port | int }}
-                  
----
-# FRONTEND INGRESS 
+# Cloud edge: AWS ALB. Application edge: the in-cluster nginx gateway.
+# Only the gateway is exposed by the ALB; it owns /api/* service routing and
+# forwards all non-API traffic to the React frontend.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: catalogix-frontend-ingress
+  name: catalogix-gateway-ingress
   namespace: {{ .Release.Namespace }}
   annotations:
-    alb.ingress.kubernetes.io/load-balancer-name: catalogix-alb
+    {{- /* ALB names are unique per account + region; the pipeline passes
+           ingress.loadBalancerName=catalogix-<env>-alb. When unset the controller
+           generates a name. */}}
+    {{- with .Values.ingress.loadBalancerName }}
+    alb.ingress.kubernetes.io/load-balancer-name: {{ . }}
+    {{- end }}
     alb.ingress.kubernetes.io/group.name: catalogix
-    alb.ingress.kubernetes.io/group.order: "20"
-
+    alb.ingress.kubernetes.io/group.order: "10"
     alb.ingress.kubernetes.io/scheme: internet-facing
     alb.ingress.kubernetes.io/target-type: ip
+    {{ if .Values.ingress.tlsCertArn }}
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80},{"HTTPS":443}]'
+    alb.ingress.kubernetes.io/certificate-arn: {{ .Values.ingress.tlsCertArn }}
+    # Auto-adds an HTTP->HTTPS redirect action on the :80 listener so plain
+    # http:// links still work instead of hanging/erroring.
+    alb.ingress.kubernetes.io/ssl-redirect: "443"
+    {{ else }}
     alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80}]'
-
-    # Nginx serves / and returns 200 — correct health check for frontend
-    alb.ingress.kubernetes.io/healthcheck-path: /
+    {{ end }}
+    alb.ingress.kubernetes.io/healthcheck-path: /gateway/health
     alb.ingress.kubernetes.io/healthcheck-port: traffic-port
     alb.ingress.kubernetes.io/success-codes: "200-399"
     alb.ingress.kubernetes.io/healthcheck-interval-seconds: "15"
     alb.ingress.kubernetes.io/healthy-threshold-count: "2"
     alb.ingress.kubernetes.io/unhealthy-threshold-count: "2"
-
-    # WAF applies at the ALB level — the annotation is needed on the frontend ingress
-    # (the public entry point) as well as the backend, since both share the same ALB
-    # via the catalogix group. ALB Ingress Controller merges annotations per-group.
-    {{ if .Values.ingress.wafAclArn }}
-    alb.ingress.kubernetes.io/wafv2-acl-arn: {{ .Values.ingress.wafAclArn }}
-    {{ end }}
 spec:
   ingressClassName: alb
   rules:
+    {{- if .Values.ingress.host }}
+    - host: {{ .Values.ingress.host | quote }}
+      http:
+    {{- else }}
     - http:
+    {{- end }}
         paths:
-          - path: {{ .Values.ingress.paths.frontend | default "/" }}
+          - path: /
             pathType: Prefix
             backend:
               service:
-                name: frontend-svc
+                name: gateway
                 port:
-                  number: {{ .Values.frontendSvc.service.port | int }}
-
+                  number: {{ .Values.gateway.service.port | int }}
 {{ end }}

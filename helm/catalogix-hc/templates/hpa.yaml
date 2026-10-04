@@ -1,74 +1,81 @@
-# Enable when autoscaling is needed
 {{- if and .Values.hpa .Values.hpa.enabled }}
+# HPA for backend services, one YAML document each.
+# Memory is opt-in (hpa.memoryUtilization): for a JVM the committed heap stays high after
+# load drops, so the service would never scale in. CPU is the default signal.
+{{- range $name, $svc := .Values.backendServices }}
+{{- if $svc.hpa }}
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
-  name: user-svc-hpa
-  namespace: {{ .Release.Namespace }}
+  name: {{ $name }}-hpa
+  namespace: {{ $.Release.Namespace }}
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
-    name: user-svc
-  minReplicas: {{ .Values.userSvc.hpa.minReplicas }}
-  maxReplicas: {{ .Values.userSvc.hpa.maxReplicas }}
+    name: {{ $name }}
+  minReplicas: {{ $svc.hpa.minReplicas }}
+  maxReplicas: {{ $svc.hpa.maxReplicas }}
   metrics:
     - type: Resource
       resource:
         name: cpu
         target:
           type: Utilization
-          averageUtilization: {{ .Values.userSvc.hpa.cpuUtilization }}
+          averageUtilization: {{ $svc.hpa.cpuUtilization }}
+    {{- if $svc.hpa.memoryUtilization }}
     - type: Resource
       resource:
         name: memory
         target:
           type: Utilization
-          averageUtilization: {{ .Values.userSvc.hpa.memoryUtilization }}
+          averageUtilization: {{ $svc.hpa.memoryUtilization }}
+    {{- end }}
 ---
+{{- end }}
+{{- end }}
+# HPA for frontend
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
-  name: product-svc-hpa
+  name: frontend-hpa
   namespace: {{ .Release.Namespace }}
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
-    name: product-svc
-  minReplicas: {{ .Values.productSvc.hpa.minReplicas }}
-  maxReplicas: {{ .Values.productSvc.hpa.maxReplicas }}
+    name: frontend
+  minReplicas: {{ .Values.frontend.hpa.minReplicas }}
+  maxReplicas: {{ .Values.frontend.hpa.maxReplicas }}
   metrics:
     - type: Resource
       resource:
         name: cpu
         target:
           type: Utilization
-          averageUtilization: {{ .Values.productSvc.hpa.cpuUtilization }}
-    - type: Resource
-      resource:
-        name: memory
-        target:
-          type: Utilization
-          averageUtilization: {{ .Values.productSvc.hpa.memoryUtilization }}
+          averageUtilization: {{ .Values.frontend.hpa.cpuUtilization }}
+{{- end }}
 ---
+# HPA for gateway
+{{- if and .Values.gateway.hpa .Values.gateway.hpa.enabled }}
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
-  name: frontend-svc-hpa
+  name: gateway-hpa
   namespace: {{ .Release.Namespace }}
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
-    name: frontend-svc
-  minReplicas: {{ .Values.frontendSvc.hpa.minReplicas }}
-  maxReplicas: {{ .Values.frontendSvc.hpa.maxReplicas }}
+    name: gateway
+  minReplicas: {{ .Values.gateway.hpa.minReplicas }}
+  maxReplicas: {{ .Values.gateway.hpa.maxReplicas }}
   metrics:
     - type: Resource
       resource:
         name: cpu
         target:
           type: Utilization
-          averageUtilization: {{ .Values.frontendSvc.hpa.cpuUtilization }}
+          averageUtilization: {{ .Values.gateway.hpa.cpuUtilization }}
+---
 {{- end }}

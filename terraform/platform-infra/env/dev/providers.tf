@@ -16,6 +16,9 @@ terraform {
     kubectl    = { source = "alekc/kubectl", version = "~> 2.0" }
     tls        = { source = "hashicorp/tls", version = "~> 4.0" }
     random     = { source = "hashicorp/random", version = "~> 3.0" }
+    # Per-service databases + roles (module.db_roles). Connects directly to Postgres,
+    # reachable because rds_ingress_jenkins lets the Jenkins SG reach RDS on 5432.
+    postgresql = { source = "cyrilgdn/postgresql", version = "~> 1.25" }
   }
 }
 
@@ -26,7 +29,7 @@ provider "aws" {
     tags = {
       Project     = "Catalogix"
       ManagedBy   = "Terraform"
-      Environment = "dev"
+      Environment = var.environment
     }
   }
 }
@@ -73,4 +76,16 @@ provider "kubectl" {
       "--region", var.aws_region
     ]
   }
+}
+
+# Connects as the RDS master user. module.db_roles depends on module.rds, which orders
+# this connection after the instance exists (providers cannot declare depends_on).
+provider "postgresql" {
+  host            = module.rds.rds_address
+  port            = 5432
+  username        = local.db_username
+  password        = local.db_master_password
+  superuser       = false
+  connect_timeout = 15
+  sslmode         = "require"
 }

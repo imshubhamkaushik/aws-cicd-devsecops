@@ -1,38 +1,40 @@
-{{- if or (and .Values.hpa .Values.hpa.enabled) (gt (.Values.userSvc.replicaCount | int) 1) }}
+{{- range $name, $svc := .Values.backendServices }}
+{{- if or (and $.Values.hpa $.Values.hpa.enabled) (gt ($svc.replicaCount | int) 1) }}
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
-  name: user-svc-pdb
+  name: {{ $name }}-pdb
+  namespace: {{ $.Release.Namespace }}
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: {{ $name }}
+---
+{{- end }}
+{{- end }}
+{{- if or (and .Values.hpa .Values.hpa.enabled) (gt (.Values.frontend.replicaCount | int) 1) }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: frontend-pdb
   namespace: {{ .Release.Namespace }}
 spec:
   maxUnavailable: 1
   selector:
     matchLabels:
-      app: user-svc
+      app: frontend
 {{- end }}
 ---
-{{- if or (and .Values.hpa .Values.hpa.enabled) (gt (.Values.productSvc.replicaCount | int) 1) }}
+{{- if or (and .Values.gateway.hpa .Values.gateway.hpa.enabled) (gt (.Values.gateway.replicaCount | int) 1) }}
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
-  name: product-svc-pdb
+  name: gateway-pdb
   namespace: {{ .Release.Namespace }}
 spec:
   maxUnavailable: 1
   selector:
     matchLabels:
-      app: product-svc
-{{- end }}
----
-{{- if or (and .Values.hpa .Values.hpa.enabled) (gt (.Values.frontendSvc.replicaCount | int) 1) }}
-apiVersion: policy/v1
-kind: PodDisruptionBudget
-metadata:
-  name: frontend-svc-pdb
-  namespace: {{ .Release.Namespace }}
-spec:
-  maxUnavailable: 1
-  selector:
-    matchLabels:
-      app: frontend-svc
+      app: gateway
 {{- end }}

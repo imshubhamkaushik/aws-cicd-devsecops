@@ -1,41 +1,16 @@
 ---
-# =============================================================================
-# HOW THIS PLAYBOOK IS EXECUTED
-# =============================================================================
+# Execution order: ansible.py runs this playbook twice, in two separate processes.
 #
-# ansible.py calls ansible-playbook TWO times with --limit — two phases, two
-# separate OS processes. Phase 1 has two steps inside it (both run in the same subprocess); Phase 2 is Jenkins alone, in its own subprocess. 
-# The "Phase 1 step 1/2" labels below describe POSITION WITHIN PHASE 1, not a third top-level phase — there are only ever two subprocess calls.
+# Phase 1  --limit all:!jenkins
+#   Baseline (common + docker) on the SonarQube host, then the 'sonarqube' play, which
+#   generates vault_sonar_token and writes it to vault.yaml.
+# Phase 2  --limit jenkins
+#   A new process re-reads vault.yaml, so Jenkins gets a real SONARQUBE_TOKEN in
+#   /etc/default/jenkins and the JCasC credential. The baseline play runs here for the
+#   Jenkins host, so every host gets common + docker exactly once.
 #
-# Phase 1  --limit all:!jenkins   (everything except Jenkins)
-#   Step 1: the 'all' play (common + docker) on every host the limit allows
-#           — i.e. the SonarQube host only, since Jenkins is excluded here.
-#   Step 2: the 'sonarqube' play — generates vault_sonar_token and writes
-#           it into vault.yaml before this subprocess exits.
-#   The '!jenkins' exclusion matters because 'jenkins' IS a subset of 'all':
-#   without it, the baseline play would also run against the Jenkins host in this same subprocess, 
-#   before vault_sonar_token exists — defeating the whole point of splitting Jenkins into its own later subprocess.
-#
-# Phase 2  --limit jenkins   (Jenkins only)
-#   Fresh subprocess → vault.yaml re-read from disk → vault_sonar_token is
-#   already populated (written during Phase 1) → Jenkins renders /etc/default/jenkins with a real SONARQUBE_TOKEN → sonarqube-token credential in JCasC has a real value. 
-#   The baseline play (common + docker) also runs again here, scoped to the Jenkins host this time —
-#   it never ran against that host during Phase 1, since the limit excluded it. 
-#   Each host gets common+docker exactly once across the two phases combined; neither host gets it twice.
-#
-# WHY --limit AND NOT SEPARATE PLAYBOOK FILES:
-#   One playbook file is easier to maintain and review. --limit scopes execution
-#   to one group at runtime without duplicating role definitions across files.
-#   Both approaches are valid; this one is simpler for a two-host setup.
-#
-# IDEMPOTENCY CONTRACT:
-#   Every play and every role task must be safe to re-run without side effects.
-#   Guards used throughout:
-#     - state: present / started / directory (Ansible built-ins — always idempotent)
-#     - when: some_check.rc != 0  (skip if already done)
-#     - when: not token_in_vault  (skip vault write if token already exists)
-#     - Webhook created only when name 'Jenkins' not found in existing list
-# =============================================================================
+# All plays and tasks are idempotent: built-in states (present/started/directory) and
+# guards such as `when: not token_in_vault`.
 
 # ── Phase 1, step 1 of 2: baseline packages + Docker ──────────────────────────
 #

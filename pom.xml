@@ -7,19 +7,32 @@
 
     <groupId>com.catalogix</groupId>
     <artifactId>catalogix</artifactId>
-    <version>1.0</version>
+    <version>2.0</version>
     <packaging>pom</packaging>
 
     <!-- Modules -->
     <modules>
-        <module>user-svc</module>
-        <module>product-svc</module>
+        <module>backend/security-common</module>
+        <module>backend/user-svc</module>
+        <module>backend/catalog-svc</module>
+        <module>backend/inventory-svc</module>
+        <module>backend/cart-svc</module>
+        <module>backend/payment-svc</module>
+        <module>backend/checkout-svc</module>
+        <module>backend/notification-svc</module>
     </modules>
 
     <!-- Global Properties -->
     <properties>
         <java.version>21</java.version>
-        <spring.boot.version>3.5.16</spring.boot.version>
+        <spring.boot.version>4.1.1</spring.boot.version>
+        <jjwt.version>0.13.0</jjwt.version>
+        <springdoc.version>3.1.0</springdoc.version>
+        <httpclient5.version>5.6.4</httpclient5.version>
+        <resilience4j.version>2.4.0</resilience4j.version>
+        <testcontainers.version>2.0.5</testcontainers.version>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
     </properties>
 
     <!-- Dependency Management -->
@@ -33,38 +46,58 @@
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
-            
-            <!-- Tomcat -->
+
             <dependency>
-                <groupId>org.apache.tomcat.embed</groupId>
-                <artifactId>tomcat-embed-core</artifactId>
-                <version>10.1.55</version>
-            </dependency>
-            <dependency>
-                <groupId>org.apache.tomcat.embed</groupId>
-                <artifactId>tomcat-embed-el</artifactId>
-                <version>10.1.55</version>
-            </dependency>
-            <dependency>
-                <groupId>org.apache.tomcat.embed</groupId>
-                <artifactId>tomcat-embed-websocket</artifactId>
-                <version>10.1.55</version>
+                <groupId>io.github.resilience4j</groupId>
+                <artifactId>resilience4j-bom</artifactId>
+                <version>${resilience4j.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
             </dependency>
 
-            <!-- Postgres -->
             <dependency>
-                <groupId>org.postgresql</groupId>
-                <artifactId>postgresql</artifactId>
-                <version>42.7.11</version>
+                <groupId>io.github.resilience4j</groupId>
+                <artifactId>resilience4j-spring-boot4</artifactId>
+                <version>${resilience4j.version}</version>
             </dependency>
 
-            <!-- Testcontainers (centralized) -->
             <dependency>
                 <groupId>org.testcontainers</groupId>
                 <artifactId>testcontainers-bom</artifactId>
-                <version>1.20.4</version>
+                <version>${testcontainers.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
+            </dependency>
+
+            <dependency>
+                <groupId>org.apache.httpcomponents.client5</groupId>
+                <artifactId>httpclient5</artifactId>
+                <version>${httpclient5.version}</version>
+            </dependency>
+
+            <!-- Springdoc / Swagger UI -->
+            <dependency>
+                <groupId>org.springdoc</groupId>
+                <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+                <version>${springdoc.version}</version>
+            </dependency>
+
+            <!-- JJWT (JWT issuing/parsing) -->
+            <dependency>
+                <groupId>io.jsonwebtoken</groupId>
+                <artifactId>jjwt-api</artifactId>
+                <version>${jjwt.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.jsonwebtoken</groupId>
+                <artifactId>jjwt-impl</artifactId>
+                <version>${jjwt.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>io.jsonwebtoken</groupId>
+                <artifactId>jjwt-gson</artifactId>
+                <version>${jjwt.version}</version>
             </dependency>
 
         </dependencies>
@@ -106,7 +139,22 @@
                     <artifactId>maven-surefire-plugin</artifactId>
                     <version>3.1.2</version>
                     <configuration>
+                        <!-- Tests tagged @Tag("integration") (Testcontainers, need Docker) run in
+                             failsafe below, after every unit test has passed. -->
                         <excludedGroups>integration</excludedGroups>
+                    </configuration>
+                </plugin>
+                <!-- Integration Tests -->
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-failsafe-plugin</artifactId>
+                    <version>3.1.2</version>
+                    <configuration>
+                        <classesDirectory>${project.build.outputDirectory}</classesDirectory>
+                        <groups>integration</groups>
+                        <includes>
+                            <include>**/*IntegrationTest.java</include>
+                        </includes>
                     </configuration>
                 </plugin>
 
@@ -121,6 +169,18 @@
 
         </pluginManagement>
         <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-failsafe-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>integration-test</goal>
+                            <goal>verify</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
             <plugin>
                 <groupId>org.jacoco</groupId>
                 <artifactId>jacoco-maven-plugin</artifactId>

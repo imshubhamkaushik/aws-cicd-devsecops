@@ -60,8 +60,11 @@ tool:
         properties:
           - installSource:
               installers:
+                # Keep in step with frontend/Dockerfile (node:24-alpine),
+                # frontend/.nvmrc and package.json "engines" — the tests CI runs
+                # should execute on the same Node major the image is built with.
                 - nodeJSInstaller:
-                    id: "22.15.0"
+                    id: "24.11.0"
                     npmPackagesRefreshHours: 72
 
 configuration-as-code:

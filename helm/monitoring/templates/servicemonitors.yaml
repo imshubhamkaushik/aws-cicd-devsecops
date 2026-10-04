@@ -15,11 +15,62 @@ spec:
         operator: In
         values:
           - user-svc
-          - product-svc
-          # frontend-svc is excluded: nginx does not expose /actuator/prometheus.
+          - catalog-svc
+          - inventory-svc
+          - cart-svc
+          - payment-svc
+          - checkout-svc
+          - notification-svc
+          # frontend is excluded: nginx does not expose /actuator/prometheus.
           # Add it here if a metrics endpoint is added to the frontend image.
   endpoints:
     - port: http
       path: /actuator/prometheus
+      interval: 15s
+      scrapeTimeout: 10s
+
+---
+# RabbitMQ: queue depth, consumers, unacked messages and partition status from the
+# rabbitmq_prometheus plugin (enabled in rabbitmq.yaml) on port 15692, no exporter sidecar.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: catalogix-rabbitmq
+  namespace: {{ .Release.Namespace }}
+  labels:
+    release: monitoring
+spec:
+  namespaceSelector:
+    matchNames:
+      - {{ .Values.global.targetNamespace | default "catalogix" }}
+  selector:
+    matchLabels:
+      app: rabbitmq
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 15s
+      scrapeTimeout: 10s
+---
+# Gateway: the nginx-prometheus-exporter sidecar (see gateway.yaml) re-exposes stub_status
+# as Prometheus metrics on the :9113 "metrics" Service port. nginx is the one hop that does
+# not expose /actuator/prometheus.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: catalogix-gateway
+  namespace: {{ .Release.Namespace }}
+  labels:
+    release: monitoring
+spec:
+  namespaceSelector:
+    matchNames:
+      - {{ .Values.global.targetNamespace | default "catalogix" }}
+  selector:
+    matchLabels:
+      app: gateway
+  endpoints:
+    - port: metrics
+      path: /metrics
       interval: 15s
       scrapeTimeout: 10s

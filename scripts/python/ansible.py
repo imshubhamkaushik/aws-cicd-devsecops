@@ -396,14 +396,8 @@ def run_ansible() -> None:
     )
  
     # ── Phase 1 (steps 1-2 of 2, one subprocess): baseline + SonarQube ───
-    # --limit all:!jenkins runs the 'all' play (common+docker) and the
-    # 'sonarqube' play in this one subprocess. The ':!jenkins' exclusion is
-    # required, not optional: if this were plain --limit all instead, the
-    # jenkins play (hosts: jenkins) would ALSO run here, because 'jenkins'
-    # is a subset of 'all' — executing the jenkins role before
-    # vault_sonar_token exists, which is exactly the bug the two-phase
-    # split exists to avoid. ':!jenkins' keeps the jenkins host out of this
-    # subprocess entirely; it gets its baseline play in Phase 2 instead.
+    # Phase 1 runs the common baseline and SonarQube plays. ':!jenkins' keeps the jenkins play
+    # out, because it needs vault_sonar_token, which only exists after this phase.
     _run_playbook(
         limit="all:!jenkins",
         step_label="Phase 1/2 — Common baseline + SonarQube",

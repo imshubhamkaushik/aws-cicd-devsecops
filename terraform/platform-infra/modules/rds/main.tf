@@ -24,15 +24,9 @@ resource "aws_db_instance" "postgres" {
 
   publicly_accessible     = false
   backup_retention_period = var.backup_retention_period
-  # DEV NOTE: skip_final_snapshot = true means no backup snapshot is taken when this RDS instance is destroyed. Fine for dev — acceptable to lose the data. 
-  # For production set to false and set final_snapshot_identifier.
-  skip_final_snapshot = var.skip_final_snapshot # Fine for dev, but not for production
-
-  # lifecycle {
-  #   prevent_destroy = true
-  # }
-  # DEV NOTE: lifecycle { prevent_destroy=true } prevents accidental deletion via a mistyped terraform destroy or workspace destroy. 
-  # To intentionally delete: comment this block out, apply, then destroy .
+  # Skipping the final snapshot is acceptable for dev; in production set it to
+  # false and provide final_snapshot_identifier.
+  skip_final_snapshot = var.skip_final_snapshot
 }
 
 resource "aws_ssm_parameter" "rds_endpoint" {

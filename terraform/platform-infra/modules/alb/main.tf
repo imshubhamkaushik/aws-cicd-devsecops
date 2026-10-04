@@ -4,20 +4,11 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 6.0"
     }
-    # kubernetes = {
-    #   source  = "hashicorp/kubernetes"
-    #   version = "~> 3.0"
-    # }
-    # helm = {
-    #   source  = "hashicorp/helm"
-    #   version = "~> 3.0"
-    # }
   }
 }
 
-# Policy JSON is committed to the repo — no external HTTP call at plan time.
-# To update: download a new version of the file and commit it.
-# Source: https://github.com/kubernetes-sigs/aws-load-balancer-controller/blob/v2.11.0/docs/install/iam_policy.json
+# Policy JSON is committed so plan makes no external HTTP call.
+# Source (v2.11.0): https://github.com/kubernetes-sigs/aws-load-balancer-controller/blob/v2.11.0/docs/install/iam_policy.json
 
 resource "aws_iam_policy" "alb" {
   name        = "${var.cluster_name}-alb-policy"

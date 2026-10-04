@@ -11,7 +11,7 @@ resource "aws_iam_role" "jenkins_ec2_role" {
   })
 }
 
-# Custom policy for Jenkins to manage EC2 compute resources — instances, security groups, launch templates, volumes etc and VPC and network resources
+# Jenkins policy: EC2 compute, security groups, launch templates, volumes, VPC networking
 resource "aws_iam_policy" "jenkins_ec2_vpc" {
   name        = "${var.project_name}-jenkins-ec2-vpc-policy"
   description = "Policy for VPC management (VPC, subnet, IGW, NAT, EIP, route table management) and EC2 management (EC2 instances, security groups, launch templates, EBS volumes) for Terraform"
@@ -176,6 +176,8 @@ resource "aws_iam_role_policy_attachment" "jenkins_asg" {
 }
 
 # Custom policy for Jenkins to manage EKS and ECR
+data "aws_caller_identity" "current" {}
+
 resource "aws_iam_policy" "jenkins_eks_ecr" {
   name        = "${var.project_name}-jenkins-eks-ecr-policy"
   description = "EKS cluster management and ECR push/pull for Jenkins"
@@ -219,9 +221,8 @@ resource "aws_iam_policy" "jenkins_eks_ecr" {
       },
       {
         # platform-infra creates aws_eks_access_entry and
-        # aws_eks_access_policy_association resources. These API calls are
-        # separate from the core EKS cluster actions above and must be
-        # explicitly granted — they are NOT included in any AWS managed policy.
+        # aws_eks_access_policy_association resources; these API calls are
+        # separate from the core EKS actions and must be granted explicitly.
         Sid    = "EKSAccessEntryManagement"
         Effect = "Allow"
         Action = [
@@ -256,7 +257,6 @@ resource "aws_iam_policy" "jenkins_eks_ecr" {
           "ecr:CompleteLayerUpload",
           "ecr:PutImage",
           "ecr:DescribeRepositories",
-          "ecr:CreateRepository",
           "ecr:DeleteRepository",
           "ecr:ListImages",
           "ecr:DescribeImages",
@@ -266,6 +266,16 @@ resource "aws_iam_policy" "jenkins_eks_ecr" {
           "ecr:TagResource",
           "ecr:ListTagsForResource"
         ]
+        # Scoped to this account and region rather than an explicit repo list,
+        # so the bootstrap layer stays decoupled from the platform-infra ecr module.
+        Resource = "arn:aws:ecr:${var.aws_region}:${data.aws_caller_identity.current.account_id}:repository/*"
+      },
+      {
+        # ecr:CreateRepository does not support resource-level permissions, so
+        # it needs "*". Kept separate so the scoped grant above stays narrow.
+        Sid      = "ECRRepoCreate"
+        Effect   = "Allow"
+        Action   = ["ecr:CreateRepository"]
         Resource = "*"
       }
     ]
@@ -288,6 +298,9 @@ resource "aws_iam_policy" "jenkins_kms" {
     Version = "2012-10-17"
     Statement = [
       {
+        # Resource "*": kms:CreateKey cannot be scoped, and this policy is
+        # applied before platform-infra creates the key, so there is no ARN
+        # to reference yet.
         Sid    = "KMSKeyManagement"
         Effect = "Allow"
         Action = [
@@ -321,37 +334,12 @@ resource "aws_iam_role_policy_attachment" "jenkins_kms" {
   policy_arn = aws_iam_policy.jenkins_kms.arn
 }
 
-# -----------------------------------------------------------------------
-# Permissions boundary — closes a privilege-escalation path.
-#
-# Jenkins's IAM policy (below) grants iam:CreateRole, iam:CreatePolicy,
-# iam:PutRolePolicy/AttachRolePolicy, iam:PassRole, iam:CreateInstanceProfile
-# and (separately) ec2:RunInstances. Resource-level IAM scoping restricts
-# the NAME of a role/policy Jenkins can create — it does NOT restrict what
-# permissions the policy DOCUMENT it creates can grant. Combined, those
-# permissions let Jenkins: create a role named "catalogix-anything", attach
-# an arbitrarily permissive inline policy to it, put it in an instance
-# profile, launch an EC2 instance with that profile, and end up with
-# effectively account-admin access. Anyone who can trigger a Jenkins
-# Terraform run — or who compromises the Jenkins EC2 instance — inherits
-# that path.
-#
-# This boundary is attached (via the permissions_boundary argument, plumbed
-# through as var.permissions_boundary_arn) to every IAM role created by
-# platform-infra's modules, and is enforced — not just suggested — via the
-# Condition on RoleCreate below. A role with this boundary can never call
-# IAM, STS AssumeRole*, Organizations, or Account-settings actions, no
-# matter what gets attached to it. That closes the identity-escalation and
-# cross-account-pivot path specifically.
-#
-# What this does NOT do: cap the role to only the services it legitimately
-# needs (EC2/EKS/ECR/RDS/etc.) — it's a blunt "no IAM/STS/Org footguns"
-# boundary, not a least-privilege one. A new role with an over-broad
-# attached policy could still, e.g., touch unrelated S3 buckets or EC2
-# resources. If you want that tightened further, replace the NotAction list
-# below with an explicit allow-list of exactly the actions this account's
-# infra needs.
-# -----------------------------------------------------------------------
+# Permissions boundary: closes a privilege-escalation path.
+# Name-scoped IAM permissions do not limit what a created policy can grant, so
+# Jenkins could otherwise mint an admin-equivalent role. The Condition on
+# RoleCreate forces this boundary onto every role Jenkins creates; such roles
+# can never call IAM, STS AssumeRole*, Organizations or Account actions.
+# It is a "no IAM/STS/Org" guardrail, not a least-privilege cap.
 resource "aws_iam_policy" "jenkins_boundary" {
   name        = "${var.project_name}-jenkins-boundary"
   description = "Permissions boundary required on every IAM role Jenkins creates — caps maximum effective permissions regardless of what's attached to the role."
@@ -386,10 +374,9 @@ resource "aws_iam_policy" "jenkins_iam" {
     Version = "2012-10-17"
     Statement = [
       {
-        # iam:CreateRole and iam:PassRole are separate actions. PassRole is required for Terraform to create IAM roles with the correct trust policy, but it does not grant permission to create the role itself. The CreateRole action is required to actually create the role.
-        # Split out from role management below specifically so the boundary
-        # condition can be applied only to role creation, not every role action. Without this split, 
-        # Terraform fails to create new roles with an AccessDenied error because the boundary condition is applied to all role actions, not just creation.
+        # Split out from role management so the boundary condition applies only
+        # to role creation; applying it to every role action breaks Terraform
+        # with AccessDenied.
         Sid    = "RoleCreate"
         Effect = "Allow"
         Action = ["iam:CreateRole"]
@@ -429,13 +416,9 @@ resource "aws_iam_policy" "jenkins_iam" {
         ]
       },
       {
-        # RoleManagement's Resource scope ("${var.project_name}-*") also
-        # matches Jenkins's own role name and Sonar's role name — meaning
-        # the permissions above, intended for roles Jenkins CREATES for EKS/
-        # ALB/ESO/etc., would otherwise also let Jenkins attach more
-        # policies to ITSELF directly, no new role required. Deny wins over
-        # the Allow in RoleManagement, so this closes that path without
-        # touching Jenkins's ability to manage every other role it owns.
+        # RoleManagement's "${var.project_name}-*" scope also matches Jenkins's
+        # own role, which would let it attach policies to itself. An explicit
+        # Deny closes that without affecting the roles it legitimately manages.
         Sid    = "PreventJenkinsSelfModification"
         Effect = "Deny"
         Action = [
@@ -469,12 +452,8 @@ resource "aws_iam_policy" "jenkins_iam" {
         ]
       },
       {
-        # Explicit Deny always wins, including over PolicyManagement's
-        # wildcard match on this exact ARN (the boundary policy's name
-        # matches ${var.project_name}-* like every other Jenkins-managed
-        # policy). Without this, Jenkins could edit or delete its own
-        # permissions boundary, which would silently defeat RoleCreate's
-        # Condition above.
+        # Explicit Deny overrides PolicyManagement's wildcard, so Jenkins cannot
+        # edit or delete the boundary that RoleCreate relies on.
         Sid    = "ProtectPermissionsBoundary"
         Effect = "Deny"
         Action = [
@@ -486,11 +465,8 @@ resource "aws_iam_policy" "jenkins_iam" {
         Resource = aws_iam_policy.jenkins_boundary.arn
       },
       {
-        # Jenkins is not granted iam:PutRolePermissionsBoundary or
-        # iam:DeleteRolePermissionsBoundary anywhere in this policy, so this
-        # explicit Deny is currently redundant with that omission — it's
-        # here so the guarantee survives a future edit that accidentally
-        # adds those actions, rather than relying on nobody ever doing that.
+        # Defence in depth: those actions are never granted, and this Deny keeps
+        # it that way if a future edit adds them.
         Sid    = "ProtectBoundaryAssignment"
         Effect = "Deny"
         Action = [
@@ -514,10 +490,8 @@ resource "aws_iam_policy" "jenkins_iam" {
         Resource = "arn:aws:iam::*:instance-profile/${var.project_name}-*"
       },
       {
-        # iam:ListInstanceProfilesForRole operates on a role ARN, not an
-        # instance-profile ARN, so it must be in its own statement with
-        # role/* resources. Placing it under instance-profile/* causes a
-        # 403 AccessDenied when Terraform destroys EKS node/addon roles.
+        # iam:ListInstanceProfilesForRole acts on a role ARN, so it needs its own
+        # statement with role/* resources (otherwise destroying EKS roles gets 403).
         Sid    = "ListInstanceProfilesForRole"
         Effect = "Allow"
         Action = ["iam:ListInstanceProfilesForRole"]
@@ -526,10 +500,8 @@ resource "aws_iam_policy" "jenkins_iam" {
         ]
       },
       {
-        # EKS calls iam:GetRole on AWSServiceRoleForAmazonEKSNodegroup to check
-        # if the SLR already exists before creating it. Scoping to
-        # aws-service-role/* is insufficient — AWS requires Resource "*" for
-        # this SLR existence check to pass.
+        # EKS checks whether the nodegroup service-linked role exists via
+        # iam:GetRole; AWS requires Resource "*" for that check.
         Sid      = "SLRDescribe"
         Effect   = "Allow"
         Action   = ["iam:GetRole"]
@@ -594,7 +566,7 @@ resource "aws_iam_role_policy_attachment" "jenkins_iam" {
   policy_arn = aws_iam_policy.jenkins_iam.arn
 }
 
-# Custom policy for Jenkins to manage S3, CloudWatch Logs, SSM Parameter Store, Secrets Manager and STS for Jenkins operations and monitoring
+# Jenkins policy: S3 state, CloudWatch Logs, SSM, Secrets Manager and STS
 resource "aws_iam_policy" "jenkins_s3_ops" {
   name        = "${var.project_name}-jenkins-s3-ops-policy"
   description = "S3, SSM Parameter Store, Secrets Manager,STS caller identity, and CloudWatch Logs for Jenkins CI/CD"
@@ -625,8 +597,7 @@ resource "aws_iam_policy" "jenkins_s3_ops" {
         Resource = "arn:aws:s3:::catalogix-tfstate/*"
       },
       # SSM Parameter Store
-      # ssm:DescribeParameters must be Resource = "*" — it is a service-level
-      # listing action that AWS evaluates against the account root, not a parameter path.
+      # ssm:DescribeParameters is a service-level listing action and requires "*".
       {
         Sid      = "SSMDescribeParameters"
         Effect   = "Allow"
@@ -685,12 +656,12 @@ resource "aws_iam_policy" "jenkins_s3_ops" {
           "secretsmanager:ListSecretVersionIds",
           "secretsmanager:RestoreSecret",
 
-          # Required by Terraform AWS provider during refresh/read
+          # Needed by the Terraform AWS provider during refresh/read
           "secretsmanager:GetResourcePolicy",
           "secretsmanager:PutResourcePolicy",
           "secretsmanager:DeleteResourcePolicy",
 
-          # Often needed by Terraform/provider internals
+          # Used by Terraform provider internals
           "secretsmanager:ListSecrets"
         ]
         Resource = "arn:aws:secretsmanager:${var.aws_region}:*:secret:${var.project_name}-*"

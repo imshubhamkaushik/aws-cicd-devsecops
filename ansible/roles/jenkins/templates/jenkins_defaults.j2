@@ -18,6 +18,5 @@ SONARQUBE_HOST="{{ hostvars[groups['sonarqube'][0]]['private_ip_address'] | defa
 # Source control
 GIT_REPO_URL="{{ git_repo_url }}"
 GITHUB_TOKEN="{{ vault_github_token }}"
-
 # SonarQube token
 SONARQUBE_TOKEN="{{ vault_sonar_token }}"

@@ -1,21 +1,28 @@
 # ====== Java / Spring Boot ======
-target/
+**/target/
 *.jar
 *.war
 *.class
 *.log
 
 # ====== Node / React ======
-node_modules/
-build/
-dist/
-coverage/
+**/node_modules/
+**/build/
+**/dist/
+**/coverage/
+# Local environment file with real secrets; copy from .env.example.
 .env
-.env.local
+**/.env
+**/.env.*
+.env.*
+!.env.example
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-_env
+
+# ====== Misc ======
+**.zip
+.github/
 
 # ====== IDE / Editors ======
 .idea/
@@ -25,75 +32,27 @@ _env
 *.classpath
 *.settings/
 
-# ====== OS / System ======
-.DS_Store
-Thumbs.db
+# TypeScript / build caches
+*.tsbuildinfo
+.eslintcache
+.cache/
+.tmp/
 
-# ====== Docker ======
-*.pid
-docker-compose.override.yml
-docker-compose.local.yml
+# Terraform
+**/.terraform/
+**/.terraform.lock.hcl
 
-# ====== Helm / Kubernetes ======
-*.tgz
-helm/values.local.yaml
-
-# ====== Sonar / CI ======
-.sonar/
-.scannerwork/
-reports/
-*.exec
-
-# ====== Misc ======
-logs/
-tmp/
-
-frontend-svc/build/
-user-svc/target/
-product-svc/target/
-*.zip
-/jenkinsfiles
-.github/
-kubeconfig
-
-# ====== Terraform ======
-*.tfstate
-*.tfstate.backup
-.terraform/
-.terraform.lock.hcl
-crash.log
-override.tf
-override.tf.json
-*_override.tf
-*_override.tf.json
-terraform.tfvars
-*.auto.tfvars
-*.tfvars.json
-*.tfplan
-
-# ====== Python ======
+# Generated / local-only artifacts that must never be committed
 __pycache__/
 *.pyc
 
-# ====== Ansible ======
-ansible/collections/
-collections/
-~/.ansible/collections/
+# `helm template` output contains rendered Secrets (random JWT/DB/RabbitMQ values)
+catalogix-rendered.yaml
+*rendered*.yaml
 
-# ====== Inventory & secrets ======
-inventory.ini
-hosts
-*.retry
+# Python tooling caches
+.ruff_cache/
+.pytest_cache/
+.mypy_cache/
 
-# ====== Vault / secrets (VERY IMPORTANT) ======
-*vault.yml
-*vault.yaml
-group_vars/*vault*
-host_vars/*vault*
-~/.vault_pass 
-
-# ====== SSH / private keys ======
-*.pem
-*.key
-*.crt
-*.ppk
+**/*password.txt

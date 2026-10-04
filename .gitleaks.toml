@@ -3,8 +3,16 @@ title = "Catalogix Gitleaks Config"
 [extend]
 useDefault = true
 
-[[allowlists]]
-description = "Allow test/example credential patterns"
+# NOTE: the pipelines pin gitleaks v8.21.2 (Jenkinsfile.app-cicd).
+# That version only understands the singular [allowlist] table. The plural
+# [[allowlists]] form is 8.25+ and is SILENTLY IGNORED by 8.21.2 — which is what
+# this file used before, so the allowlist below never applied. Keep the singular
+# form until the pinned version is bumped, and verify with:
+#   gitleaks detect --no-git --source . --config .gitleaks.toml
+[allowlist]
+description = "Documented placeholder credentials (never real secrets)"
 paths = [
     '''^\.env\.example$''',
+    # Fixture values asserting the credential generator's output shape.
+    '''^scripts/python/tests/test_credentials\.py$''',
 ]

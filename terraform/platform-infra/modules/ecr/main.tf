@@ -8,10 +8,7 @@ resource "aws_ecr_repository" "repos" {
 
   image_tag_mutability = "IMMUTABLE"
 
-  # force_delete = true allows Terraform to delete the repository even if it contains images. 
-  # This is convenient for development, but be cautious using it in production as it can lead to data loss if the repository is accidentally destroyed.
-  # In production, consider setting force_delete to false and implementing a lifecycle policy that expires old images, 
-  # or manually clean up images before destroying the repository.
+  # Lets Terraform delete a repository that still contains images; set to false in production.
   force_delete = true
 
   image_scanning_configuration {
@@ -20,6 +17,12 @@ resource "aws_ecr_repository" "repos" {
 
   encryption_configuration {
     encryption_type = "AES256"
+  }
+
+  # Only env/dev creates these repos; staging pulls from them. Destroying dev
+  # would silently break staging, so prevent_destroy makes it a hard error.
+  lifecycle {
+    prevent_destroy = true
   }
 }
 

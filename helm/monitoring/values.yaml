@@ -1,8 +1,15 @@
 # kube-prometheus-stack values
-# Aligned with previous manual Prometheus/Grafana setup
 
 global:
   targetNamespace: catalogix
+  # Set at deploy time: --set global.alertingSecretName=<cluster-name>/alerting-secrets
+  # (Jenkins derives the name from CLUSTER_NAME).
+  alertingSecretName: ""
+
+  # Set at deploy time: --set global.operatorSecretName=<cluster-name>/operator-credentials
+  # Holds the operator-chosen Grafana login. Empty skips grafana-admin-secret, so Grafana
+  # keeps the chart's default credentials.
+  operatorSecretName: ""
 
 kube-prometheus-stack:
 
@@ -42,14 +49,8 @@ kube-prometheus-stack:
   grafana:
     enabled: true
 
-    # DEV NOTE: existingSecret is empty so Grafana uses its default credentials.
-    # For production, create a k8s secret and reference it here:
-    #  kubectl create secret generic grafana-admin-secret \
-    #    --from-literal=admin-user=admin \
-    #    --from-literal=admin-password=<strong-password> \
-    #    -n monitoring
-    # Then set:
-    #   existingSecret: "grafana-admin-secret"
+    # The pipeline sets existingSecret to "grafana-admin-secret" (templates/grafana-admin-secret.yaml).
+    # Left empty, Grafana would use the chart's well-known default password.
 
     admin:
       existingSecret: ""
@@ -104,15 +105,16 @@ kube-prometheus-stack:
         limits:
           cpu: 200m
           memory: 256Mi
+      # Mounts the Secret created by templates/alertmanager-secrets.yaml at
+      # /etc/alertmanager/secrets/alertmanager-secrets/<key>.
+      secrets:
+        - alertmanager-secrets
 
     config:
       global:
         resolve_timeout: 5m
 
-      # Routing tree:
-      # critical  -> critical-receiver (wire up Slack/PagerDuty/email below)
-      # warning   -> null (logged, not paged — keeps noise low in dev)
-      # catch-all -> null
+      # critical -> critical-receiver (SMTP email); warning and everything else -> null.
       route:
         receiver: "null"
         group_by: ["alertname", "namespace", "service"]
@@ -123,7 +125,7 @@ kube-prometheus-stack:
           - matchers:
               - name: severity
                 value: critical
-            receiver: "null"
+            receiver: "critical-receiver"
             repeat_interval: 1h
           - matchers:
               - name: severity
@@ -131,42 +133,25 @@ kube-prometheus-stack:
             receiver: "null"
       
       receivers:
-        # Discards alerts silently. Used for warnings and unmapped alerts in dev.
+        # Discards alerts silently (warnings and unmapped alerts).
         - name: "null"
  
-        # Wire this up to Slack, PagerDuty, or email for real alerting.
-        # Slack example (uncomment and fill in):
-        #
-        # - name: "critical-receiver"
-        #   slack_configs:
-        #     - api_url: "https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK"
-        #       channel: "#alerts"
-        #       title: '[{{ .Status | toUpper }}] {{ .GroupLabels.alertname }}'
-        #       text: >-
-        #         {{ range .Alerts }}
-        #           *Service:* {{ .Labels.service }}
-        #           *Namespace:* {{ .Labels.namespace }}
-        #           *Description:* {{ .Annotations.description }}
-        #         {{ end }}
-        #       send_resolved: true
-        #
-        # Email example (uncomment and fill in):
-        #
-        # - name: "critical-receiver"
-        #   email_configs:
-        #     - to: "oncall@yourteam.com"
-        #       from: "alertmanager@yourteam.com"
-        #       smarthost: "smtp.yourprovider.com:587"
-        #       auth_username: "alertmanager@yourteam.com"
-        #       auth_password: "<smtp-password>"
-        #       send_resolved: true
-        #
-        # For now critical-receiver is also null so the chart deploys cleanly in dev.
+        # auth_password_file keeps the SMTP password out of this file. If smtp_password is
+        # empty the file is empty and Alertmanager logs a send failure per critical alert.
         - name: "critical-receiver"
+          email_configs:
+            # Empty placeholders: Alertmanager config has no ${VAR} interpolation, so
+            # Jenkinsfile.platform-infra supplies the values with --set at deploy time.
+            - to: ""            # --set 'kube-prometheus-stack.alertmanager.config.receivers[1].email_configs[0].to=ops@example.com'
+              from: "alertmanager@catalogix.local"
+              smarthost: ""     # --set 'kube-prometheus-stack.alertmanager.config.receivers[1].email_configs[0].smarthost=smtp.example.com:587'
+              auth_username: "" # --set 'kube-prometheus-stack.alertmanager.config.receivers[1].email_configs[0].auth_username=alerts@example.com'
+              auth_password_file: /etc/alertmanager/secrets/alertmanager-secrets/smtp_password
+              require_tls: true
+              send_resolved: true
  
-      # Inhibit rules suppress downstream alerts when the root cause is already firing.
-      # One outage should fire ONE alert (ServiceUnavailable), not three.
-      # HighErrorRate and HighLatencyP95 are symptoms of the outage, not separate problems.
+      # Inhibit rules: one outage should fire one alert (ServiceUnavailable), not also
+      # HighErrorRate and HighLatencyP95.
       inhibit_rules:
         - source_matchers:
             - name: alertname
@@ -190,9 +175,7 @@ kube-prometheus-stack:
         - name: service-availability
           rules:
             - alert: ServiceUnavailable
-              # original expr used up{job="kubernetes-service-endpoints"} — a static Prometheus scrape job that does not exist in kube-prometheus-stack.
-              # With ServiceMonitor-based discovery, catalogix services have a different job label. 
-              # kube_deployment_status_replicas_available comes from kube-state-metrics (bundled in kube-prometheus-stack) and correctly targets the catalogix namespace.
+              # kube_deployment_status_replicas_available comes from kube-state-metrics.
               expr: |
                 kube_deployment_status_replicas_available{namespace="catalogix"} == 0
               for: 3m
@@ -205,10 +188,8 @@ kube-prometheus-stack:
         - name: error-rate
           rules:
             - alert: HighErrorRate
-              # added namespace filter so the alert only fires for catalogix services, not Prometheus/Grafana/Alertmanager internal traffic.
-              # 
-              # sum by namespace so the ratio is calculated per-namespace.
-              # The original collapsed all namespaces into one ratio, masking which service was the source and diluting the signal with unrelated traffic.
+              # Namespace filter limits this to catalogix; summing by namespace keeps the ratio
+              # per namespace instead of diluting it with unrelated traffic.
               expr: |
                 (
                   sum by (namespace) (
@@ -230,11 +211,8 @@ kube-prometheus-stack:
         - name: high-latency
           rules:
             - alert: HighLatencyP95
-              # added namespace filter (same reason as HighErrorRate).
-              # 
-              # sum by (le, job) not (le, service) -- Spring Boot Actuator metrics do not expose a 'service' label — the per-service identifier in
-              # kube-prometheus-stack is the 'job' label set by the ServiceMonitor.
-              # Summing by 'service' collapsed all series into one bucket set and produced a meaningless quantile across all services combined.
+              # Namespace filter as in HighErrorRate. Sum by (le, job): Actuator metrics have no
+              # 'service' label, the ServiceMonitor's 'job' label identifies the service.
               expr: |
                 histogram_quantile(
                   0.95,
@@ -248,3 +226,71 @@ kube-prometheus-stack:
               annotations:
                 summary: "High p95 latency for {{ $labels.job }}"
                 description: "95th percentile latency for {{ $labels.job }} exceeds 1.5s for more than 5 minutes."
+
+        - name: pod-health
+          rules:
+            - alert: PodCrashLooping
+              # Restarts is a counter, so increase() over a window detects repeated restarts.
+              expr: |
+                increase(kube_pod_container_status_restarts_total{namespace="catalogix"}[15m]) >= 3
+              for: 5m
+              labels:
+                severity: critical
+              annotations:
+                summary: "{{ $labels.pod }} is crash-looping"
+                description: "Container {{ $labels.container }} in pod {{ $labels.pod }} (namespace {{ $labels.namespace }}) has restarted 3+ times in the last 15 minutes."
+
+        - name: checkout-outbox
+          rules:
+            - alert: OutboxDeadLetterBacklog
+              # From checkout-svc's OutboxMetrics: entries that exhausted retries and need a human.
+              # The count only drops when someone resolves the row, so page on any value past 10m.
+              expr: |
+                checkout_outbox_dead_letter_count{namespace="catalogix"} > 0
+              for: 10m
+              labels:
+                severity: critical
+              annotations:
+                summary: "checkout-svc has dead-lettered compensation entries"
+                description: "{{ $value }} outbox entries in DEAD_LETTER — failed stock-releases needing manual review. See GET /admin/outbox on checkout-svc."
+
+        - name: rabbitmq
+          rules:
+            # rabbitmq_* metrics come from the rabbitmq_prometheus plugin (see the
+            # catalogix-rabbitmq ServiceMonitor).
+            - alert: RabbitMQQueueBacklogGrowing
+              # Sustained backlog only (for: 10m), usually a stuck or slow consumer.
+              expr: |
+                rabbitmq_queue_messages_ready{namespace="catalogix"} > 500
+              for: 10m
+              labels:
+                severity: warning
+              annotations:
+                summary: "Queue {{ $labels.queue }} has a growing backlog"
+                description: "{{ $value }} messages ready and waiting in {{ $labels.queue }} for over 10 minutes — a consumer may be stuck or too slow."
+
+            - alert: DeadLetterQueueNotEmpty
+              # notification-svc dead-letters events after retries are exhausted; nothing consumes
+              # that queue, so entries are emails that were never sent.
+              expr: |
+                rabbitmq_queue_messages{namespace="catalogix", queue=~".*dlq.*"} > 0
+              for: 10m
+              labels:
+                severity: warning
+              annotations:
+                summary: "Dead-letter queue {{ $labels.queue }} is not empty"
+                description: "{{ $value }} undelivered message(s) in {{ $labels.queue }} for over 10 minutes — emails were dropped after retries. Inspect in the RabbitMQ management UI (kubectl port-forward svc/rabbitmq 15672:15672 -n catalogix)."
+
+            - alert: RabbitMQQueueNoConsumers
+              # Messages waiting and no consumers. An idle queue (0 consumers, 0 messages) is fine.
+              expr: |
+                rabbitmq_queue_consumers{namespace="catalogix"} == 0
+                and on (queue)
+                rabbitmq_queue_messages_ready{namespace="catalogix"} > 0
+              for: 5m
+              labels:
+                severity: critical
+              annotations:
+                summary: "Queue {{ $labels.queue }} has messages but no consumers"
+                description: "{{ $labels.queue }} has had 0 consumers for 5+ minutes while messages are waiting — nothing is processing this queue."
+

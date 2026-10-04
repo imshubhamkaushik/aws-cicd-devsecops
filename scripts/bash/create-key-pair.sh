@@ -1,28 +1,12 @@
 #!/usr/bin/env bash
 #
-# create-key-pair.sh — generates the SSH key pair used to reach the Jenkins
-# and SonarQube EC2 instances, following the approach already documented
-# (but not automated) in terraform/bootstrap-infra/key-pair.tf:
+# create-key-pair.sh: generates the SSH key pair for the Jenkins and SonarQube EC2 instances.
 #
-#   - Generated LOCALLY with ssh-keygen — Terraform never sees the private
-#     half. The old approach (tls_private_key + local_sensitive_file) put
-#     the private key into the Terraform state file in plaintext, readable
-#     by anyone with s3:GetObject on the state bucket — which today includes
-#     Jenkins's own IAM role. aws_key_pair only ever needs the PUBLIC key.
-#   - ed25519, not RSA — shorter, faster, and the modern default recommended
-#     by OpenSSH itself since 6.5 (2014). No real reason to default to RSA
-#     in 2026 unless something you connect to specifically requires it.
-#   - No passphrase (-N ""). This key is used non-interactively by Ansible
-#     and by Jenkins (as a jump host to SonarQube) — a passphrase would mean
-#     either hardcoding it somewhere (defeats the point) or running an
-#     ssh-agent on a CI box (extra moving part for a single-purpose key).
-#     The actual access control for this key is the security group, which
-#     locks SSH to one IP at apply time — see bootstrap-infra/security-groups.tf.
-#     Don't reuse this key for anything else, and don't widen that security
-#     group without understanding that tradeoff.
-#   - Stored in ~/.ssh/, not inside the git repo. Belt-and-suspenders over
-#     .gitignore: a key that never exists inside the repo directory can't
-#     end up in a commit by accident, regardless of what's excluded.
+#   - Generated locally with ssh-keygen; Terraform only receives the public key (aws_key_pair).
+#   - ed25519 rather than RSA.
+#   - No passphrase: Ansible and Jenkins use the key non-interactively. Access is controlled by
+#     the security group, which limits SSH to one IP. Do not reuse this key elsewhere.
+#   - Stored in ~/.ssh/, outside the repository, so it cannot be committed by accident.
 #
 # Usage:
 #   chmod +x create-key-pair.sh

@@ -1,6 +1,6 @@
 apiVersion: v2
 name: catalogix-hc
-description: A simple microservices app with frontend + backend using Ingress routing
+description: Catalogix — 7-service microservices app (user/catalog/inventory/cart/payment/checkout/notification) + frontend + in-cluster RabbitMQ, using an AWS ALB -> in-cluster nginx gateway edge
 type: application
-version: 0.1.0
-appVersion: "1.0"
+version: 0.2.0
+appVersion: "2.0"

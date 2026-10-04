@@ -1,0 +1,72 @@
+{{- range $name, $svc := .Values.backendServices }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    app: {{ $name }}
+spec:
+  {{- if not $.Values.hpa.enabled }}
+  replicas: {{ $svc.replicaCount | default 2 }}
+  {{- end }}
+  # Never take capacity away before replacement pods are Ready.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: {{ $name }}
+  template:
+    metadata:
+      labels:
+        app: {{ $name }}
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: "/actuator/prometheus"
+        prometheus.io/port: "{{ $svc.port }}"
+    spec:
+      # preStop sleep + graceful drain (server.shutdown=graceful) must fit in here.
+      terminationGracePeriodSeconds: {{ $.Values.global.terminationGracePeriodSeconds | default 45 }}
+      {{- include "catalogix.waitForDeps" (dict "svc" $svc "root" $) | nindent 6 }}
+      securityContext:
+        runAsNonRoot: true
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+      containers:
+        - name: {{ $name }}
+          image: "{{ if $.Values.global.imageRegistry }}{{ $.Values.global.imageRegistry }}/{{ end }}{{ $svc.image.repository }}:{{ $svc.image.tag | default $.Values.global.imageTag }}"
+          imagePullPolicy: {{ $svc.image.pullPolicy | default "IfNotPresent" }}
+          ports:
+            - containerPort: {{ $svc.port }}
+          env:
+            {{- include "catalogix.commonEnv" (dict "name" $name "svc" $svc "root" $) | nindent 12 }}
+            {{- if $svc.extraEnv }}
+            {{- toYaml $svc.extraEnv | nindent 12 }}
+            {{- end }}
+            {{- if $svc.publicUrlEnv }}
+            {{- /* Derived from ingress.host / ingress.tlsCertArn — see _helpers.tpl.
+                   Only for services that opt in with publicUrlEnv: true, so a service
+                   that still sets these by hand in extraEnv never gets duplicates. */}}
+            {{- $baseUrl := include "catalogix.publicBaseUrl" $ }}
+            {{- if $baseUrl }}
+            - name: FRONTEND_BASE_URL
+              value: {{ $baseUrl | quote }}
+            {{- end }}
+            - name: REFRESH_COOKIE_SECURE
+              value: {{ include "catalogix.cookieSecure" $ | quote }}
+            {{- end }}
+          resources: {{ toYaml $svc.resources | nindent 12 }}
+          {{- include "catalogix.securityContext" $ | nindent 10 }}
+          {{- include "catalogix.probes" (dict "port" $svc.port) | nindent 10 }}
+          {{- include "catalogix.lifecycle" $ | nindent 10 }}
+          volumeMounts:
+            - name: tmp-volume
+              mountPath: /tmp
+      volumes:
+        - name: tmp-volume
+          emptyDir: {}
+---
+{{- end }}

@@ -1,0 +1,116 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gateway
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: gateway
+spec:
+  {{- if not (and .Values.gateway.hpa .Values.gateway.hpa.enabled) }}
+  replicas: {{ .Values.gateway.replicaCount | default 2 }}
+  {{- end }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: gateway
+  template:
+    metadata:
+      labels:
+        app: gateway
+    spec:
+      terminationGracePeriodSeconds: {{ .Values.global.terminationGracePeriodSeconds | default 45 }}
+      securityContext:
+        runAsNonRoot: true
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+      containers:
+        - name: gateway
+          image: "{{ if .Values.global.imageRegistry }}{{ .Values.global.imageRegistry }}/{{ end }}{{ .Values.gateway.image.repository }}:{{ .Values.gateway.image.tag | default .Values.global.imageTag }}"
+          imagePullPolicy: {{ .Values.gateway.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.gateway.service.port | default 11000 }}
+          resources: {{ toYaml .Values.gateway.resources | nindent 12 }}
+          volumeMounts:
+            # Chowned to UID 1000 in gateway/Dockerfile; nginx proxy temp files go here.
+            - name: nginx-cache
+              mountPath: /var/cache/nginx
+            # No /var/log/nginx mount (see frontend.yaml). The pid file lives in
+            # /tmp/nginx.pid (gateway/Dockerfile), which this mount keeps writable
+            # under readOnlyRootFilesystem.
+            - name: tmp
+              mountPath: /tmp
+          # Port 11000 is unprivileged, so no extra capability is needed to bind.
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          # Same endpoint as the Dockerfile HEALTHCHECK; '/' would proxy to the frontend.
+          {{- include "catalogix.lifecycle" . | nindent 10 }}
+          readinessProbe:
+            httpGet:
+              path: /gateway/health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 2
+          livenessProbe:
+            httpGet:
+              path: /gateway/health
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 3
+        # nginx-prometheus-exporter sidecar: scrapes the internal-only stub_status
+        # server (:8081, not exposed via the Service) over localhost and serves
+        # Prometheus metrics on :9113 for servicemonitors.yaml.
+        - name: nginx-exporter
+          image: "nginx/nginx-prometheus-exporter:1.4.2"
+          args:
+            - "--nginx.scrape-uri=http://127.0.0.1:8081/stub_status"
+          ports:
+            - name: metrics
+              containerPort: 9113
+          resources:
+            requests: { cpu: "10m", memory: "16Mi" }
+            limits: { cpu: "50m", memory: "32Mi" }
+          securityContext:
+            runAsNonRoot: true
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+      volumes:
+        - name: nginx-cache
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gateway
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: gateway
+spec:
+  type: {{ .Values.gateway.service.type | default "ClusterIP" }}
+  selector:
+    app: gateway
+  ports:
+    - name: http
+      protocol: TCP
+      port: {{ .Values.gateway.service.port }}
+      targetPort: {{ .Values.gateway.service.port }}
+    - name: metrics
+      protocol: TCP
+      port: 9113
+      targetPort: 9113

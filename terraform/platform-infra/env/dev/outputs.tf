@@ -22,3 +22,14 @@ output "alb_role_arn" {
   description = "ARN of the IAM role for the AWS Load Balancer Controller — use in ALB Helm chart values for IRSA"
   value       = module.alb.alb_role_arn
 }
+
+# The passwords YOU chose (RDS master, RabbitMQ, app admin, Grafana) are not outputs — they live in
+# Secrets Manager. This prints the commands to review or change them (passwords are never shown).
+output "operator_credentials_commands" {
+  description = "How to see which operator credentials are set, or change one"
+  value = {
+    secret = "${local.env_prefix}/operator-credentials"
+    show   = "python scripts/python/credentials.py --env dev --show"
+    change = "python scripts/python/credentials.py --env dev --only <key>"
+  }
+}
