@@ -58,7 +58,7 @@ backendServices:
       - name: SEED_ADMIN_EMAIL
         value: "admin@catalogix.local"
       - name: SEED_ADMIN_PASSWORD
-        value: "Admin@12345"
+        value: "AdminAdminAdmin"
     image:
       repository: "catalogix-user-svc"
       tag: "latest"
