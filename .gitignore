@@ -56,3 +56,6 @@ catalogix-rendered.yaml
 .mypy_cache/
 
 **/*password.txt
+
+# Helm chart package files
+helm/**/charts/*.tgz
