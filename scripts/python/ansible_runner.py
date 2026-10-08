@@ -3,7 +3,7 @@ import subprocess
 from pathlib import Path
 from utils.command import info, error, warn, run_command
 
-# Path Constants 
+# Path Constants
 # Root directory of the project (two levels up from this script)
 ROOT_DIR = Path(__file__).resolve().parents[2]
 # ANSIBLE_DIR is the directory where Ansible playbooks and related files are located.
@@ -23,7 +23,7 @@ def _write_vault_password_file(password: str) -> None:
 def _is_vault_encrypted() -> bool:
     """
     Return True when vault.yaml starts with the $ANSIBLE_VAULT header.
- 
+
     Why this check exists:
     - ansible-vault decrypt on an already-plaintext file returns exit code 1 with a confusing error message.
     - Checking the header first gives a clear, early error instead of a cryptic ansible-vault failure mid-run.
@@ -35,12 +35,13 @@ def _is_vault_encrypted() -> bool:
 def _is_vault_password_valid() -> bool:
     """
     Return True when ~/.vault_pass can decrypt vault.yaml.
- 
-    Uses ansible-vault view (read-only, no file modification) and discards all output — we only care about the exit code.
+
+    Uses ansible-vault view (read-only, no file modification) and discards all output;
+    only the exit code matters.
     """
     if not VAULT_FILE.exists():
         return True  # nothing to validate against yet
- 
+
     result = subprocess.run(
         ["ansible-vault", "view", str(VAULT_FILE),
          "--vault-password-file", str(VAULT_PASSWORD_FILE)],
@@ -67,7 +68,7 @@ def _prompt_for_vault_password() -> None:
 def _create_vault_password_file() -> None:
     """
     Interactively create ~/.vault_pass with confirmation.
- 
+
     Contract:
     - On success  : ~/.vault_pass exists and is written.
     - On any bad  : calls error() which exits the process.
@@ -77,7 +78,7 @@ def _create_vault_password_file() -> None:
     warn(f"Vault password file not found at {VAULT_PASSWORD_FILE}")
     warn("This file stores the password used to encrypt/decrypt your secrets vault.")
     print("")
- 
+
     confirm = input("Create ~/.vault_pass now? (yes/no): ").strip().lower()
     if confirm not in ("yes", "y"):
         error(
@@ -86,15 +87,15 @@ def _create_vault_password_file() -> None:
             f"         echo 'your-password' > {VAULT_PASSWORD_FILE} && "
             f"chmod 600 {VAULT_PASSWORD_FILE}"
         )
- 
+
     password         = getpass.getpass("Enter vault password: ")
     confirm_password = getpass.getpass("Confirm vault password: ")
- 
+
     if not password.strip():
         error("Vault password cannot be empty.")
     if password != confirm_password:
         error("Passwords do not match. Re-run and try again.")
- 
+
     _write_vault_password_file(password)
     print("")
     info(f"Vault password file created at {VAULT_PASSWORD_FILE}")
@@ -103,25 +104,25 @@ def _create_vault_password_file() -> None:
 def _handle_invalid_vault_password() -> bool:
     """
     Prompt the user up to 3 times for the correct vault password.
- 
+
     Returns:
         True  — correct password found, written to ~/.vault_pass.
         False — user chose to wipe the vault; old files are deleted.
- 
+
     Calls error() (hard exit) if the user refuses to wipe after 3 failures.
     """
     attempts = 0
     while True:
         print("")
         _prompt_for_vault_password()
- 
+
         if _is_vault_password_valid():
             info("Vault password is valid.")
             return True
- 
+
         attempts += 1
         warn(f"Incorrect vault password (attempt {attempts}/3).")
- 
+
         if attempts >= 3:
             print("")
             warn("Unable to decrypt vault after 3 attempts.")
@@ -129,20 +130,20 @@ def _handle_invalid_vault_password() -> bool:
             confirm = input(
                 "Recreate vault? This will DELETE all existing secrets. (yes/no): "
             ).strip().lower()
- 
+
             if confirm in ("yes", "y"):
                 VAULT_FILE.unlink(missing_ok=True)
                 VAULT_PASSWORD_FILE.unlink(missing_ok=True)
                 info("Old vault and password file deleted. Starting fresh.")
                 return False
- 
+
             error("Cannot proceed without a valid vault password.")
 
 
 def _setup_vault_password_file() -> None:
     """
     Ensure ~/.vault_pass exists and can decrypt vault.yaml (when it exists).
- 
+
     Decision tree
     ─────────────
     vault.yaml EXISTS
@@ -152,7 +153,7 @@ def _setup_vault_password_file() -> None:
                 └─ correct  →  done
                 └─ user wipes vault  →  create new password file
                                         (vault file created next in _setup_vault_file)
- 
+
     vault.yaml does NOT exist
       └─ password file missing  →  create it now
                                    (vault file created next in _setup_vault_file)
@@ -167,19 +168,19 @@ def _setup_vault_password_file() -> None:
             warn("Vault password does NOT match vault.yaml.")
         else:
             warn("vault.yaml exists but ~/.vault_pass is missing.")
- 
+
         # Wrong or missing password — enter recovery loop.
         vault_survived = _handle_invalid_vault_password()
         # If vault was wiped (False), fall through to create a new password file.
         if not vault_survived:
             _create_vault_password_file()
         return
- 
+
     # vault.yaml does not exist yet.
     if not VAULT_PASSWORD_FILE.exists():
         _create_vault_password_file()
     # Password file already exists → it will be used when encrypting the new vault.
- 
+
 # Vault File Setup
 
 def _prompt_secret(prompt: str, allow_empty: bool = False) -> str:
@@ -192,15 +193,15 @@ def _prompt_secret(prompt: str, allow_empty: bool = False) -> str:
         if value.strip() or allow_empty:
             return value.strip()
         warn("Value cannot be empty. Try again.")
- 
- 
+
+
 def _setup_vault_file() -> None:
     """
     Interactively create and encrypt group_vars/all/vault.yaml if it does not exist.
- 
-    Idempotent: exits immediately (with an info message) when the file is already present. 
+
+    Idempotent: exits immediately (with an info message) when the file is already present.
     Does NOT validate whether it is encrypted — that was already verified in _setup_vault_password_file().
- 
+
     Secrets written
     ───────────────
     vault_jenkins_admin_password  — Jenkins admin user password
@@ -216,12 +217,12 @@ def _setup_vault_file() -> None:
     if VAULT_FILE.exists():
         info(f"Vault file already exists at {VAULT_FILE}")
         return
- 
+
     print("")
     warn(f"Vault file not found at {VAULT_FILE}")
     warn("This file holds all encrypted secrets used by Ansible.")
     print("")
- 
+
     confirm = input("Create and encrypt vault file now? (yes/no): ").strip().lower()
     if confirm not in ("yes", "y"):
         error(
@@ -229,13 +230,13 @@ def _setup_vault_file() -> None:
             "       Create it manually:\n"
             "         ansible-vault create ansible/group_vars/all/vault.yaml"
         )
- 
+
     VAULT_FILE.parent.mkdir(parents=True, exist_ok=True)
- 
+
     print("")
     info("Enter your secret values below (input is hidden):")
     print("")
- 
+
     secrets = {
         "vault_jenkins_admin_password": _prompt_secret("Jenkins Admin Password"),
         "vault_github_token":           _prompt_secret("GitHub Personal Access Token"),
@@ -245,7 +246,7 @@ def _setup_vault_file() -> None:
         # then atomically writes it back into this encrypted file.
         "vault_sonar_token":            "",
     }
- 
+
     lines = [
         "# Shared vault — loaded for ALL hosts via group_vars/all/vault.yaml",
         "# DO NOT EDIT MANUALLY — use: ansible-vault edit group_vars/all/vault.yaml",
@@ -256,9 +257,9 @@ def _setup_vault_file() -> None:
     ]
     for key, value in secrets.items():
         lines.append(f'{key}: "{value}"')
- 
+
     VAULT_FILE.write_text("\n".join(lines) + "\n")
- 
+
     result = subprocess.run(
         ["ansible-vault", "encrypt", str(VAULT_FILE),
          "--vault-password-file", str(VAULT_PASSWORD_FILE)],
@@ -266,11 +267,11 @@ def _setup_vault_file() -> None:
     if result.returncode != 0:
         VAULT_FILE.unlink(missing_ok=True)
         error("ansible-vault encrypt failed. Is ansible-vault installed?")
- 
+
     print("")
     info(f"Vault file created and encrypted at {VAULT_FILE}")
- 
- 
+
+
 def check_vault() -> None:
     """
     Entry point for vault validation.
@@ -285,33 +286,33 @@ def check_vault() -> None:
 def _run_playbook(limit: str, step_label: str) -> None:
     """
     Run ansible-playbook scoped to one or more host groups via --limit.
- 
+
     WHY TWO SEPARATE SUBPROCESSES (and not a single playbook run):
     ──────────────────────────────────────────────────────────────
     Ansible loads ALL variables — including vault secrets — exactly once, at
     process startup, before any task executes.
- 
+
     The problem:
       Phase 1 (common + sonarqube) generates vault_sonar_token and writes it
       into vault.yaml on disk. If Jenkins ran in the same ansible-playbook
       process, vault_sonar_token was already resolved to "" at startup.
       Ansible has no mechanism to retroactively fix a variable that was already
       resolved into a play's variable scope at parse time.
- 
+
     The fix:
       Phase 1 and Phase 2 are SEPARATE subprocesses. subprocess.run() blocks
       until the first ansible-playbook exits completely. When Phase 2 starts,
       it is a brand-new OS process that reads vault.yaml fresh from disk —
       vault_sonar_token is already populated, so Jenkins renders
       /etc/default/jenkins with a real SONARQUBE_TOKEN value.
- 
+
     WHY NOT THREE SUBPROCESSES (all / sonarqube / jenkins separately):
       The variable propagation problem only exists at the boundary where
       SonarQube writes vault_sonar_token and Jenkins reads it. There is no
       secret dependency between the 'all' play and the 'sonarqube' play —
       they can safely run in the same subprocess. Splitting 'all' into its
       own call adds a subprocess with no benefit.
- 
+
     Args:
         limit:       Ansible --limit value. Comma-separated groups are valid,
                      e.g. "all,sonarqube" or "jenkins".
@@ -321,21 +322,21 @@ def _run_playbook(limit: str, step_label: str) -> None:
     print("")
     info(f"[{step_label}] Starting — limit: {limit}")
     print("─" * 60)
- 
+
     run_command(
         f"ansible-playbook playbook.yaml"
         f" --limit {limit}"
         f" --vault-password-file {VAULT_PASSWORD_FILE}",
         cwd=ANSIBLE_DIR,
     )
- 
+
     print("─" * 60)
     info(f"[{step_label}] Completed successfully.")
-    
+
 def run_ansible() -> None:
     """
     Full provisioning sequence — two phases, two subprocesses.
- 
+
     Phase 1  --limit all:!jenkins
       Targets every EC2 instance EXCEPT jenkins — in this two-host setup,
       that's the sonarqube host only. Runs in order:
@@ -352,7 +353,7 @@ def run_ansible() -> None:
       When this subprocess exits, vault_sonar_token is on disk in vault.yaml.
       The jenkins host gets its own common+docker pass in Phase 2 below —
       it's excluded here specifically so it never runs before the token exists.
- 
+
     Phase 2  --limit jenkins
       Fresh subprocess → vault.yaml re-read from disk → vault_sonar_token is
       now populated. Runs in order:
@@ -372,21 +373,21 @@ def run_ansible() -> None:
             * Verifies admin login (HTTP 200 from /api/json)
     """
     print("")
-    info("Ansible Configuring — Starting")
+    info("Ansible Configuration — Starting")
     print("")
- 
+
     confirm = input(
         "This will configure EC2 instances via Ansible. Proceed? (yes/no): "
     ).strip().lower()
     if confirm not in ("yes", "y"):
         info("Aborted by user.")
         return
- 
+
     # ── Pre-flight: vault ────────────────────────────────────────────────────
     print("")
     info("Pre-flight: checking Ansible Vault...")
     check_vault()
- 
+
     # ── Dependency check: ansible-galaxy ────────────────────────────────────
     print("")
     info("Installing Ansible Galaxy collections (idempotent)...")
@@ -394,7 +395,7 @@ def run_ansible() -> None:
         "ansible-galaxy collection install -r requirements.yaml",
         cwd=ANSIBLE_DIR,
     )
- 
+
     # ── Phase 1 (steps 1-2 of 2, one subprocess): baseline + SonarQube ───
     # Phase 1 runs the common baseline and SonarQube plays. ':!jenkins' keeps the jenkins play
     # out, because it needs vault_sonar_token, which only exists after this phase.
@@ -402,7 +403,7 @@ def run_ansible() -> None:
         limit="all:!jenkins",
         step_label="Phase 1/2 — Common baseline + SonarQube",
     )
- 
+
     # ── Phase 2 (1 of 1, separate subprocess): Jenkins ─────────────────────────
     # New subprocess → vault.yaml re-read from disk → vault_sonar_token is
     # populated → /etc/default/jenkins rendered with real SONARQUBE_TOKEN.
@@ -410,9 +411,9 @@ def run_ansible() -> None:
         limit="jenkins",
         step_label="Phase 2/2 — Jenkins configuration",
     )
- 
+
     print("")
-    info("Ansible Configuring — Complete.")
+    info("Ansible Configuration — Complete.")
     print("")
     info("Access Jenkins at the URL printed above.")
     info("SonarQube is available on its private IP via Jenkins as a jump host.")

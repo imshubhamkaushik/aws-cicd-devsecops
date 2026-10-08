@@ -17,9 +17,12 @@ select = ["E", "F", "W", "S"]
 "bootstrap_infra.py" = ["S603", "S607"]
 "backend_bootstrap.py" = ["S603", "S607"]
 "destroy_infra.py" = ["S603", "S607"]
-"ansible.py" = ["S603", "S607"]
+"ansible_runner.py" = ["S603", "S607"]
 # credentials.py only calls the `aws` CLI with fixed argument lists (no shell, no untrusted input);
 # passwords travel through a 0600 temp file, never the command line. The tests use fake passwords.
 "credentials.py" = ["S603", "S607"]
 "tests/*" = ["S105", "S106", "S108"]
 "utils/command.py" = ["S602"]
+# local_scans/ are local-only helpers: fixed argv lists (no shell), executables resolved with shutil.which,
+# and urllib only talks to http(s) URLs on localhost.
+"local_scans/*" = ["S603", "S607", "S310", "S105"]

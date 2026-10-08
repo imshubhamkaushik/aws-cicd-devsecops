@@ -6,7 +6,7 @@ import sys
 from utils.command import info, error, warn, run_command
 from backend_bootstrap import backend_bootstrap
 from bootstrap_infra import bootstrap_infra, wait_for_ec2
-from ansible import run_ansible
+from ansible_runner import run_ansible
 from credentials import main as credentials_main, CLUSTER_NAMES
 
 
@@ -89,44 +89,44 @@ def _is_missing(dep):
 
 def check_dependencies():
     missing = [dep for dep in DEPENDENCIES if _is_missing(dep)]
- 
+
     if not missing:
         info("All dependencies satisfied.")
         return
-    
+
     print("")
     warn("The following dependencies are missing:")
     for dep in missing:
         print(f"       - {dep['name']}")
- 
+
     print("")
     confirm = input("Auto-install all missing dependencies? (yes/no): ").strip().lower()
- 
+
     if confirm not in ["yes", "y"]:
         print("")
         info("Manual install commands:")
         for dep in missing:
             print(f"       {dep['name']}: {dep['help']}")
         error("Please install missing dependencies and re-run.")
- 
+
     # apt-get based installs benefit from a single update pass first
     apt_needed = any("apt-get" in dep["install"] for dep in missing)
     if apt_needed:
         info("Updating apt package index...")
         run_command("sudo apt-get update -qq")
- 
+
     for dep in missing:
         info(f"Installing {dep['name']}...")
         info(f"If this fails, install manually: {dep['help']}")
         run_command(dep["install"])
- 
+
     # Verify everything is now present after installation
     still_missing = [dep for dep in missing if _is_missing(dep)]
     if still_missing:
         names = ", ".join(d["name"] for d in still_missing)
         error(f"Installation appeared to succeed but {names} still not found. Check the output above.")
-        
-    print("") 
+
+    print("")
     info("All dependencies installed successfully.")
 
 
@@ -141,7 +141,7 @@ def check_aws_auth():
     )
     if result.returncode != 0:
         error("AWS credentials invalid or not configured. Run: aws configure")
-    
+
 
 def run_credentials(env=None):
     """Prompt for the operator-chosen credentials and store them in AWS Secrets Manager.
@@ -162,7 +162,7 @@ def run_credentials(env=None):
 def run_full_bootstrap():
 
     backend_bootstrap()
-    
+
     print("")
     confirm_infra = input(
         "Ready to bootstrap infrastructure. Proceed to infrastructure bootstrap? (yes/no): "
@@ -173,7 +173,7 @@ def run_full_bootstrap():
 
     bootstrap_infra()
     wait_for_ec2()
-    
+
     run_ansible()
 
     print("")
@@ -202,21 +202,21 @@ def main():
 
     check_dependencies()
     check_aws_auth()
-    
+
     # Run the appropriate command based on user input
     # For backend bootstrap
     if args.command == "backend":
         backend_bootstrap()
-        
+
     # For infra bootstrap
     elif args.command == "infra":
         bootstrap_infra()
         wait_for_ec2()
-        
-    # For Ansible configuration        
+
+    # For Ansible configuration
     elif args.command == "ansible":
         run_ansible()
-        
+
     # For the operator-chosen application credentials (re-run any time to change a password)
     elif args.command == "credentials":
         run_credentials()

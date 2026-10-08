@@ -87,7 +87,7 @@ class CheckValues(unittest.TestCase):
 class CommandLine(unittest.TestCase):
     def test_secret_name_matches_terraform_env_prefix(self):
         self.assertEqual(c.secret_id("dev"), "catalogix-cluster-dev/operator-credentials")
-        self.assertEqual(c.secret_id("staging"), "catalogix-staging/operator-credentials")
+        self.assertEqual(c.secret_id("staging"), "catalogix-cluster-staging/operator-credentials")
 
     def test_check_fails_when_secret_is_missing(self):
         with mock.patch.object(c, "fetch_secret", side_effect=c.SecretNotFound("x")):

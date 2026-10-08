@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import argparse
 
-from common import COMPOSE_FILE, REPO_ROOT, require_command, run
+from common import COMPOSE_FILE, REPO_ROOT, main_guard, require_docker, run
 
 
 def parse_args() -> argparse.Namespace:
@@ -36,7 +36,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> int:
-    require_command("docker")
+    require_docker()
     args = parse_args()
 
     if args.volumes and not args.yes:
@@ -55,8 +55,11 @@ def main() -> int:
     ]
 
     if args.images:
-        down.append("--rmi")
-        down.append("local")
+        # `--rmi local` skips images that have an explicit `image:` name, which every
+        # Catalogix service has, so it would remove nothing. `all` removes the images
+        # this compose file uses (including pulled ones such as postgres) - they are
+        # simply re-pulled on the next `up`.
+        down += ["--rmi", "all"]
 
     if args.volumes:
         down.append("--volumes")
@@ -71,8 +74,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    try:
-        raise SystemExit(main())
-    except Exception as exc:
-        print(f"\nERROR: {exc}")
-        raise SystemExit(1)
+    main_guard(main)

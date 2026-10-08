@@ -5,7 +5,15 @@ from __future__ import annotations
 
 import argparse
 
-from common import REPO_ROOT, maven_modules, resolve_services, run
+from common import (
+    REPO_ROOT,
+    main_guard,
+    maven_modules,
+    require_command,
+    require_docker,
+    resolve_services,
+    run,
+)
 
 
 def build_command(
@@ -17,6 +25,7 @@ def build_command(
     with_tests: bool,
     no_deps: bool,
 ) -> list[str]:
+    """Build the Maven command for the requested operation."""
     command = ["mvn", "-B"]
 
     if clean:
@@ -25,7 +34,9 @@ def build_command(
     if all_modules:
         command.append(action)
     else:
-        command.extend(["-pl", ",".join(f"backend/{svc}" for svc in services)])
+        command.extend(
+            ["-pl", ",".join(f"backend/{service}" for service in services)]
+        )
         if not no_deps:
             command.append("-am")
         command.append(action)
@@ -37,6 +48,7 @@ def build_command(
 
 
 def parse_args() -> argparse.Namespace:
+    """Parse command-line arguments."""
     parser = argparse.ArgumentParser(
         description="Catalogix Maven test/build runner."
     )
@@ -76,40 +88,60 @@ def parse_args() -> argparse.Namespace:
         help="For targeted service operations, do not include Maven upstream modules with -am.",
     )
     parser.add_argument(
+        "--skip-it",
+        action="store_true",
+        help="Skip Testcontainers integration tests (-DskipITs). Unit tests still run and Docker is not needed.",
+    )
+    parser.add_argument(
         "--list-services",
         action="store_true",
         help="List backend Maven services and exit.",
     )
+
     return parser.parse_args()
 
 
-def main() -> int:
-    args = parse_args()
+def list_services() -> None:
+    """Print available backend Maven services."""
+    for service in sorted(maven_modules()):
+        print(service)
 
-    if args.list_services:
-        for service in sorted(maven_modules()):
-            print(service)
-        return 0
 
-    # "clean-verify" deliberately maps to the user's preferred full-reactor command.
-    if args.action == "clean-verify":
-        services = resolve_services(args.services)
-        if args.all or not services:
-            run(["mvn", "-B", "clean", "verify"], cwd=REPO_ROOT)
-        else:
-            run(
-                build_command(
-                    "verify",
-                    services,
-                    all_modules=False,
-                    clean=True,
-                    with_tests=True,
-                    no_deps=args.no_deps,
-                ),
-                cwd=REPO_ROOT,
-            )
-        return 0
+def run_clean_verify(
+    args: argparse.Namespace,
+    extra: list[str],
+) -> None:
+    """Run the clean-verify operation."""
+    # `clean-verify` is the full-reactor `mvn clean verify` checkpoint.
+    services = resolve_services(args.services)
 
+    if args.all or not services:
+        run(
+            ["mvn", "-B", "clean", "verify", *extra],
+            cwd=REPO_ROOT,
+        )
+        return
+
+    command = build_command(
+        "verify",
+        services,
+        all_modules=False,
+        clean=True,
+        with_tests=True,
+        no_deps=args.no_deps,
+    )
+
+    run(
+        [*command, *extra],
+        cwd=REPO_ROOT,
+    )
+
+
+def run_standard_action(
+    args: argparse.Namespace,
+    extra: list[str],
+) -> None:
+    """Run test, build, or verify for the selected services."""
     services = resolve_services(args.services)
 
     # If neither --service nor --all is supplied, default to the full reactor.
@@ -124,13 +156,36 @@ def main() -> int:
         no_deps=args.no_deps,
     )
 
-    run(command, cwd=REPO_ROOT)
+    run(
+        [*command, *extra],
+        cwd=REPO_ROOT,
+    )
+
+
+def main() -> int:
+    """Run the Maven test/build/verify workflow."""
+    args = parse_args()
+
+    require_command(
+        "mvn",
+        "Install Maven 3.9+ and JDK 21 and add them to PATH.",
+    )
+
+    if args.list_services:
+        list_services()
+    else:
+        if args.action in ("verify", "clean-verify") and not args.skip_it:
+            require_docker()
+
+        extra = ["-DskipITs"] if args.skip_it else []
+
+        if args.action == "clean-verify":
+            run_clean_verify(args, extra)
+        else:
+            run_standard_action(args, extra)
+
     return 0
 
 
 if __name__ == "__main__":
-    try:
-        raise SystemExit(main())
-    except Exception as exc:
-        print(f"\nERROR: {exc}")
-        raise SystemExit(1)
+    main_guard(main)

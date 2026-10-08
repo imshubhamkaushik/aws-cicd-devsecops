@@ -14,7 +14,7 @@ def destroy_infra():
     info("Destroying Terraform Infrastructure...")
 
     tfplan = BOOTSTRAP_INFRA_DIR / "destroy.tfplan"
-    
+
     env = {
         "AWS_MAX_ATTEMPTS": "10",
         "AWS_RETRY_MODE": "adaptive"

@@ -11,19 +11,19 @@ BOOTSTRAP_INFRA_DIR = ROOT_DIR / "terraform" / "bootstrap-infra"
 def bootstrap_infra():
     print("")
     info("Running Bootstrap Infrastructure Terraform...")
-    
+
     tfplan = BOOTSTRAP_INFRA_DIR / "main.tfplan"
-    
+
     env = {
         "AWS_MAX_ATTEMPTS": "10",
         "AWS_RETRY_MODE": "adaptive"
     }
-    
+
     try:
         run_command("terraform init", cwd=BOOTSTRAP_INFRA_DIR, env=env)
         run_command("terraform fmt -check", cwd=BOOTSTRAP_INFRA_DIR, env=env)
         run_command("terraform validate", cwd=BOOTSTRAP_INFRA_DIR, env=env)
-        
+
         # Check if apply is needed
         exit_code = run_command(
             "terraform plan -detailed-exitcode -out main.tfplan",
@@ -60,43 +60,53 @@ def wait_for_ec2():
 
     print("")
     info("Waiting for EC2 instances to become healthy...")
-    
+
     print("")
     print("Checking Terraform outputs for instance IDs...")
 
     print("")
     print("Terraform outputs:")
-    
-    # Using terraform output to get instance IDs ensures we get the correct ones even if they change due to re-creation, and avoids hardcoding any IDs in the script.
-    jenkins_id = run_command(
+
+    # Read instance IDs from terraform output so re-created instances are picked up and no ID is hardcoded.
+    jenkins_output = run_command(
         "terraform output -raw instance_id_jenkins",
         cwd=BOOTSTRAP_INFRA_DIR,
-        capture_output=True
-    ).strip()
-    
-    sonarqube_id = run_command(
+        capture_output=True,
+    )
+
+    if not isinstance(jenkins_output, str):
+        error("Failed to read Jenkins instance ID from Terraform output.")
+
+    jenkins_id = jenkins_output.strip()
+
+    sonarqube_output = run_command(
         "terraform output -raw instance_id_sonarqube",
         cwd=BOOTSTRAP_INFRA_DIR,
-        capture_output=True
-    ).strip()
+        capture_output=True,
+    )
+
+    if not isinstance(sonarqube_output, str):
+        error("Failed to read SonarQube instance ID from Terraform output.")
+
+    sonarqube_id = sonarqube_output.strip()
 
     if not jenkins_id or not sonarqube_id:
         error("Could not read instance IDs from Terraform outputs.")
-        
+
     print(f"  Jenkins Instance ID: {jenkins_id}")
     print(f"  SonarQube Instance ID: {sonarqube_id}")
 
     instance_ids = f"{jenkins_id} {sonarqube_id}"
-    
+
     # Wait for both instances to be in the 'ok' status before proceeding.
     print("")
     print("Waiting for EC2 instances status to be 'ok'...")
     run_command(f"aws ec2 wait instance-status-ok --instance-ids {instance_ids}")
     print("EC2 instances 'OK' status checks passed.")
-    
-    # Wait for both instances to be in the 'running' status before proceeding. This ensures that when we SSH in later to run Ansible, the instances are fully up and running.
+
+    # Wait for both instances to be 'running' so they accept SSH when Ansible connects later.
     print("")
-    print("Waiting for EC2 instances status to be 'running'...")
+    print("Waiting for EC2 instances status to be 'running' so they accept SSH when Ansible connects later...")
     run_command(f"aws ec2 wait instance-running --instance-ids {instance_ids}")
     print("EC2 instance running checks passed.")
 
