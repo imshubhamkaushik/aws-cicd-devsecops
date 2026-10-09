@@ -470,12 +470,14 @@ def _collect_changes(
     prompted_readonly = False
 
     for credential in wanted:
-        skip_readonly, prompted_readonly = _should_skip_readonly(
-            credential,
-            only,
-            exists,
-            prompted_readonly,
-        )
+        if not prompted_readonly:
+            # Ask once; remember the answer for the remaining read-only keys.
+            skip_readonly, prompted_readonly = _should_skip_readonly(
+                credential,
+                only,
+                exists,
+                prompted_readonly,
+            )
 
         if credential.key.startswith("db_readonly") and skip_readonly:
             continue
