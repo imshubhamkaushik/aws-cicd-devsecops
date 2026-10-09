@@ -59,3 +59,19 @@ catalogix-rendered.yaml
 
 # Helm chart package files
 helm/**/charts/*.tgz
+# ====== Terraform ======
+# Never commit variable files (may hold IPs, keys, account details) or state.
+*.tfvars
+*.tfvars.json
+!*.tfvars.example
+!terraform.tfvars.example
+*.tfstate
+*.tfstate.*
+*.tfplan
+tfplan*
+.terraform/
+crash.log
+
+# ====== Generated / local scratch ======
+*rendered*.yaml
+secrets/postgres_password.txt
