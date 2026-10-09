@@ -47,7 +47,7 @@ class AuthFlowIntegrationTest {
 
         registry.add(
                 "JWT_SECRET",
-                () -> "svfmhSAWW6kcsgGiSSz1eOoQDK1ku6+crVQPJHo+XmZxFoj7ujud7ImW4+e3RFW8"
+                () -> "dGVzdC1vbmx5LW5vdC1hLXJlYWwtc2VjcmV0LWtleS0wMTIzNDU2Nzg5YWJjZGVm"
         );
 
         // application-test.properties (the default "test" profile) excludes

@@ -1,7 +1,7 @@
 // =============================================================================
-// Lint / static-analysis pipeline. Wired into jcasc.yaml's jobs: block with
-// a githubPush() trigger, same as app-cicd — this runs on every push so
-// formatting, lint, and secret-scan failures show up before a deploy does.
+// Lint / static-analysis pipeline. NOT created by jcasc.yaml (it defines only
+// the platform-infra and app-cicd jobs). To use it, add a pipelineJob with
+// scriptPath('Jenkinsfile.lint') to jcasc.yaml or create the job by hand.
 //
 // This is also the single home for checks that don't need a running
 // cluster or built images (Dockerfile lint, Helm chart lint/scan, secrets
@@ -24,8 +24,10 @@ pipeline {
     stages {
 
         stage('Checkout') {
-            steps { cleanWs() }
-            steps { checkout scm }
+            steps {
+                cleanWs()
+                checkout scm
+            }
         }
 
         // Reads the Trivy version from Ansible vars, same source of truth
