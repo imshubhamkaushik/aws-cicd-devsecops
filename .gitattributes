@@ -1,0 +1,15 @@
+# Normalise line endings: LF in the repo and on checkout (shell scripts,
+# Dockerfiles and Jenkinsfiles break with CRLF).
+* text=auto eol=lf
+*.sh text eol=lf
+Dockerfile* text eol=lf
+Jenkinsfile* text eol=lf
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.ico binary
+*.gif binary
+*.woff binary
+*.woff2 binary
+*.jar binary
+*.tgz binary
