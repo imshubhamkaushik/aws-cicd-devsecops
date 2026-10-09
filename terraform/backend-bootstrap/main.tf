@@ -18,7 +18,7 @@ resource "aws_s3_bucket" "tf_state" {
   }
 
   tags = {
-    Name = "Terraform State Bucket - Catalogix (aws-cicd-devsecops)"
+    Name = "Terraform State Bucket - Catalogix"
   }
 }
 
