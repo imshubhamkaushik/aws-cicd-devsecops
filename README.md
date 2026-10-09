@@ -43,7 +43,7 @@ The application is deliberately modest in business logic. It is large enough to 
 - **Production-aligned Kubernetes.** Non-root, read-only containers with all capabilities dropped, startup/readiness/liveness probes, HPA, PodDisruptionBudgets, graceful shutdown, resource requests and limits, and an ALB ingress with optional TLS.
 - **Repeatable server setup.** Jenkins and SonarQube are never configured by hand. Ansible provisions them from a dynamic inventory and Jenkins Configuration as Code creates the admin user, tools, credentials and both pipeline jobs on first boot.
 - **A bootstrap CLI.** `scripts/python/bootstrap.py` checks dependencies, validates AWS credentials, skips Terraform applies when nothing changed, waits for EC2 health and manages Ansible Vault interactively.
-- **Observability with alerts.** Prometheus, Grafana and Alertmanager, with service, JVM, RabbitMQ and checkout-outbox metrics and alert rules delivered by email.
+- **Observability with alerts.** Prometheus, Grafana and Alertmanager, with service, JVM, RabbitMQ and checkout-outbox metrics and alert rules. Only `critical` alerts are emailed; `warning` alerts go to a null receiver (visible in Prometheus/Alertmanager only).
 
 ---
 
@@ -219,7 +219,9 @@ The three must use the same names. On AWS the JDBC URL uses `sslmode=require`, l
 
 Two Jenkins pipelines, both created automatically by JCasC.
 
-### `Jenkinsfile.app-cicd` (push to `main`, or manual)
+### `Jenkinsfile.app-cicd` (push to `main` via webhook, or manual)
+
+> The Jenkins security group allows :8080 only from the operator IP, so GitHub cannot deliver a webhook by default. Either add an SG rule for GitHub hook CIDRs or trigger the job manually.
 
 | Stage | What it does |
 |---|---|
@@ -350,7 +352,17 @@ What it handles:
 - **EC2 health:** waits with `aws ec2 wait instance-status-ok` before Ansible runs.
 - **Retries:** `utils/command.py` retries commands with exponential back-off and replaces known errors (S3 unreachable, access denied, bad vault password) with an actionable message.
 
-`destroy_infra.py` tears down `bootstrap-infra`. Run the platform destroy first. `scripts/python/scans` holds local-only helpers (Gitleaks, Trivy, SonarQube, smoke test) that are not used by Jenkins.
+`destroy_infra.py` tears down `bootstrap-infra`. Run the platform destroy first. `scripts/python/local_scans` holds the local pre-AWS checks. They are not used by Jenkins, but they use the same tool versions (read from `ansible/group_vars/all/vars.yaml`) and the same scanner images:
+
+```bash
+cd scripts/python/local_scans
+python3 gitleaks.py                                   # secrets (history if .git exists, else working tree)
+python3 run_local.py --frontend-coverage              # mvn clean verify + npm ci/test/build   (Docker must be running)
+python3 sonarqube_local.py --start-server --build     # SonarQube container + token + quality gate
+python3 trivy_local.py all --build                    # source, Terraform, Helm chart (dev + local values), images
+python3 compose.py start && python3 smoke_test.py     # Docker Compose stack + end-to-end checks
+python3 devsecops_check.py --start-sonarqube          # all of the above in order
+```
 
 ---
 
@@ -386,7 +398,7 @@ Monitoring is cluster infrastructure, deployed by the platform pipeline (kube-pr
 - **Metrics:** services expose `/actuator/prometheus` and are scraped through ServiceMonitors. Collected: availability, request rate, 5xx rate, p95 latency, JVM CPU and heap, RabbitMQ queue depth and consumers (the `rabbitmq_prometheus` plugin), and `checkout_outbox_pending_count` / `checkout_outbox_dead_letter_count`.
 - **Dashboard:** one Grafana dashboard (`helm/monitoring/dashboards`) and datasource, loaded from labelled ConfigMaps and kept in version control.
 - **Alerts:** `ServiceUnavailable`, `HighErrorRate`, `HighLatencyP95`, `PodCrashLooping`, `OutboxDeadLetterBacklog`, `RabbitMQQueueBacklogGrowing`, `DeadLetterQueueNotEmpty` and `RabbitMQQueueNoConsumers`. The dead-letter alert does not clear by itself and is resolved from the admin UI.
-- **Delivery:** email only. One working channel shows the Terraform, Secrets Manager, ESO and Alertmanager chain as well as several would.
+- **Delivery:** email only, and only for `severity=critical`; warnings are routed to a null receiver. One working channel shows the Terraform, Secrets Manager, ESO and Alertmanager chain as well as several would.
 - **Logs:** container stdout and stderr (`kubectl logs`, `docker logs`). There is no log aggregation or tracing backend.
 
 ---
