@@ -1,0 +1,47 @@
+# Layer 1: VPC, Jenkins and SonarQube servers, IAM, security groups.
+# Copy to terraform.tfvars (gitignored) and edit. Everything except public_key
+# has a default, so you only need the lines you want to change.
+
+# --- SSH key (required, but you usually do not have to write it here) ---------
+# Generate the pair with scripts/bash/create-key-pair.sh, which writes
+# ~/.ssh/catalogix-key and ~/.ssh/catalogix-key.pub.
+# scripts/python/bootstrap_infra.py reads the .pub file automatically when
+# public_key is not set here and TF_VAR_public_key is not exported.
+# If you set it by hand, paste the literal text of the .pub file. tfvars files
+# cannot call file(), so public_key = file("...") does NOT work.
+#
+# public_key = "ssh-ed25519 AAAA...replace-with-your-key... catalogix-bootstrap"
+key_name = "catalogix-key"
+
+# --- Region and network --------------------------------------------------------
+# Keep ap-south-1 for a first run. To change region, change aws_region, azs and
+# ami together, and also AWS_REGION in both Jenkinsfiles and regions: in
+# ansible/aws_ec2.yaml.
+aws_region      = "ap-south-1"
+azs             = ["ap-south-1a", "ap-south-1b"]
+vpc_name        = "catalogix-vpc"
+vpc_cidr        = "10.0.0.0/16"
+public_subnets  = ["10.0.1.0/24", "10.0.2.0/24"]
+private_subnets = ["10.0.3.0/24", "10.0.4.0/24"]
+
+# 1 NAT gateway is the cheap dev setting (about $32/month plus data).
+nat_gateway_count = 1
+
+# --- Servers --------------------------------------------------------------------
+# Ubuntu 22.04 LTS for ap-south-1. AMI IDs get retired; if plan says the image
+# does not exist, look up a current Ubuntu 22.04 AMI for your region.
+ami           = "ami-07216ac99dc46a187"
+instance_type = "c7i-flex.large"   # change it if your account cannot launch this type
+
+# --- Names and tags -------------------------------------------------------------
+project_name = "catalogix"
+project_tag  = "catalogix"   # must match the Project tag filter in ansible/aws_ec2.yaml
+cluster_name = "catalogix-cluster"
+environment  = "dev"
+
+# --- Who may reach Jenkins and the EKS API --------------------------------------
+# Do NOT set allowed_cidrs here. scripts/python/allowlist.py keeps the list in
+# the state bucket, adds your current IP only when it is new, and writes
+# allowed_cidrs.auto.tfvars.json for Terraform. Manage it with:
+#   python3 scripts/python/allowlist.py list | add | remove | prune
+# If you run terraform by hand without that file, only your current IP is allowed.

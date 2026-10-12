@@ -56,3 +56,7 @@ output "jenkins_my_ip_cidr" {
   description = "CIDR of the operator's IP — captured once at bootstrap-infra apply time and passed to platform-infra to allowlist on EKS API. Avoids the risk of independently querying checkip.amazonaws.com at a later time when your IP might have changed."
   value       = "${chomp(data.http.my_ip.response_body)}/32"
 }
+output "allowed_cidrs" {
+  description = "Operator CIDRs allowed on Jenkins (22, 8080) and the EKS public API. platform-infra reads this through remote state."
+  value       = local.operator_cidrs
+}

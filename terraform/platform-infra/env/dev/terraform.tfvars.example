@@ -1,0 +1,19 @@
+# Layer 2 (dev): EKS, RDS, ECR, ALB controller, ESO.
+# This layer runs from the Jenkins job `platform-infra`, which uses the defaults.
+# You only need a terraform.tfvars if you run terraform by hand or want email alerts.
+# Copy to terraform.tfvars (gitignored). Terraform also loads *.auto.tfvars files.
+
+aws_region   = "ap-south-1"
+project_name = "catalogix"
+cluster_name = "catalogix-cluster"   # the cluster becomes "<cluster_name>-dev"
+environment  = "dev"
+
+# Passwords for RDS, RabbitMQ, the app admin and Grafana are NOT set here. They
+# live in Secrets Manager as "catalogix-cluster-dev/operator-credentials":
+#   python3 scripts/python/bootstrap.py credentials
+
+# Optional: SMTP password for critical alert emails. The Jenkins job does not
+# pass it, so for email to work put this line in a gitignored file on the Jenkins
+# server, terraform/platform-infra/env/dev/smtp.auto.tfvars, never in git.
+# The alert recipient, SMTP host and SMTP user are Jenkins job parameters.
+# smtp_password = "your-smtp-app-password"

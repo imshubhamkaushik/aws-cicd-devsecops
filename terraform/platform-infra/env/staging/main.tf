@@ -98,8 +98,13 @@ module "eks" {
   jenkins_role_arn  = data.terraform_remote_state.bootstrap.outputs.jenkins_role_arn
   jenkins_public_ip = data.terraform_remote_state.bootstrap.outputs.public_ip_jenkins
 
-  # my_ip_cidr is captured once from bootstrap-infra state rather than re-queried here.
-  my_ip_cidr = data.terraform_remote_state.bootstrap.outputs.jenkins_my_ip_cidr
+  # Operator CIDRs come from bootstrap-infra state (allowed_cidrs) rather than being
+  # re-queried here. try() keeps an older bootstrap state, which only has the single
+  # jenkins_my_ip_cidr output, working until bootstrap-infra is applied again.
+  operator_cidrs = try(
+    data.terraform_remote_state.bootstrap.outputs.allowed_cidrs,
+    [data.terraform_remote_state.bootstrap.outputs.jenkins_my_ip_cidr]
+  )
 
   # Whoever runs terraform apply automatically gets console access.
   # No variable or tfvars entry needed.

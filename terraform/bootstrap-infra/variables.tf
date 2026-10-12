@@ -42,10 +42,39 @@ variable "public_key" {
     Required — no default. Provide only the public half so the private key
     stays outside Terraform state and CI infrastructure.
 
-    Generate one with: ssh-keygen -t ed25519 -f ./catalogix-key -C "catalogix"
-    then set public_key = file("./catalogix-key.pub") in terraform.tfvars.
+    Generate one with scripts/bash/create-key-pair.sh, then either:
+      - export TF_VAR_public_key="$(cat ~/.ssh/catalogix-key.pub)", or
+      - paste the literal key text into terraform.tfvars (tfvars files cannot
+        call functions such as file()), or
+      - do nothing: scripts/python/bootstrap_infra.py reads
+        ~/.ssh/catalogix-key.pub automatically when neither is set.
   EOT
   type        = string
+}
+
+variable "allowed_cidrs" {
+  description = <<-EOT
+    Operator IP ranges allowed to reach Jenkins (SSH 22, UI 8080) and the EKS
+    public API. Normally NOT set by hand: scripts/python/allowlist.py keeps the
+    list in the state bucket (access/allowed-cidrs.json), adds your current IP
+    when it is new, and writes it to allowed_cidrs.auto.tfvars.json. Entries are
+    only ever added there until you prune them or destroy the deployment.
+
+    If left empty (for example when you run terraform by hand), the IP detected
+    at apply time is used instead, which REPLACES any earlier entries.
+  EOT
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition     = alltrue([for c in var.allowed_cidrs : can(cidrhost(c, 0))])
+    error_message = "Every allowed_cidrs entry must be a valid CIDR, for example 203.0.113.5/32."
+  }
+
+  validation {
+    condition     = !contains(var.allowed_cidrs, "0.0.0.0/0")
+    error_message = "0.0.0.0/0 would open Jenkins and SSH to the whole internet and is not accepted."
+  }
 }
 
 variable "project_tag" {

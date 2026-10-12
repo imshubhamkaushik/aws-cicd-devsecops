@@ -70,19 +70,17 @@ variable "console_iam_arn" {
   type        = string
 }
 
-variable "my_ip_cidr" {
+variable "operator_cidrs" {
   description = <<-EOT
-    Operator's IP CIDR (e.g. "203.0.113.5/32"), captured once during
-    bootstrap-infra apply and passed through remote state. Used as an
-    additional entry in the EKS cluster's public_access_cidrs so the
-    operator's local kubectl can reach the EKS API directly, without
-    requiring a re-apply of this module if the IP happens to match what
-    was captured when bootstrap-infra last ran.
-
-    See the comment in main.tf for why this is no longer queried
-    independently inside this module.
+    Operator IP CIDRs (for example ["203.0.113.5/32"]) read from the
+    bootstrap-infra remote state output allowed_cidrs. They are added to the
+    EKS cluster's public_access_cidrs next to the Jenkins IP so the operator's
+    kubectl can reach the API. Adding an entry updates the cluster in place.
+    EKS accepts at most 40 CIDRs in total, so prune old entries with
+    scripts/python/allowlist.py.
   EOT
-  type        = string
+  type        = list(string)
+  default     = []
 }
 
 variable "permissions_boundary_arn" {

@@ -41,7 +41,7 @@ Before running any `terraform` commands:
 
 1. AWS CLI authenticated: `aws sts get-caller-identity`
 2. Terraform state backend exists (S3 bucket). The `bootstrap.py` script creates these automatically. If running manually, apply `terraform/backend-bootstrap/` first.
-3. `terraform.tfvars` exists in the directory you are working in. Copy `terraform.tfvars.example` and fill in your values.
+3. Optional: a `terraform.tfvars` in the directory you are working in. Each layer ships a `terraform.tfvars.example` that lists the variables and their defaults. Copy it to `terraform.tfvars` (gitignored) only for values you want to change. In `bootstrap-infra` the SSH public key is the one required value; `scripts/python/bootstrap_infra.py` reads `~/.ssh/catalogix-key.pub` for you.
 
 ---
 
@@ -81,9 +81,12 @@ Apply once per AWS account/region. Creates: VPC, public/private subnets, NAT Gat
 ```bash
 cd terraform/bootstrap-infra
 
-# Copy and fill in your variable values
+# Optional: copy and edit the variable values (the SSH public key is also read from
+# ~/.ssh/catalogix-key.pub by the Python script; by hand use TF_VAR_public_key)
 cp terraform.tfvars.example terraform.tfvars
-# Edit terraform.tfvars — at minimum, confirm aws_region and key_name
+
+# Operator IPs: let the script maintain the additive list, then apply
+(cd ../../scripts/python && python3 allowlist.py sync)
 
 terraform init
 terraform validate

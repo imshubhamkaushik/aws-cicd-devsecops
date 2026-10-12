@@ -6,6 +6,12 @@ data "http" "my_ip" {
 locals {
   my_ip_cidr = "${chomp(data.http.my_ip.response_body)}/32"
   #                      ↑ strips trailing newline    ↑ /32 = single host
+
+  # Operator access list. Normally supplied by scripts/python/allowlist.py
+  # (additive, kept in the state bucket). Falls back to the IP detected right
+  # now so a plain `terraform apply` still works; in that case the list is
+  # just this one IP.
+  operator_cidrs = length(var.allowed_cidrs) > 0 ? sort(distinct(var.allowed_cidrs)) : [local.my_ip_cidr]
 }
 
 # All rules are standalone aws_security_group_rule resources; the SGs have no
@@ -35,23 +41,29 @@ resource "aws_security_group" "sonar" {
 
 # Jenkins rules
 
+# One rule per CIDR: adding an IP creates only that rule, removing one deletes
+# only that rule, and the existing ones are never replaced.
 resource "aws_security_group_rule" "jenkins_ingress_ssh" {
-  description       = "SSH for Ansible provisioning - locked to your IP at apply time"
+  for_each          = toset(local.operator_cidrs)
+  description       = "SSH for Ansible provisioning - operator allowlist"
   type              = "ingress"
   from_port         = 22
   to_port           = 22
   protocol          = "tcp"
-  cidr_blocks       = [local.my_ip_cidr]
+  cidr_blocks       = [each.value]
   security_group_id = aws_security_group.jenkins.id
 }
 
+# One rule per CIDR: adding an IP creates only that rule, removing one deletes
+# only that rule, and the existing ones are never replaced.
 resource "aws_security_group_rule" "jenkins_ingress_ui" {
-  description       = "Jenkins UI and webhook - locked to your IP at apply time"
+  for_each          = toset(local.operator_cidrs)
+  description       = "Jenkins UI and webhook - operator allowlist"
   type              = "ingress"
   from_port         = 8080
   to_port           = 8080
   protocol          = "tcp"
-  cidr_blocks       = [local.my_ip_cidr]
+  cidr_blocks       = [each.value]
   security_group_id = aws_security_group.jenkins.id
 }
 

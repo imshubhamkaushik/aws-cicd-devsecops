@@ -40,7 +40,7 @@ resource "aws_eks_cluster" "cluster" {
     endpoint_private_access = true
     # Public endpoint is limited to the Jenkins and operator IPs; use private-only in production.
     endpoint_public_access = true
-    public_access_cidrs    = ["${var.jenkins_public_ip}/32", var.my_ip_cidr]
+    public_access_cidrs    = distinct(concat(["${var.jenkins_public_ip}/32"], var.operator_cidrs))
   }
 
   access_config {

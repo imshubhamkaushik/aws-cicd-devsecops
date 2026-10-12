@@ -1,0 +1,11 @@
+# Layer 0: S3 bucket for Terraform state.
+# Copy to terraform.tfvars (gitignored) only if you need to change a default.
+# Every value below is the default, so this file is optional.
+
+aws_region  = "ap-south-1"
+project_tag = "catalogix"
+
+# The bucket name is NOT a variable: Terraform backends cannot use variables.
+# It is "catalogix-tfstate" in the files listed in terraform/README.md
+# ("S3 State Bucket Name"). S3 names are global, so if the name is taken,
+# replace it in all of those files before the first apply.
