@@ -1,0 +1,125 @@
+@import "tailwindcss";
+
+/*
+  Design tokens. Every colour in the app comes from these variables, so the dark theme
+  is one block below and no component needs `dark:` classes.
+*/
+:root {
+  --bg: #f4f6f3;
+  --surface: #ffffff;
+  --surface-2: #eef1ed;
+  --ink: #16231e;
+  --ink-2: #55635c;
+  --line: #dde3dd;
+
+  --brand: #0f6e56;
+  --brand-strong: #0a5543;
+  --brand-ink: #ffffff;
+  --brand-soft: #dff1ea;
+
+  --saffron: #8a5a00;
+  --saffron-ink: #ffffff;
+  --saffron-soft: #fdf0cf;
+
+  --danger: #b42318;
+  --danger-soft: #fdeceb;
+
+  --info: #2f5d8a;
+  --info-soft: #e4edf6;
+
+  --ring: #0f6e56;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0e1512;
+    --surface: #16201b;
+    --surface-2: #1d2924;
+    --ink: #e8efeb;
+    --ink-2: #9db0a6;
+    --line: #2a3832;
+
+    --brand: #3fb893;
+    --brand-strong: #5fcaa8;
+    --brand-ink: #06231a;
+    --brand-soft: #14352b;
+
+    --saffron: #f2b73d;
+    --saffron-ink: #1a1200;
+    --saffron-soft: #3a2d0c;
+
+    --danger: #f08379;
+    --danger-soft: #3b1815;
+
+    --info: #8fb7e0;
+    --info-soft: #172a3d;
+
+    --ring: #3fb893;
+  }
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-line: var(--line);
+  --color-brand: var(--brand);
+  --color-brand-strong: var(--brand-strong);
+  --color-brand-ink: var(--brand-ink);
+  --color-brand-soft: var(--brand-soft);
+  --color-saffron: var(--saffron);
+  --color-saffron-ink: var(--saffron-ink);
+  --color-saffron-soft: var(--saffron-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+  --color-ring: var(--ring);
+
+  --font-display: "Bricolage Grotesque", "Hanken Grotesk", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Hanken Grotesk", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+
+  --radius-control: 0.625rem;
+  --radius-card: 0.875rem;
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-size: 15px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-display);
+    letter-spacing: -0.02em;
+    line-height: 1.15;
+  }
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+  /* Prices and counts line up in columns. */
+  .tnum {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

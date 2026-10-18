@@ -1,0 +1,25 @@
+# Node modules
+node_modules/
+
+# Build artifacts
+build/
+dist/
+coverage/
+
+# Git / IDE
+.git
+.gitignore
+.idea/
+.vscode/
+
+# Logs / Temp
+npm-debug.log
+yarn-error.log
+*.log
+*.tmp
+
+# Local configs
+.env
+
+# Ignore git and editor files
+.DS_Store
