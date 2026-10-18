@@ -1,0 +1,18 @@
+# Maven build output
+target/
+
+# Git / IDE
+.git
+.gitignore
+.idea/
+.vscode/
+.github/
+
+# Logs / Temp files
+*.log
+*.tmp
+
+# Local config
+.env
+
+*.zip
