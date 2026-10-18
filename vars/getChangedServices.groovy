@@ -18,8 +18,8 @@
 // Shared build logic can affect all modules even when their own source did not move.
 //
 // Usage:
-//   def changed = getChangedServices(BACKEND_SERVICES, [prefix: 'backend/'])
-//   def changedFrontend = getChangedServices(['frontend'], [prefix: ''])
+//   def changed = getChangedServices(BACKEND_SERVICES, [prefix: 'app/backend/'])
+//   def changedFrontend = getChangedServices(['frontend'], [prefix: 'app/'])
 // Optional: [baseCommit: '<sha>'] overrides the baseline (used by tests).
 //
 // Tests: groovy vars/test/GetChangedServicesTest.groovy
@@ -42,13 +42,13 @@ def call(List<String> services, Map opts = [:]) {
 
     def sharedFilesTouched = changedFiles.any {
         it == 'pom.xml' ||
-        it.startsWith('Jenkinsfile') ||
-        it.startsWith('helm/') ||
+        it.startsWith('infra/jenkins/') ||
+        it.startsWith('infra/helm/') ||
         it.startsWith('vars/')
     }
 
     if (sharedFilesTouched) {
-        echo "getChangedServices: shared file (pom.xml / Jenkinsfile / vars/ / helm/) changed since ${base.take(8)} — treating all as changed."
+        echo "getChangedServices: shared file (pom.xml / infra/jenkins/ / vars/ / infra/helm/) changed since ${base.take(8)} — treating all as changed."
         return services
     }
 

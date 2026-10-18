@@ -9,7 +9,7 @@
 // Usage:
 //   buildAndScanImage(
 //       imageRef: "${ECR_REGISTRY}/user-svc:${IMAGE_TAG}",
-//       dockerfile: 'backend/user-svc/Dockerfile',
+//       dockerfile: 'app/backend/user-svc/Dockerfile',
 //       context: '.',
 //       target: 'app',              // optional — omit for single-stage builds (frontend)
 //       trivyImage: env.TRIVY_IMAGE

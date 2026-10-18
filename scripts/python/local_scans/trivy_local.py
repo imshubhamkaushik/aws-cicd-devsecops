@@ -3,11 +3,11 @@
 
 Targets
   fs      source tree: HIGH/CRITICAL vulnerabilities (dependencies), secrets, misconfigurations
-  config  Terraform (terraform/) and the Helm chart rendered with the dev AND local values
+  config  Terraform (infra/terraform/) and the Helm chart rendered with the dev AND local values
   images  the application images built by docker-compose.yaml
   all     everything above
 
-The Trivy version comes from ansible/group_vars/all/vars.yaml (same as Jenkins).
+The Trivy version comes from infra/ansible/group_vars/all/vars.yaml (same as Jenkins).
 A named Docker volume caches the vulnerability DB so only the first run downloads it.
 """
 
@@ -33,7 +33,7 @@ CACHE_VOLUME = "catalogix-trivy-cache"
 SEVERITY = "HIGH,CRITICAL"
 SKIP_DIRS = "**/node_modules,**/target,**/.terraform,**/build,**/coverage,**/.git,**/__pycache__,**/.ruff_cache"
 # Git-ignored local files; they hold throw-away local credentials and never reach CI or an image.
-SKIP_FILES = "**/.env,secrets/*.txt,**/*rendered*.yaml"
+SKIP_FILES = "**/.env,**/*rendered*.yaml"
 
 
 def trivy_image() -> str:
@@ -90,7 +90,7 @@ def scan_terraform() -> None:
     run(
         trivy_base() + [
             "config", "--severity", SEVERITY, "--exit-code", "1",
-            "--skip-dirs", "**/.terraform", *ignorefile_argument(), "/repo/terraform",
+            "--skip-dirs", "**/.terraform", *ignorefile_argument(), "/repo/infra/terraform",
         ],
         cwd=REPO_ROOT,
     )

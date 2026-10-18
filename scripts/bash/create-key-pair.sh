@@ -46,7 +46,7 @@ ok "Public key:   ${KEY_PATH}.pub  (mode 644, goes into terraform.tfvars)"
 log "Next steps"
 cat <<EOF
 
-1. Add this to terraform/bootstrap-infra/terraform.tfvars:
+1. Add this to infra/terraform/bootstrap-infra/terraform.tfvars:
 
      public_key = file("${KEY_PATH}.pub")
 
@@ -63,7 +63,7 @@ cat <<EOF
    directory to begin with."
 
 More than one person needs access? Don't share this private key file —
-see ansible/group_vars/all/team_keys.yaml and the README for the
+see infra/ansible/group_vars/all/team_keys.yaml and the README for the
 per-person-key pattern, or look at AWS Systems Manager Session Manager
 to remove the need for shared SSH keys entirely.
 

@@ -12,7 +12,7 @@ By default a push to `main` does **not** start `app-cicd`, even though the job h
 
 Jenkins asks GitHub every few minutes whether `main` has a new commit. Nothing has to reach Jenkins from outside.
 
-1. In `ansible/roles/jenkins/templates/jcasc.yaml`, in the `app-cicd` job, replace
+1. In `infra/ansible/roles/jenkins/templates/jcasc.yaml`, in the `app-cicd` job, replace
 
    ```groovy
    triggers {
@@ -48,7 +48,7 @@ Jenkins asks GitHub every few minutes whether `main` has a new commit. Nothing h
 Run on a machine with the AWS CLI and `jq`, from the repository root. It adds one rule per IPv4 range, each described `github-webhook` so you can find and remove them later.
 
 ```bash
-SG=$(cd terraform/bootstrap-infra && terraform output -raw jenkins_sg_id)
+SG=$(cd infra/terraform/bootstrap-infra && terraform output -raw jenkins_sg_id)
 
 # How many ranges are there? A security group allows 60 inbound rules by default,
 # and your operator IPs use some of them.
@@ -66,7 +66,7 @@ These rules are not managed by Terraform. Terraform does not delete rules it doe
 ### 2. Add the webhook in GitHub
 
 1. Open your repository, then **Settings**, **Webhooks**, **Add webhook**.
-2. **Payload URL:** `http://<jenkins-public-ip>:8080/github-webhook/` (keep the trailing slash). The address is the Jenkins Elastic IP: `cd terraform/bootstrap-infra && terraform output -raw public_ip_jenkins`. It does not change while the deployment exists.
+2. **Payload URL:** `http://<jenkins-public-ip>:8080/github-webhook/` (keep the trailing slash). The address is the Jenkins Elastic IP: `cd infra/terraform/bootstrap-infra && terraform output -raw public_ip_jenkins`. It does not change while the deployment exists.
 3. **Content type:** `application/json`.
 4. **Which events:** *Just the push event*.
 5. Leave **Active** ticked and save.
@@ -80,7 +80,7 @@ These rules are not managed by Terraform. Terraform does not delete rules it doe
 ### Remove the rules later
 
 ```bash
-SG=$(cd terraform/bootstrap-infra && terraform output -raw jenkins_sg_id)
+SG=$(cd infra/terraform/bootstrap-infra && terraform output -raw jenkins_sg_id)
 for cidr in $(aws ec2 describe-security-groups --group-ids "$SG" \
     --query "SecurityGroups[0].IpPermissions[?FromPort==\`8080\`].IpRanges[?Description=='github-webhook'].CidrIp[]" \
     --output text); do

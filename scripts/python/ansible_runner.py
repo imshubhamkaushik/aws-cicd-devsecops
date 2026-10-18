@@ -7,7 +7,7 @@ from utils.command import info, error, warn, run_command
 # Root directory of the project (two levels up from this script)
 ROOT_DIR = Path(__file__).resolve().parents[2]
 # ANSIBLE_DIR is the directory where Ansible playbooks and related files are located.
-ANSIBLE_DIR = ROOT_DIR / "ansible"
+ANSIBLE_DIR = ROOT_DIR / "infra" / "ansible"
 # VAULT_PASSWORD_FILE is the path to the file that will store the Ansible Vault password.
 VAULT_PASSWORD_FILE = Path.home() / ".vault_pass"
 # VAULT_FILE is the path to the Ansible Vault file that will store encrypted secrets.
@@ -228,7 +228,7 @@ def _setup_vault_file() -> None:
         error(
             "Vault file is required to run Ansible.\n"
             "       Create it manually:\n"
-            "         ansible-vault create ansible/group_vars/all/vault.yaml"
+            "         ansible-vault create infra/ansible/group_vars/all/vault.yaml"
         )
 
     VAULT_FILE.parent.mkdir(parents=True, exist_ok=True)

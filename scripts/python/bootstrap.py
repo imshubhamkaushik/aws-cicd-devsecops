@@ -2,6 +2,13 @@ import argparse
 import shutil
 import subprocess
 import sys
+from pathlib import Path
+
+from utils.venv import reexec_in_venv
+
+if __name__ == "__main__":
+    # Run inside the project virtualenv (.venv) if install_tools.py has created it.
+    reexec_in_venv()
 
 from utils.command import info, error, warn, run_command
 from backend_bootstrap import backend_bootstrap
@@ -10,64 +17,18 @@ from ansible_runner import run_ansible
 from credentials import main as credentials_main, CLUSTER_NAMES
 
 
+# What the bootstrap needs. Anything missing is installed by install_tools.py (stdlib-only Python;
+# works on apt, dnf, yum and zypper systems), so there are no distro-specific commands here.
 DEPENDENCIES = [
-    {
-        "name":       "terraform",
-        "cli_tool":   "terraform",
-        "py_module":  None,
-        "install":    (
-            "sudo apt-get install -y gnupg software-properties-common && "
-            "wget -qO- https://apt.releases.hashicorp.com/gpg | "
-            "sudo gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg && "
-            "echo \"deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] "
-            "https://apt.releases.hashicorp.com $(lsb_release -cs) main\" | "
-            "sudo tee /etc/apt/sources.list.d/hashicorp.list && "
-            "sudo apt-get update && sudo apt-get install -y terraform"
-        ),
-        "help":       "Install from https://developer.hashicorp.com/terraform/install",
-    },
-    {
-        "name":       "aws (AWS CLI)",
-        "cli_tool":   "aws",
-        "py_module":  None,
-        "install":    (
-            "curl -fsSL https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip "
-            "-o /tmp/awscliv2.zip && "
-            "unzip -q /tmp/awscliv2.zip -d /tmp && "
-            "sudo /tmp/aws/install && "
-            "rm -rf /tmp/awscliv2.zip /tmp/aws"
-        ),
-        "help":       "Install from https://docs.aws.amazon.com/cli/latest/userguide/install-cliv2.html",
-    },
-    {
-        "name":       "ansible-playbook",
-        "cli_tool":   "ansible-playbook",
-        "py_module":  None,
-        "install":    "sudo apt-get install -y ansible",
-        "help":       "Run: sudo apt-get install -y ansible",
-    },
-    {
-        "name":       "ansible-galaxy",
-        "cli_tool":   "ansible-galaxy",
-        "py_module":  None,
-        "install":    "sudo apt-get install -y ansible",
-        "help":       "Installed alongside ansible: sudo apt-get install -y ansible",
-    },
-    {
-        "name":       "jq",
-        "cli_tool":   "jq",
-        "py_module":  None,
-        "install":    "sudo apt-get install -y jq",
-        "help":       "Run: sudo apt-get install -y jq",
-    },
-    {
-        "name":       "boto3 (Python)",
-        "cli_tool":   None,
-        "py_module":  "boto3",
-        "install":    "sudo apt-get install -y python3-pip python3-boto3 python3-botocore",
-        "help":       "Run: sudo apt-get install -y python3-boto3 python3-botocore",
-    },
+    {"name": "terraform",        "cli_tool": "terraform",        "py_module": None},
+    {"name": "aws (AWS CLI)",    "cli_tool": "aws",              "py_module": None},
+    {"name": "ansible-playbook", "cli_tool": "ansible-playbook", "py_module": None},
+    {"name": "ansible-galaxy",   "cli_tool": "ansible-galaxy",   "py_module": None},
+    {"name": "jq",               "cli_tool": "jq",               "py_module": None},
+    {"name": "boto3 (Python)",   "cli_tool": None,               "py_module": "boto3"},
 ]
+
+INSTALLER = Path(__file__).resolve().parent / "install_tools.py"
 
 
 def _is_missing(dep):
@@ -75,11 +36,10 @@ def _is_missing(dep):
     if dep["cli_tool"] and shutil.which(dep["cli_tool"]) is None:
         return True
     if dep["py_module"]:
-        # Use subprocess directly — run_command exits on failure which would
-        # abort the whole check loop instead of just marking the dep as missing.
+        # Use subprocess directly: run_command exits on failure, which would abort the
+        # whole check loop instead of just marking this dependency as missing.
         result = subprocess.run(
-            f"python3 -c 'import {dep['py_module']}'",
-            shell=True,
+            [sys.executable, "-c", f"import {dep['py_module']}"],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
@@ -100,27 +60,19 @@ def check_dependencies():
         print(f"       - {dep['name']}")
 
     print("")
-    confirm = input("Auto-install all missing dependencies? (yes/no): ").strip().lower()
+    confirm = input("Install them now with scripts/python/install_tools.py? (yes/no): ").strip().lower()
 
     if confirm not in ["yes", "y"]:
         print("")
-        info("Manual install commands:")
-        for dep in missing:
-            print(f"       {dep['name']}: {dep['help']}")
+        info(f"Install them yourself with: bash scripts/bash/install-all.sh  (or: python3 {INSTALLER})")
         error("Please install missing dependencies and re-run.")
 
-    # apt-get based installs benefit from a single update pass first
-    apt_needed = any("apt-get" in dep["install"] for dep in missing)
-    if apt_needed:
-        info("Updating apt package index...")
-        run_command("sudo apt-get update -qq")
+    run_command(f"{sys.executable} {INSTALLER}")
 
-    for dep in missing:
-        info(f"Installing {dep['name']}...")
-        info(f"If this fails, install manually: {dep['help']}")
-        run_command(dep["install"])
+    # install_tools.py may just have created .venv (Ansible and boto3 live there). Restart this
+    # script inside it so the rest of the run sees them.
+    reexec_in_venv()
 
-    # Verify everything is now present after installation
     still_missing = [dep for dep in missing if _is_missing(dep)]
     if still_missing:
         names = ", ".join(d["name"] for d in still_missing)
@@ -156,7 +108,7 @@ def run_credentials(env=None):
         if env not in CLUSTER_NAMES:
             error(f"Unknown environment '{env}'.")
     if credentials_main(["--env", env]) != 0:
-        error("Credentials were not saved. Re-run:  python bootstrap.py credentials")
+        error("Credentials were not saved. Re-run:  python3 scripts/python/bootstrap.py credentials")
 
 
 def run_full_bootstrap():

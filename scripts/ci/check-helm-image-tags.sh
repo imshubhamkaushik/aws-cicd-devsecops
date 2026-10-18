@@ -11,7 +11,7 @@
 # Usage: scripts/ci/check-helm-image-tags.sh [values-file]
 set -euo pipefail
 
-CHART="helm/catalogix-hc"
+CHART="infra/helm/catalogix-hc"
 VALUES="${1:-$CHART/values-dev.yaml}"
 REGISTRY="registry.example.test"
 GLOBAL_TAG="GLOBAL-SENTINEL"

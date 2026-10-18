@@ -21,6 +21,9 @@
 **/build/
 **/coverage/
 
+# Python virtualenv
+.venv/
+
 # VCS / IDE / editors
 .git/
 .github/

@@ -35,7 +35,7 @@ def build_command(
         command.append(action)
     else:
         command.extend(
-            ["-pl", ",".join(f"backend/{service}" for service in services)]
+            ["-pl", ",".join(f"app/backend/{service}" for service in services)]
         )
         if not no_deps:
             command.append("-am")

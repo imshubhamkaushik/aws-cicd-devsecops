@@ -1,11 +1,42 @@
+import os
+import re
 import sys
 from pathlib import Path
 from utils.command import info, error, run_command
+import allowlist
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
 
 # Path Constants for bootstrap_infra terraform directory.
-BOOTSTRAP_INFRA_DIR = ROOT_DIR / "terraform" / "bootstrap-infra"
+BOOTSTRAP_INFRA_DIR = ROOT_DIR / "infra" / "terraform" / "bootstrap-infra"
+
+SSH_PUBLIC_KEY = Path.home() / ".ssh" / "catalogix-key.pub"
+
+
+def terraform_env():
+    """Environment for terraform runs in bootstrap-infra.
+
+    Supplies TF_VAR_public_key from ~/.ssh/catalogix-key.pub when the operator
+    has not provided the key themselves (env var or terraform.tfvars).
+    """
+
+    env = {
+        "AWS_MAX_ATTEMPTS": "10",
+        "AWS_RETRY_MODE": "adaptive"
+    }
+    tfvars = BOOTSTRAP_INFRA_DIR / "terraform.tfvars"
+    has_tfvars_key = tfvars.exists() and re.search(
+        r"^\s*public_key\s*=", tfvars.read_text(encoding="utf-8"), re.MULTILINE
+    ) is not None
+    if not os.environ.get("TF_VAR_public_key") and not has_tfvars_key:
+        if SSH_PUBLIC_KEY.exists():
+            env["TF_VAR_public_key"] = SSH_PUBLIC_KEY.read_text(encoding="utf-8").strip()
+        else:
+            error(
+                f"No SSH public key found. Run scripts/bash/create-key-pair.sh (creates {SSH_PUBLIC_KEY}), "
+                "or set TF_VAR_public_key, or put public_key in infra/terraform/bootstrap-infra/terraform.tfvars."
+            )
+    return env
 
 # Terraform Execution with plan check and user confirmation.
 def bootstrap_infra():
@@ -14,10 +45,14 @@ def bootstrap_infra():
 
     tfplan = BOOTSTRAP_INFRA_DIR / "main.tfplan"
 
-    env = {
-        "AWS_MAX_ATTEMPTS": "10",
-        "AWS_RETRY_MODE": "adaptive"
-    }
+    env = terraform_env()
+
+    # Add this machine's IP to the shared allowlist if it is new (never replaces
+    # existing entries) and hand the whole list to Terraform.
+    try:
+        allowlist.sync()
+    except allowlist.AllowlistError as exc:
+        error(f"Allowlist step failed: {exc}")
 
     try:
         run_command("terraform init", cwd=BOOTSTRAP_INFRA_DIR, env=env)

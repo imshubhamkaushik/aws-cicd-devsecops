@@ -34,6 +34,11 @@ import tempfile
 from dataclasses import dataclass
 from typing import Any
 
+from utils.venv import reexec_in_venv
+
+if __name__ == "__main__":
+    reexec_in_venv()
+
 CLUSTER_NAMES = {
     "dev": "catalogix-cluster-dev",
     "staging": "catalogix-cluster-staging",

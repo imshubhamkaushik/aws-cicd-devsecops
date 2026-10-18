@@ -20,6 +20,9 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
+# ====== Python virtualenv created by scripts/python/install_tools.py ======
+.venv/
+
 # ====== Misc ======
 **.zip
 .github/
@@ -58,7 +61,7 @@ catalogix-rendered.yaml
 **/*password.txt
 
 # Helm chart package files
-helm/**/charts/*.tgz
+infra/helm/**/charts/*.tgz
 # ====== Terraform ======
 # Never commit variable files (may hold IPs, keys, account details) or state.
 *.tfvars
@@ -74,4 +77,3 @@ crash.log
 
 # ====== Generated / local scratch ======
 *rendered*.yaml
-secrets/postgres_password.txt

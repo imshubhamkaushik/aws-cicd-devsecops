@@ -5,8 +5,8 @@ Default:
     backend  -> mvn clean verify   (unit tests + Testcontainers integration tests; needs Docker running)
     frontend -> npm ci + npm test + npm run build   (with --frontend-coverage: coverage instead of plain test)
 
---clear-cache removes project build outputs (backend/*/target, frontend build/coverage and the
-Vite cache) but never ~/.m2 or frontend/node_modules.
+--clear-cache removes project build outputs (app/backend/*/target, app/frontend build/coverage and the
+Vite cache) but never ~/.m2 or app/frontend/node_modules.
 This script does not start Docker Compose; use compose.py for that.
 """
 
@@ -24,7 +24,7 @@ def parse_args() -> argparse.Namespace:
     scope.add_argument("--backend-only", action="store_true", help="Only mvn clean verify.")
     scope.add_argument("--frontend-only", action="store_true", help="Only npm ci + test + build.")
     parser.add_argument("--frontend-coverage", action="store_true",
-                        help="Produce frontend/coverage/lcov.info (needed by SonarQube).")
+                        help="Produce app/frontend/coverage/lcov.info (needed by SonarQube).")
     parser.add_argument("--skip-it", action="store_true",
                         help="Backend: skip Testcontainers integration tests (no Docker needed).")
     return parser.parse_args()

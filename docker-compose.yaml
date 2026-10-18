@@ -14,7 +14,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql
       # One database and one role per service, created on first start.
-      - ./postgres-init:/docker-entrypoint-initdb.d:ro
+      - ./app/postgres-init:/docker-entrypoint-initdb.d:ro
     ports:
       - "5432:5432"
     healthcheck:
@@ -60,15 +60,21 @@ services:
     image: catalogix-user-svc:latest
     build:
       context: .
-      dockerfile: backend/user-svc/Dockerfile
+      dockerfile: app/backend/user-svc/Dockerfile
     restart: unless-stopped
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/catalogix-users
       SPRING_DATASOURCE_USERNAME: user_svc
       SPRING_DATASOURCE_PASSWORD: ${SERVICE_DB_PASSWORD}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
+      RATE_LIMIT_ENABLED: ${RATE_LIMIT_ENABLED:-true}
+      RATE_LIMIT_GENERAL_RPM: ${RATE_LIMIT_GENERAL_RPM:-300}
+      RATE_LIMIT_AUTH_RPM: ${RATE_LIMIT_AUTH_RPM:-10}
       CORS_ALLOW_CREDENTIALS: "true"
-      JWT_SECRET: ${JWT_SECRET}
+      JWT_PRIVATE_KEY_B64: ${JWT_PRIVATE_KEY_B64:?Run scripts/generate-local-jwt-keys.sh first}
+      JWT_PUBLIC_KEY_B64: ${JWT_PUBLIC_KEY_B64:?Run scripts/generate-local-jwt-keys.sh first}
+      INTERNAL_JWT_PRIVATE_KEY_B64: ${INTERNAL_JWT_PRIVATE_KEY_B64:?Run scripts/generate-local-jwt-keys.sh first}
+      INTERNAL_JWT_PUBLIC_KEY_B64: ${INTERNAL_JWT_PUBLIC_KEY_B64:?Run scripts/generate-local-jwt-keys.sh first}
       JWT_EXPIRATION_MS: ${JWT_EXPIRATION_MS}
       REFRESH_TOKEN_EXPIRATION_MS: ${REFRESH_TOKEN_EXPIRATION_MS}
       FRONTEND_BASE_URL: ${FRONTEND_BASE_URL}
@@ -97,14 +103,19 @@ services:
     image: catalogix-catalog-svc:latest
     build:
       context: .
-      dockerfile: backend/catalog-svc/Dockerfile
+      dockerfile: app/backend/catalog-svc/Dockerfile
     restart: unless-stopped
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/catalogix-catalog
       SPRING_DATASOURCE_USERNAME: catalog_svc
       SPRING_DATASOURCE_PASSWORD: ${SERVICE_DB_PASSWORD}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
-      JWT_SECRET: ${JWT_SECRET}
+      RATE_LIMIT_ENABLED: ${RATE_LIMIT_ENABLED:-true}
+      RATE_LIMIT_GENERAL_RPM: ${RATE_LIMIT_GENERAL_RPM:-300}
+      RATE_LIMIT_AUTH_RPM: ${RATE_LIMIT_AUTH_RPM:-10}
+      JWT_PUBLIC_KEY_B64: ${JWT_PUBLIC_KEY_B64:?Run scripts/generate-local-jwt-keys.sh first}
+      INTERNAL_JWT_PRIVATE_KEY_B64: ${INTERNAL_JWT_PRIVATE_KEY_B64:?Run scripts/generate-local-jwt-keys.sh first}
+      INTERNAL_JWT_PUBLIC_KEY_B64: ${INTERNAL_JWT_PUBLIC_KEY_B64:?Run scripts/generate-local-jwt-keys.sh first}
       INVENTORY_SVC_URL: http://inventory-svc:11003
       SEED_DATA: "true"
     expose:
@@ -123,14 +134,19 @@ services:
     image: catalogix-inventory-svc:latest
     build:
       context: .
-      dockerfile: backend/inventory-svc/Dockerfile
+      dockerfile: app/backend/inventory-svc/Dockerfile
     restart: unless-stopped
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/catalogix-inventory
       SPRING_DATASOURCE_USERNAME: inventory_svc
       SPRING_DATASOURCE_PASSWORD: ${SERVICE_DB_PASSWORD}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
-      JWT_SECRET: ${JWT_SECRET}
+      RATE_LIMIT_ENABLED: ${RATE_LIMIT_ENABLED:-true}
+      RATE_LIMIT_GENERAL_RPM: ${RATE_LIMIT_GENERAL_RPM:-300}
+      RATE_LIMIT_AUTH_RPM: ${RATE_LIMIT_AUTH_RPM:-10}
+      JWT_PUBLIC_KEY_B64: ${JWT_PUBLIC_KEY_B64:?Run scripts/generate-local-jwt-keys.sh first}
+      INTERNAL_JWT_PRIVATE_KEY_B64: ${INTERNAL_JWT_PRIVATE_KEY_B64:?Run scripts/generate-local-jwt-keys.sh first}
+      INTERNAL_JWT_PUBLIC_KEY_B64: ${INTERNAL_JWT_PUBLIC_KEY_B64:?Run scripts/generate-local-jwt-keys.sh first}
     expose:
       - "11003"
     depends_on:
@@ -145,14 +161,19 @@ services:
     image: catalogix-cart-svc:latest
     build:
       context: .
-      dockerfile: backend/cart-svc/Dockerfile
+      dockerfile: app/backend/cart-svc/Dockerfile
     restart: unless-stopped
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/catalogix-cart
       SPRING_DATASOURCE_USERNAME: cart_svc
       SPRING_DATASOURCE_PASSWORD: ${SERVICE_DB_PASSWORD}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
-      JWT_SECRET: ${JWT_SECRET}
+      RATE_LIMIT_ENABLED: ${RATE_LIMIT_ENABLED:-true}
+      RATE_LIMIT_GENERAL_RPM: ${RATE_LIMIT_GENERAL_RPM:-300}
+      RATE_LIMIT_AUTH_RPM: ${RATE_LIMIT_AUTH_RPM:-10}
+      JWT_PUBLIC_KEY_B64: ${JWT_PUBLIC_KEY_B64:?Run scripts/generate-local-jwt-keys.sh first}
+      INTERNAL_JWT_PRIVATE_KEY_B64: ${INTERNAL_JWT_PRIVATE_KEY_B64:?Run scripts/generate-local-jwt-keys.sh first}
+      INTERNAL_JWT_PUBLIC_KEY_B64: ${INTERNAL_JWT_PUBLIC_KEY_B64:?Run scripts/generate-local-jwt-keys.sh first}
       CATALOG_SVC_URL: http://catalog-svc:11002
       INVENTORY_SVC_URL: http://inventory-svc:11003
     expose:
@@ -169,14 +190,19 @@ services:
     image: catalogix-payment-svc:latest
     build:
       context: .
-      dockerfile: backend/payment-svc/Dockerfile
+      dockerfile: app/backend/payment-svc/Dockerfile
     restart: unless-stopped
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/catalogix-payment
       SPRING_DATASOURCE_USERNAME: payment_svc
       SPRING_DATASOURCE_PASSWORD: ${SERVICE_DB_PASSWORD}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
-      JWT_SECRET: ${JWT_SECRET}
+      RATE_LIMIT_ENABLED: ${RATE_LIMIT_ENABLED:-true}
+      RATE_LIMIT_GENERAL_RPM: ${RATE_LIMIT_GENERAL_RPM:-300}
+      RATE_LIMIT_AUTH_RPM: ${RATE_LIMIT_AUTH_RPM:-10}
+      JWT_PUBLIC_KEY_B64: ${JWT_PUBLIC_KEY_B64:?Run scripts/generate-local-jwt-keys.sh first}
+      INTERNAL_JWT_PRIVATE_KEY_B64: ${INTERNAL_JWT_PRIVATE_KEY_B64:?Run scripts/generate-local-jwt-keys.sh first}
+      INTERNAL_JWT_PUBLIC_KEY_B64: ${INTERNAL_JWT_PUBLIC_KEY_B64:?Run scripts/generate-local-jwt-keys.sh first}
     expose:
       - "11006"
     depends_on:
@@ -191,14 +217,19 @@ services:
     image: catalogix-checkout-svc:latest
     build:
       context: .
-      dockerfile: backend/checkout-svc/Dockerfile
+      dockerfile: app/backend/checkout-svc/Dockerfile
     restart: unless-stopped
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/catalogix-checkout
       SPRING_DATASOURCE_USERNAME: checkout_svc
       SPRING_DATASOURCE_PASSWORD: ${SERVICE_DB_PASSWORD}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
-      JWT_SECRET: ${JWT_SECRET}
+      RATE_LIMIT_ENABLED: ${RATE_LIMIT_ENABLED:-true}
+      RATE_LIMIT_GENERAL_RPM: ${RATE_LIMIT_GENERAL_RPM:-300}
+      RATE_LIMIT_AUTH_RPM: ${RATE_LIMIT_AUTH_RPM:-10}
+      JWT_PUBLIC_KEY_B64: ${JWT_PUBLIC_KEY_B64:?Run scripts/generate-local-jwt-keys.sh first}
+      INTERNAL_JWT_PRIVATE_KEY_B64: ${INTERNAL_JWT_PRIVATE_KEY_B64:?Run scripts/generate-local-jwt-keys.sh first}
+      INTERNAL_JWT_PUBLIC_KEY_B64: ${INTERNAL_JWT_PUBLIC_KEY_B64:?Run scripts/generate-local-jwt-keys.sh first}
       CATALOG_SVC_URL: http://catalog-svc:11002
       INVENTORY_SVC_URL: http://inventory-svc:11003
       PAYMENT_SVC_URL: http://payment-svc:11006
@@ -237,14 +268,19 @@ services:
     image: catalogix-notification-svc:latest
     build:
       context: .
-      dockerfile: backend/notification-svc/Dockerfile
+      dockerfile: app/backend/notification-svc/Dockerfile
     restart: unless-stopped
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/catalogix-notification
       SPRING_DATASOURCE_USERNAME: notification_svc
       SPRING_DATASOURCE_PASSWORD: ${SERVICE_DB_PASSWORD}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
-      JWT_SECRET: ${JWT_SECRET}
+      RATE_LIMIT_ENABLED: ${RATE_LIMIT_ENABLED:-true}
+      RATE_LIMIT_GENERAL_RPM: ${RATE_LIMIT_GENERAL_RPM:-300}
+      RATE_LIMIT_AUTH_RPM: ${RATE_LIMIT_AUTH_RPM:-10}
+      JWT_PUBLIC_KEY_B64: ${JWT_PUBLIC_KEY_B64:?Run scripts/generate-local-jwt-keys.sh first}
+      INTERNAL_JWT_PRIVATE_KEY_B64: ${INTERNAL_JWT_PRIVATE_KEY_B64:?Run scripts/generate-local-jwt-keys.sh first}
+      INTERNAL_JWT_PUBLIC_KEY_B64: ${INTERNAL_JWT_PUBLIC_KEY_B64:?Run scripts/generate-local-jwt-keys.sh first}
       MAIL_HOST: mailpit
       MAIL_PORT: 1025
       MAIL_SMTP_AUTH: "false"
@@ -274,7 +310,7 @@ services:
     cpus: 0.1
     image: catalogix-frontend:latest
     build:
-      context: ./frontend
+      context: ./app/frontend
     restart: unless-stopped
     expose:
       - "11001"
@@ -286,7 +322,7 @@ services:
     cpus: 0.1
     image: catalogix-gateway:latest
     build:
-      context: ./gateway
+      context: ./app/gateway
     restart: unless-stopped
     ports:
       - "11000:11000"

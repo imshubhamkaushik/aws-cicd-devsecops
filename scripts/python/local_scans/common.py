@@ -2,7 +2,7 @@
 """Shared helpers for Catalogix local automation scripts.
 
 Design rules for every script in this folder:
-  * Tool versions come from ansible/group_vars/all/vars.yaml, the same file the
+  * Tool versions come from infra/ansible/group_vars/all/vars.yaml, the same file the
     Jenkins pipelines read, so a local run and a CI run use the same scanners.
   * Every external tool is resolved with shutil.which, so `mvn.cmd` / `npm.cmd`
     work on Windows (a bare "mvn" is not found by subprocess there).
@@ -22,14 +22,14 @@ from typing import Iterable, Sequence
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-BACKEND_DIR = REPO_ROOT / "backend"
-FRONTEND_DIR = REPO_ROOT / "frontend"
+BACKEND_DIR = REPO_ROOT / "app" / "backend"
+FRONTEND_DIR = REPO_ROOT / "app" / "frontend"
 ROOT_POM_FILE = REPO_ROOT / "pom.xml"
 COMPOSE_FILE = REPO_ROOT / "docker-compose.yaml"
 ENV_FILE = REPO_ROOT / ".env"
 ENV_EXAMPLE_FILE = REPO_ROOT / ".env.example"
-VERSIONS_FILE = REPO_ROOT / "ansible" / "group_vars" / "all" / "vars.yaml"
-HELM_CHART = REPO_ROOT / "helm" / "catalogix-hc"
+VERSIONS_FILE = REPO_ROOT / "infra" / "ansible" / "group_vars" / "all" / "vars.yaml"
+HELM_CHART = REPO_ROOT / "infra" / "helm" / "catalogix-hc"
 
 # Mount path inside scanner containers. Posix form so "C:\\Users\\me\\repo" works with
 # Docker Desktop on Windows (`-v C:/Users/me/repo:/repo`).
@@ -105,7 +105,7 @@ def require_docker() -> None:
 
 
 def tool_version(key: str, env_override: str | None = None) -> str:
-    """Read a pinned tool version from ansible/group_vars/all/vars.yaml (the CI source of truth)."""
+    """Read a pinned tool version from infra/ansible/group_vars/all/vars.yaml (the CI source of truth)."""
     if env_override and os.getenv(env_override):
         return os.environ[env_override].strip()
     require_file(VERSIONS_FILE, "Tool version file")
@@ -142,7 +142,7 @@ def check_env_file() -> None:
             ".env is missing key(s) defined in .env.example: "
             + ", ".join(missing)
             + "\nAdd them (compare with .env.example). If the Postgres volume already exists, "
-            "also run: python scripts/python/scans/docker_clean.py --volumes --yes"
+            "also run: python scripts/python/local_scans/docker_clean.py --volumes --yes"
         )
 
 
@@ -161,7 +161,7 @@ def maven_modules() -> list[str]:
 
     for element in root.findall(path, ns):
         value = (element.text or "").strip().replace("\\", "/")
-        if value.startswith("backend/"):
+        if value.startswith("app/backend/"):
             modules.append(Path(value).name)
 
     if not modules:

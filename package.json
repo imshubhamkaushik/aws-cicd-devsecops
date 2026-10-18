@@ -1,0 +1,16 @@
+{
+  "name": "catalogix",
+  "version": "2.0",
+  "private": true,
+  "description": "Root entry points so every command runs from the repository root. The real frontend lives in app/frontend; this file only forwards to it and has no dependencies of its own.",
+  "scripts": {
+    "postinstall": "npm --prefix app/frontend ci",
+    "start": "npm --prefix app/frontend start",
+    "build": "npm --prefix app/frontend run build",
+    "test": "npm --prefix app/frontend test",
+    "test:coverage": "npm --prefix app/frontend run test:coverage"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

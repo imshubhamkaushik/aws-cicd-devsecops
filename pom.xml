@@ -12,14 +12,14 @@
 
     <!-- Modules -->
     <modules>
-        <module>backend/security-common</module>
-        <module>backend/user-svc</module>
-        <module>backend/catalog-svc</module>
-        <module>backend/inventory-svc</module>
-        <module>backend/cart-svc</module>
-        <module>backend/payment-svc</module>
-        <module>backend/checkout-svc</module>
-        <module>backend/notification-svc</module>
+        <module>app/backend/security-common</module>
+        <module>app/backend/user-svc</module>
+        <module>app/backend/catalog-svc</module>
+        <module>app/backend/inventory-svc</module>
+        <module>app/backend/cart-svc</module>
+        <module>app/backend/payment-svc</module>
+        <module>app/backend/checkout-svc</module>
+        <module>app/backend/notification-svc</module>
     </modules>
 
     <!-- Global Properties -->

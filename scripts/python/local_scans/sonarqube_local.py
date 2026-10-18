@@ -13,7 +13,7 @@ Zero-setup mode (recommended):
 Use your own server instead:
     SONAR_HOST_URL=http://localhost:9000 SONAR_TOKEN=<token> python sonarqube_local.py
 
-The scanner version comes from ansible/group_vars/all/vars.yaml (same as Jenkins).
+The scanner version comes from infra/ansible/group_vars/all/vars.yaml (same as Jenkins).
 """
 
 from __future__ import annotations
@@ -137,13 +137,13 @@ def ensure_reports(build: bool) -> None:
     classes = list(BACKEND_DIR.glob("*/target/classes"))
     if not classes:
         raise RuntimeError(
-            "No compiled classes found (backend/*/target/classes). The Java analysis needs them.\n"
-            "Re-run with --build, or run: python scripts/python/scans/mvn.py clean-verify --all"
+            "No compiled classes found (app/backend/*/target/classes). The Java analysis needs them.\n"
+            "Re-run with --build, or run: python scripts/python/local_scans/mvn.py clean-verify --all"
         )
     if not list(BACKEND_DIR.glob("*/target/site/jacoco/jacoco.xml")):
         print("WARNING: no JaCoCo reports found; backend coverage will show as 0%. Use --build.")
     if not (FRONTEND_DIR / "coverage" / "lcov.info").is_file():
-        print("WARNING: frontend/coverage/lcov.info not found; frontend coverage will show as 0%. Use --build.")
+        print("WARNING: app/frontend/coverage/lcov.info not found; frontend coverage will show as 0%. Use --build.")
 
 
 def scanner_target(host_url: str, managed: bool) -> tuple[str, list[str]]:

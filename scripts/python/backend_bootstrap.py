@@ -21,7 +21,7 @@ from utils.command import info, error, run_command
 ROOT_DIR = Path(__file__).resolve().parents[2]
 
 # Path Constants for backend_bootstrap terraform directory
-BACKEND_BOOTSTRAP_DIR = ROOT_DIR / "terraform" / "backend-bootstrap"
+BACKEND_BOOTSTRAP_DIR = ROOT_DIR / "infra" / "terraform" / "backend-bootstrap"
 
 
 def backend_bootstrap():
