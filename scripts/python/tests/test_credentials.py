@@ -6,7 +6,7 @@ import unittest
 from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-import credentials as c  # noqa: E402
+from aws import credentials as c  # noqa: E402
 
 
 class PasswordPolicy(unittest.TestCase):
@@ -82,6 +82,38 @@ class CheckValues(unittest.TestCase):
         self.assertTrue(any("db_readonly_username" in p for p in c.check_values(half)))
         both = dict(half, db_readonly_username="catalogix_readonly")
         self.assertEqual(c.check_values(both), [])
+
+    def test_optional_readonly_username_alone_is_invalid(self):
+        problems = c.check_values(dict(GOOD, db_readonly_username="catalogix_readonly"))
+        self.assertTrue(any("db_readonly_password: required" in problem for problem in problems))
+
+    def test_targeted_update_cannot_create_half_readonly_pair(self):
+        problems = c._validate_changes(
+            GOOD,
+            {"db_readonly_username": "catalogix_readonly"},
+            ["db_readonly_username"],
+            exists=True,
+        )
+        self.assertTrue(any("db_readonly_password" in problem for problem in problems))
+
+    def test_targeted_update_to_new_secret_must_supply_all_required_fields(self):
+        problems = c._validate_changes(
+            {},
+            {"seed_admin_password": "Str0ngAdminPw1"},
+            ["seed_admin_password"],
+            exists=False,
+        )
+        self.assertIn("db_master_password: missing", problems)
+        self.assertIn("rabbitmq_password: missing", problems)
+
+    def test_targeted_unrelated_update_does_not_block_on_unrelated_optional_pair(self):
+        problems = c._validate_changes(
+            GOOD,
+            {"grafana_admin_user": "grafana.admin"},
+            ["grafana_admin_user"],
+            exists=True,
+        )
+        self.assertEqual(problems, [])
 
 
 class CommandLine(unittest.TestCase):

@@ -10,17 +10,19 @@ What it installs
     terraform  Terraform (official zip from HashiCorp, checked against its published SHA-256)
     ansible    Ansible and boto3 in a virtualenv at <repo>/.venv, plus the Galaxy collections in
                infra/ansible/requirements.yaml. The other project scripts use this virtualenv
-               automatically (see utils/venv.py), so there is nothing to activate.
+               automatically (see common/venv.py), so there is nothing to activate.
     jq         from the system package manager
-    ssh        ssh-keygen, from the system package manager (needed by create-key-pair.sh)
+    ssh        ssh-keygen, from the system package manager (needed by setup/create_ssh_key.py)
 
 Works on any Linux with apt, dnf, yum or zypper: Ubuntu, Debian, Amazon Linux, RHEL and its
 clones, Fedora, SUSE. Run it as a normal user (it uses sudo where needed) or as root (cloud VMs).
 Safe to re-run: anything already installed is skipped.
 
 Usage
-    python3 scripts/python/install_tools.py                  # everything
+    python3 scripts/python/install_tools.py                  # inspect, then install all/selectively
     python3 scripts/python/install_tools.py --only terraform,aws
+    python3 scripts/python/install_tools.py --yes             # install every missing tool non-interactively
+    python3 scripts/python/install_tools.py --check-only
     python3 scripts/python/install_tools.py --terraform-version 1.12.2
 """
 
@@ -250,12 +252,25 @@ def install_ansible():
                  "       On Debian/Ubuntu run: sudo apt-get install -y python3-venv\n"
                  "       (scripts/bash/install-python.sh does this for you.)")
 
-    if (VENV_DIR / "bin" / "ansible-playbook").exists():
+    packages_ready = False
+    if python.exists():
+        package_check = subprocess.run(
+            [str(python), "-c", "import ansible, boto3, botocore"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+        packages_ready = (
+            package_check.returncode == 0
+            and (VENV_DIR / "bin" / "ansible-playbook").exists()
+            and (VENV_DIR / "bin" / "ansible-galaxy").exists()
+        )
+
+    if packages_ready:
         skip(output([str(VENV_DIR / "bin" / "ansible"), "--version"]).splitlines()[0])
     else:
         run([str(python), "-m", "pip", "install", "--quiet", "--upgrade", "pip"])
-        # `ansible` is the full package (includes the collections the roles use);
-        # boto3/botocore are what the amazon.aws inventory plugin and our scripts need.
+        # `ansible` is the full package; boto3/botocore support AWS inventory and operator tools.
         run([str(python), "-m", "pip", "install", "--quiet", "ansible", "boto3", "botocore"])
         ok(output([str(VENV_DIR / "bin" / "ansible"), "--version"]).splitlines()[0])
 
@@ -267,45 +282,187 @@ def install_ansible():
         ok(f"Collections installed from {ANSIBLE_REQUIREMENTS.relative_to(REPO_ROOT)}")
 
 
-# ---------------------------------------------------------------- main
+# ---------------------------------------------------------------- detection and interactive selection
 
-INSTALLERS = {
-    "jq": install_jq,
-    "ssh": install_ssh,
-    "aws": install_awscli,
-    "terraform": install_terraform,
-    "ansible": install_ansible,
-}
+def tool_status(name, terraform_version=None):
+    """Return a short installed-version string, or None if the required tool is missing."""
+    if name == "jq":
+        return output(["jq", "--version"]) if shutil.which("jq") else None
+    if name == "ssh":
+        return "ssh-keygen available" if shutil.which("ssh-keygen") else None
+    if name == "aws":
+        version = output(["aws", "--version"]) if shutil.which("aws") else ""
+        if "aws-cli/2" in version:
+            return version
+        return None
+    if name == "terraform":
+        version_text = output(["terraform", "version"]) if shutil.which("terraform") else ""
+        if not version_text:
+            return None
+        installed = version_text.splitlines()[0].replace("Terraform ", "").strip()
+        if terraform_version and installed.lstrip("v") != terraform_version.lstrip("v"):
+            return None
+        return installed
+    if name == "ansible":
+        python = VENV_DIR / "bin" / "python"
+        ansible = VENV_DIR / "bin" / "ansible"
+        playbook = VENV_DIR / "bin" / "ansible-playbook"
+        if not (python.exists() and ansible.exists() and playbook.exists()):
+            return None
+        packages = subprocess.run(
+            [str(python), "-c", "import ansible, boto3, botocore"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+        if packages.returncode:
+            return None
+        galaxy = VENV_DIR / "bin" / "ansible-galaxy"
+        collections = output([str(galaxy), "collection", "list"]) if galaxy.exists() else ""
+        if "amazon.aws" not in collections or "community.docker" not in collections:
+            return None
+        return output([str(ansible), "--version"]).splitlines()[0]
+    raise ValueError(f"Unknown tool: {name}")
+
+
+def print_status(statuses):
+    """Show a compact inventory of the tools managed by this installer."""
+    print("\nCatalogix tool inventory:")
+    for index, name in enumerate(ALL_TOOLS, start=1):
+        label = status_label(name)
+        state = statuses[name]
+        if state:
+            print(f"  {index}. {label}: installed ({state})")
+        else:
+            print(f"  {index}. {label}: MISSING")
+
+
+def status_label(name):
+    return {
+        "jq": "jq",
+        "ssh": "OpenSSH (ssh-keygen)",
+        "aws": "AWS CLI v2",
+        "terraform": "Terraform",
+        "ansible": "Ansible + boto3 (.venv)",
+    }[name]
+
+
+def select_missing(missing):
+    """Interactively choose all missing tools or a subset of them."""
+    if not missing:
+        return []
+
+    print("\nMissing tools: " + ", ".join(status_label(name) for name in missing))
+    choice = input("Install [A]ll missing, [S]elect tools, or [Q]uit? [A/s/q]: ").strip().lower()
+    if choice in ("", "a", "all"):
+        return list(missing)
+    if choice in ("q", "quit", "n", "no"):
+        return []
+    if choice not in ("s", "select", "selective"):
+        print("Unrecognised choice; no tools installed.")
+        return []
+
+    for index, name in enumerate(missing, start=1):
+        print(f"  {index}. {name} — {status_label(name)}")
+    answer = input("Enter comma-separated numbers or tool names (or q to cancel): ").strip().lower()
+    if answer in ("q", "quit", ""):
+        return []
+
+    selected = []
+    by_number = {str(index): name for index, name in enumerate(missing, start=1)}
+    for item in (part.strip() for part in answer.split(",")):
+        name = by_number.get(item, item)
+        if name not in missing:
+            fail(f"'{item}' is not one of the missing tools. Choose: {', '.join(missing)}")
+        if name not in selected:
+            selected.append(name)
+    return selected
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Install the tools Catalogix needs (stdlib only).")
-    parser.add_argument("--only", help=f"Comma-separated subset of: {', '.join(ALL_TOOLS)}")
-    parser.add_argument("--terraform-version", help="Install this Terraform version instead of the latest.")
+    parser = argparse.ArgumentParser(
+        description="Check Catalogix prerequisites and install missing tools (stdlib only)."
+    )
+    parser.add_argument(
+        "--only",
+        help=f"Comma-separated tools to check/install: {', '.join(ALL_TOOLS)}",
+    )
+    parser.add_argument("--terraform-version", help="Require/install this Terraform version.")
+    parser.add_argument(
+        "--yes", action="store_true",
+        help="Install all missing tools without prompting (for automation).",
+    )
+    parser.add_argument(
+        "--check-only", action="store_true",
+        help="Only report tool status; exit 1 if a required tool is missing.",
+    )
     args = parser.parse_args()
 
     if sys.platform != "linux":
         fail("This installer is for Linux. On Windows use WSL (Ubuntu); on macOS install the tools with Homebrew.")
 
-    tools = ALL_TOOLS
+    requested = None
     if args.only:
-        tools = [name.strip() for name in args.only.split(",") if name.strip()]
-        unknown = [name for name in tools if name not in INSTALLERS]
+        requested = [part.strip() for part in args.only.split(",") if part.strip()]
+        unknown = sorted(set(requested) - set(ALL_TOOLS))
         if unknown:
             fail(f"Unknown tool(s): {', '.join(unknown)}. Choose from: {', '.join(ALL_TOOLS)}")
+        # Preserve command-line order but don't install a tool twice.
+        requested = list(dict.fromkeys(requested))
 
-    for name in tools:
-        if name == "terraform":
-            install_terraform(args.terraform_version)
+    statuses = {name: tool_status(name, args.terraform_version if name == "terraform" else None)
+                for name in ALL_TOOLS}
+    print_status(statuses)
+
+    if args.check_only:
+        missing = [name for name, status in statuses.items() if status is None]
+        if missing:
+            print("\nMissing: " + ", ".join(missing))
+            return 1
+        print("\nAll managed tools are installed.")
+        return 0
+
+    if requested is not None:
+        selected = requested
+    else:
+        missing = [name for name, status in statuses.items() if status is None]
+        if not missing:
+            info("All managed tools are already installed. Nothing to do.")
+            return 0
+        if args.yes:
+            selected = missing
+        elif sys.stdin.isatty():
+            selected = select_missing(missing)
+            if not selected:
+                info("No tools selected; nothing was installed.")
+                return 0
         else:
-            INSTALLERS[name]()
+            fail("Missing tools were found, but stdin is not interactive. Re-run with --yes or --only <tools>.")
 
-    info("Done")
-    if "ansible" in tools:
-        print(f"    Ansible lives in {VENV_DIR}. The scripts in scripts/python use it automatically;")
-        print(f"    to run ansible by hand: source {VENV_DIR}/bin/activate")
-    print("    Next: aws configure")
+    # Do not reinstall explicitly requested tools that are already healthy.
+    for name in selected:
+        state = tool_status(name, args.terraform_version if name == "terraform" else None)
+        if state:
+            skip(f"{status_label(name)} ({state})")
+            # Ansible status already includes the required Galaxy collections, so a healthy
+            # explicitly selected installation needs no package-manager or network work.
+            continue
+        INSTALLERS[name](args.terraform_version) if name == "terraform" else INSTALLERS[name]()
+
+    final = {name: tool_status(name, args.terraform_version if name == "terraform" else None)
+             for name in selected}
+    failed = [name for name, state in final.items() if state is None]
+    if failed:
+        fail("Installation did not satisfy: " + ", ".join(failed))
+
+    info("Tool setup complete.")
+    if "ansible" in selected:
+        print(f"    Ansible lives in {VENV_DIR}; operator scripts use it automatically.")
+    if "aws" in selected:
+        print("    Next: aws configure")
+    if "terraform" in selected or "ansible" in selected:
+        print("    SSH key (when bootstrapping EC2): python3 scripts/python/setup/create_ssh_key.py")
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main() or 0)

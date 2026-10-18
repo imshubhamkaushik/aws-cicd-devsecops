@@ -1,6 +1,6 @@
 # Non-sensitive Jenkins configuration variables.
 # Sensitive values (tokens, passwords) live in the encrypted group_vars/all/vault.yaml,
-# created by `python3 scripts/python/bootstrap.py ansible`.
+# created by `python3 scripts/python/aws/bootstrap.py ansible`.
 #
 # Expected vault variables:
 #   vault_jenkins_admin_password: <strong password>

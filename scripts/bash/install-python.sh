@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # install-python.sh — makes sure Python 3 (with pip and venv) exists.
 #
-# This is the ONLY thing done in shell. A bare Linux VM always has a shell but not always Python;
-# once Python is there, scripts/python/install_tools.py installs everything else.
+# A bare Linux VM always has a shell but not always Python. This helper installs only Python;
+# install-all.sh then delegates the tool inventory and remaining installs to install_tools.py.
 #
 # Works on apt (Ubuntu/Debian), dnf/yum (Amazon Linux, RHEL, Fedora and clones) and zypper (SUSE).
 # Run as a normal user (uses sudo) or as root (typical on a fresh cloud VM).

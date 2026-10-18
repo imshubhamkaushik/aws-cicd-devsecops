@@ -42,11 +42,11 @@ variable "public_key" {
     Required — no default. Provide only the public half so the private key
     stays outside Terraform state and CI infrastructure.
 
-    Generate one with scripts/bash/create-key-pair.sh, then either:
+    Generate one with python3 scripts/python/setup/create_ssh_key.py, then either:
       - export TF_VAR_public_key="$(cat ~/.ssh/catalogix-key.pub)", or
       - paste the literal key text into terraform.tfvars (tfvars files cannot
         call functions such as file()), or
-      - do nothing: scripts/python/bootstrap_infra.py reads
+      - do nothing: scripts/python/aws/bootstrap_infra.py reads
         ~/.ssh/catalogix-key.pub automatically when neither is set.
   EOT
   type        = string
@@ -55,7 +55,7 @@ variable "public_key" {
 variable "allowed_cidrs" {
   description = <<-EOT
     Operator IP ranges allowed to reach Jenkins (SSH 22, UI 8080) and the EKS
-    public API. Normally NOT set by hand: scripts/python/allowlist.py keeps the
+    public API. Normally NOT set by hand: scripts/python/aws/allowlist.py keeps the
     list in the state bucket (access/allowed-cidrs.json), adds your current IP
     when it is new, and writes it to allowed_cidrs.auto.tfvars.json. Entries are
     only ever added there until you prune them or destroy the deployment.

@@ -6,7 +6,7 @@ The application is deliberately modest in business logic. It is big enough to ne
 
 **Terraform · Ansible · Jenkins · Docker · Amazon EKS · Helm · SonarQube · Trivy · Gitleaks · External Secrets Operator · Prometheus · Grafana**
 
-> **Status.** The code and configuration were reviewed and cross-checked, and the front-end and Python test suites were run. A full `mvn verify`, `helm template`, `terraform plan` and a real pipeline run are what prove the whole thing, and results are not recorded in this repository yet. See [Verification](#verification) before relying on any claim here.
+> **Status.** Local verification has recorded a successful `mvn clean verify`, a successful frontend production build, 66 passing frontend tests, and 77 passing Python tooling tests. The frontend build reports a bundle-size warning. These checks do not establish that AWS infrastructure, Helm rendering, or the full Jenkins deployment lifecycle works end to end. See [Verification](#verification) for the evidence and remaining checks.
 
 ---
 
@@ -33,7 +33,7 @@ The application is deliberately modest in business logic. It is big enough to ne
 - **Database per service, the same everywhere.** One database and one login role per service, created by an init script on Docker Compose, by a Helm template on local Kubernetes and by a Terraform module on RDS.
 - **Hardened Kubernetes workloads.** Non-root, read-only containers with all capabilities dropped, startup/readiness/liveness probes, autoscaling, PodDisruptionBudgets, graceful shutdown, resource limits, a default-deny NetworkPolicy with allow rules that follow the real call graph, and an ALB ingress.
 - **Repeatable servers.** Jenkins and SonarQube are never configured by hand. Ansible provisions them from a dynamic EC2 inventory, and Jenkins Configuration as Code creates the admin user, credentials and both pipeline jobs on first boot.
-- **A bootstrap CLI.** A stdlib-only installer puts the tools on a bare Linux machine, and `scripts/python/bootstrap.py` drives Terraform and Ansible with dependency checks, AWS credential checks, "skip apply when nothing changed" and Ansible Vault handling.
+- **A bootstrap CLI.** A stdlib-only installer puts the tools on a bare Linux machine, and `scripts/python/aws/bootstrap.py` drives Terraform and Ansible with dependency checks, AWS credential checks, "skip apply when nothing changed" and Ansible Vault handling.
 - **Observability with alerts.** Prometheus, Grafana and Alertmanager with service, JVM, RabbitMQ and checkout-outbox metrics and eight alert rules.
 
 ---
@@ -54,7 +54,7 @@ The application is deliberately modest in business logic. It is big enough to ne
 | Messaging | RabbitMQ |
 | Database | PostgreSQL 18 (Amazon RDS on AWS, a container locally) |
 | Frontend | React 19, Vite 8, Tailwind CSS 4, Radix UI, served by Nginx |
-| Tooling | Python 3 (stdlib installer and bootstrap CLI), one small shell script that installs Python |
+| Tooling | Python 3 (stdlib installer and operator CLIs), two small Bash bootstrap wrappers for Python/tool setup |
 
 ---
 
@@ -64,7 +64,7 @@ You need Docker (with Compose), `openssl` and `python3`. The full stack needs ro
 
 ```bash
 cp .env.example .env                  # review the local passwords in it
-bash scripts/generate-local-jwt-keys.sh   # creates the user key pair and the internal key pair in .env
+python3 scripts/python/local/generate_jwt_keys.py   # creates the user key pair and the internal key pair in .env
 docker compose up --build
 ```
 
@@ -78,7 +78,7 @@ docker compose up --build
 Local admin login: `admin@catalogix.local` / `AdminAdminAdmin`.
 
 Notes:
-- `generate-local-jwt-keys.sh` replaces both key pairs each time. Run it once per environment; rerunning logs everyone out.
+- `scripts/python/local/generate_jwt_keys.py` creates the two key pairs. Run it once per environment; deliberate key rotation invalidates existing tokens and requires confirmation (or `--force`).
 - `POSTGRES_PASSWORD` and `SERVICE_DB_PASSWORD` are read only when the Postgres volume is first created. After changing them, or after pulling a schema change, run `docker compose down -v`.
 - Java containers are distroless and have no healthcheck, so Compose only orders their start. Calls made before a dependency is ready fail fast through the circuit breakers.
 - To work on one service: `docker compose up postgres rabbitmq payment-svc`.
@@ -243,11 +243,11 @@ Some files stay at the repository root because the tool that reads them looks th
 Prerequisites: an AWS account (the default region is `ap-south-1`), an AWS CLI profile allowed to create the bootstrap resources (a scoped IAM user is better than AdministratorAccess, and its key should be deleted after bootstrap), and a Linux machine or WSL.
 
 1. **Tools.** `bash scripts/bash/install-all.sh` installs Python if it is missing, then the AWS CLI, Terraform, Ansible, `jq` and `ssh-keygen`. Then `aws configure`.
-2. **SSH key.** `bash scripts/bash/create-key-pair.sh`.
-3. **Bootstrap.** `python3 scripts/python/bootstrap.py` creates the state bucket, the VPC and the two EC2 servers, configures them with Ansible, and asks for the operator-chosen passwords.
+2. **SSH key.** `python3 scripts/python/setup/create_ssh_key.py`.
+3. **Bootstrap.** `python3 scripts/python/aws/bootstrap.py` creates the state bucket, the VPC and the two EC2 servers, configures them with Ansible, and asks for the operator-chosen passwords.
 4. **Platform.** Run the Jenkins job `platform-infra` with `ACTION=Apply` (EKS, RDS, ECR, ALB controller, External Secrets, monitoring).
 5. **Application.** Push to `main`, or run `app-cicd` for the chosen environment.
-6. **Destroy.** Run `platform-infra` with `ACTION=Destroy` and `CONFIRM_DESTROY=true`, then `python3 scripts/python/destroy_infra.py` for the bootstrap layer. The S3 state bucket is kept on purpose.
+6. **Destroy.** Run `platform-infra` with `ACTION=Destroy` and `CONFIRM_DESTROY=true`, then `python3 scripts/python/aws/destroy_infra.py` for the bootstrap layer. The S3 state bucket is kept on purpose.
 
 Details and the reasons for the order are in [infra/README.md](infra/README.md).
 
@@ -279,24 +279,25 @@ What is covered by automated tests in this repository:
 
 | Area | Command | Notes |
 |---|---|---|
-| Backend | `mvn verify` | Unit tests and Testcontainers integration tests. Needs Docker |
-| Frontend | `npm test` | 66 tests (vitest) |
-| Python tooling | `python3 -m unittest discover -s scripts/python/tests` | 59 tests (allowlist and credentials) |
-| Helm image-tag contract | `scripts/ci/check-helm-image-tags.sh` | Needs `helm`; checks that every service's image tag really comes from the values the pipeline sets |
-| Whole local gate | `python3 scripts/python/local_scans/devsecops_check.py --start-sonarqube` | Gitleaks, tests, SonarQube, Trivy, Compose smoke test |
+| Backend | `mvn clean verify` | Developer-reported success on 2026-10-18; Maven reactor reported success for the parent, `security-common`, and all seven services. Integration-test coverage depends on the configured Maven profiles and bindings. Needs Docker for Testcontainers tests. |
+| Frontend production build | `npm run build` | Passed with Vite 8.3.2; 2,078 modules transformed. Main JS bundle is 537.35 kB minified (167.29 kB gzip), triggering Vite's 500 kB chunk-size warning. |
+| Frontend tests and coverage | `npm run test:coverage` | 12 files, 66 tests passed. Lines 66.13%, statements 64.62%, branches 59.46%, functions 56.10% (developer-reported, 2026-10-18). |
+| Python tooling and regression tests | `python3 -m unittest discover -s scripts/python/tests -v` | 77 tests passed in the script refactor workspace. |
+| Python syntax | `python3 -m compileall -q scripts/python` | Passed in the script refactor workspace. |
+| Helm image-tag contract | `python3 scripts/python/ci/check_helm_image_tags.py infra/helm/catalogix-hc/values-dev.yaml` | Needs `helm`; checks that every service's image tag comes from the values the pipeline sets. Not run end-to-end in this environment. |
+| Whole local gate | `python3 scripts/python/local/devsecops_check.py --start-sonarqube` | Intended to run Gitleaks, tests, SonarQube, Trivy and Compose smoke tests. A complete gate run is not recorded. |
 
 What has not been run end to end, and therefore is not claimed as working:
 
 | Check | Command | Result |
 |---|---|---|
-| Backend build on the current layout | `mvn verify` | not recorded |
-| Chart renders | `helm template catalogix infra/helm/catalogix-hc -f infra/helm/catalogix-hc/values-dev.yaml` | not recorded |
+| Helm chart render | `helm template catalogix infra/helm/catalogix-hc -f infra/helm/catalogix-hc/values-dev.yaml` | not recorded |
 | Terraform plan | `terraform plan` in `infra/terraform/platform-infra/env/dev` | not recorded |
-| Container builds | `docker compose build` | not recorded |
+| Container builds and Compose smoke test | `docker compose build` and the local smoke-test workflow | not recorded in this verification record |
 | NetworkPolicy enforced on EKS | see [the chart README](infra/helm/catalogix-hc/README.md#testing-the-networkpolicy) | not recorded |
 | Pipelines | one run each of `platform-infra` and `app-cicd` | not recorded |
 
-When you run these, write the date and result in this table. A column of green results is worth more than any sentence above it.
+Record the exact command, date, and result when these are run. Successful build and unit-test results are valuable, but they are not substitutes for an end-to-end cloud deployment.
 
 ---
 

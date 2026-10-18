@@ -77,7 +77,7 @@ variable "operator_cidrs" {
     EKS cluster's public_access_cidrs next to the Jenkins IP so the operator's
     kubectl can reach the API. Adding an entry updates the cluster in place.
     EKS accepts at most 40 CIDRs in total, so prune old entries with
-    scripts/python/allowlist.py.
+    scripts/python/aws/allowlist.py.
   EOT
   type        = list(string)
   default     = []

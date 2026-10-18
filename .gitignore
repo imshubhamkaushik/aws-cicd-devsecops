@@ -43,7 +43,6 @@ yarn-error.log*
 
 # Terraform
 **/.terraform/
-**/.terraform.lock.hcl
 
 # Generated / local-only artifacts that must never be committed
 __pycache__/

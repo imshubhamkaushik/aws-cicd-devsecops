@@ -29,7 +29,7 @@ Jenkins asks GitHub every few minutes whether `main` has a new commit. Nothing h
    ```
 
 2. Commit and push the change.
-3. Re-apply Jenkins configuration: `python3 scripts/python/bootstrap.py ansible`.
+3. Re-apply Jenkins configuration: `python3 scripts/python/aws/bootstrap.py ansible`.
 4. In Jenkins open `app-cicd`, then **Configure** and check that *Poll SCM* shows `H/5 * * * *`.
 5. Push a commit to `main`. Within about five minutes the job starts, and the build cause reads *Started by an SCM change*.
 
@@ -100,4 +100,4 @@ In Jenkins open `app-cicd`, then **Build with Parameters**, and start it. Nothin
 | Delivery shows `403` | A reverse proxy or the CSRF setting blocks the request | Check the URL has the trailing slash; do not put a login in front of `/github-webhook/` |
 | Delivery shows `200` but no build starts | The push was not to `main`, or the job has not been created | The job builds `*/main` only; confirm the job exists on the dashboard |
 | Builds start but cannot clone | The `github-token` credential cannot read the repo | Create a token that can read it and update the vault, then re-run the Ansible step |
-| Polling never triggers | JCasC was not re-applied | Re-run `python3 scripts/python/bootstrap.py ansible` and check **Configure** on the job |
+| Polling never triggers | JCasC was not re-applied | Re-run `python3 scripts/python/aws/bootstrap.py ansible` and check **Configure** on the job |

@@ -10,7 +10,7 @@ environment  = "dev"
 
 # Passwords for RDS, RabbitMQ, the app admin and Grafana are NOT set here. They
 # live in Secrets Manager as "catalogix-cluster-dev/operator-credentials":
-#   python3 scripts/python/bootstrap.py credentials
+#   python3 scripts/python/aws/bootstrap.py credentials
 
 # Optional: SMTP password for critical alert emails. The Jenkins job does not
 # pass it, so for email to work put this line in a gitignored file on the Jenkins

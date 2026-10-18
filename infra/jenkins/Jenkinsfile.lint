@@ -109,7 +109,7 @@ pipeline {
         }
 
         // Password policy + Secrets Manager handling of the credentials tool
-        // (scripts/python/credentials.py) — pure unit tests, no AWS access needed.
+        // (scripts/python/aws/credentials.py) — pure unit tests, no AWS access needed.
         stage('Python Unit Tests') {
             steps {
                 sh 'python3 -m unittest discover -s scripts/python/tests'
@@ -174,7 +174,7 @@ pipeline {
         // the chart reads (see the script's header for the bug this prevents).
         stage('Helm Image Tag Contract') {
             steps {
-                sh 'scripts/ci/check-helm-image-tags.sh infra/helm/catalogix-hc/values-dev.yaml'
+                sh 'python3 scripts/python/ci/check_helm_image_tags.py infra/helm/catalogix-hc/values-dev.yaml'
             }
         }
 
@@ -197,7 +197,7 @@ pipeline {
             steps {
                 sh '''
                 set -e
-                shellcheck scripts/*.sh scripts/bash/*.sh scripts/ci/*.sh
+                shellcheck scripts/bash/*.sh
                 '''
             }
         }

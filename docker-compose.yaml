@@ -71,10 +71,10 @@ services:
       RATE_LIMIT_GENERAL_RPM: ${RATE_LIMIT_GENERAL_RPM:-300}
       RATE_LIMIT_AUTH_RPM: ${RATE_LIMIT_AUTH_RPM:-10}
       CORS_ALLOW_CREDENTIALS: "true"
-      JWT_PRIVATE_KEY_B64: ${JWT_PRIVATE_KEY_B64:?Run scripts/generate-local-jwt-keys.sh first}
-      JWT_PUBLIC_KEY_B64: ${JWT_PUBLIC_KEY_B64:?Run scripts/generate-local-jwt-keys.sh first}
-      INTERNAL_JWT_PRIVATE_KEY_B64: ${INTERNAL_JWT_PRIVATE_KEY_B64:?Run scripts/generate-local-jwt-keys.sh first}
-      INTERNAL_JWT_PUBLIC_KEY_B64: ${INTERNAL_JWT_PUBLIC_KEY_B64:?Run scripts/generate-local-jwt-keys.sh first}
+      JWT_PRIVATE_KEY_B64: ${JWT_PRIVATE_KEY_B64:?Run python3 scripts/python/local/generate_jwt_keys.py first}
+      JWT_PUBLIC_KEY_B64: ${JWT_PUBLIC_KEY_B64:?Run python3 scripts/python/local/generate_jwt_keys.py first}
+      INTERNAL_JWT_PRIVATE_KEY_B64: ${INTERNAL_JWT_PRIVATE_KEY_B64:?Run python3 scripts/python/local/generate_jwt_keys.py first}
+      INTERNAL_JWT_PUBLIC_KEY_B64: ${INTERNAL_JWT_PUBLIC_KEY_B64:?Run python3 scripts/python/local/generate_jwt_keys.py first}
       JWT_EXPIRATION_MS: ${JWT_EXPIRATION_MS}
       REFRESH_TOKEN_EXPIRATION_MS: ${REFRESH_TOKEN_EXPIRATION_MS}
       FRONTEND_BASE_URL: ${FRONTEND_BASE_URL}
@@ -113,9 +113,9 @@ services:
       RATE_LIMIT_ENABLED: ${RATE_LIMIT_ENABLED:-true}
       RATE_LIMIT_GENERAL_RPM: ${RATE_LIMIT_GENERAL_RPM:-300}
       RATE_LIMIT_AUTH_RPM: ${RATE_LIMIT_AUTH_RPM:-10}
-      JWT_PUBLIC_KEY_B64: ${JWT_PUBLIC_KEY_B64:?Run scripts/generate-local-jwt-keys.sh first}
-      INTERNAL_JWT_PRIVATE_KEY_B64: ${INTERNAL_JWT_PRIVATE_KEY_B64:?Run scripts/generate-local-jwt-keys.sh first}
-      INTERNAL_JWT_PUBLIC_KEY_B64: ${INTERNAL_JWT_PUBLIC_KEY_B64:?Run scripts/generate-local-jwt-keys.sh first}
+      JWT_PUBLIC_KEY_B64: ${JWT_PUBLIC_KEY_B64:?Run python3 scripts/python/local/generate_jwt_keys.py first}
+      INTERNAL_JWT_PRIVATE_KEY_B64: ${INTERNAL_JWT_PRIVATE_KEY_B64:?Run python3 scripts/python/local/generate_jwt_keys.py first}
+      INTERNAL_JWT_PUBLIC_KEY_B64: ${INTERNAL_JWT_PUBLIC_KEY_B64:?Run python3 scripts/python/local/generate_jwt_keys.py first}
       INVENTORY_SVC_URL: http://inventory-svc:11003
       SEED_DATA: "true"
     expose:
@@ -144,9 +144,9 @@ services:
       RATE_LIMIT_ENABLED: ${RATE_LIMIT_ENABLED:-true}
       RATE_LIMIT_GENERAL_RPM: ${RATE_LIMIT_GENERAL_RPM:-300}
       RATE_LIMIT_AUTH_RPM: ${RATE_LIMIT_AUTH_RPM:-10}
-      JWT_PUBLIC_KEY_B64: ${JWT_PUBLIC_KEY_B64:?Run scripts/generate-local-jwt-keys.sh first}
-      INTERNAL_JWT_PRIVATE_KEY_B64: ${INTERNAL_JWT_PRIVATE_KEY_B64:?Run scripts/generate-local-jwt-keys.sh first}
-      INTERNAL_JWT_PUBLIC_KEY_B64: ${INTERNAL_JWT_PUBLIC_KEY_B64:?Run scripts/generate-local-jwt-keys.sh first}
+      JWT_PUBLIC_KEY_B64: ${JWT_PUBLIC_KEY_B64:?Run python3 scripts/python/local/generate_jwt_keys.py first}
+      INTERNAL_JWT_PRIVATE_KEY_B64: ${INTERNAL_JWT_PRIVATE_KEY_B64:?Run python3 scripts/python/local/generate_jwt_keys.py first}
+      INTERNAL_JWT_PUBLIC_KEY_B64: ${INTERNAL_JWT_PUBLIC_KEY_B64:?Run python3 scripts/python/local/generate_jwt_keys.py first}
     expose:
       - "11003"
     depends_on:
@@ -171,9 +171,9 @@ services:
       RATE_LIMIT_ENABLED: ${RATE_LIMIT_ENABLED:-true}
       RATE_LIMIT_GENERAL_RPM: ${RATE_LIMIT_GENERAL_RPM:-300}
       RATE_LIMIT_AUTH_RPM: ${RATE_LIMIT_AUTH_RPM:-10}
-      JWT_PUBLIC_KEY_B64: ${JWT_PUBLIC_KEY_B64:?Run scripts/generate-local-jwt-keys.sh first}
-      INTERNAL_JWT_PRIVATE_KEY_B64: ${INTERNAL_JWT_PRIVATE_KEY_B64:?Run scripts/generate-local-jwt-keys.sh first}
-      INTERNAL_JWT_PUBLIC_KEY_B64: ${INTERNAL_JWT_PUBLIC_KEY_B64:?Run scripts/generate-local-jwt-keys.sh first}
+      JWT_PUBLIC_KEY_B64: ${JWT_PUBLIC_KEY_B64:?Run python3 scripts/python/local/generate_jwt_keys.py first}
+      INTERNAL_JWT_PRIVATE_KEY_B64: ${INTERNAL_JWT_PRIVATE_KEY_B64:?Run python3 scripts/python/local/generate_jwt_keys.py first}
+      INTERNAL_JWT_PUBLIC_KEY_B64: ${INTERNAL_JWT_PUBLIC_KEY_B64:?Run python3 scripts/python/local/generate_jwt_keys.py first}
       CATALOG_SVC_URL: http://catalog-svc:11002
       INVENTORY_SVC_URL: http://inventory-svc:11003
     expose:
@@ -200,9 +200,9 @@ services:
       RATE_LIMIT_ENABLED: ${RATE_LIMIT_ENABLED:-true}
       RATE_LIMIT_GENERAL_RPM: ${RATE_LIMIT_GENERAL_RPM:-300}
       RATE_LIMIT_AUTH_RPM: ${RATE_LIMIT_AUTH_RPM:-10}
-      JWT_PUBLIC_KEY_B64: ${JWT_PUBLIC_KEY_B64:?Run scripts/generate-local-jwt-keys.sh first}
-      INTERNAL_JWT_PRIVATE_KEY_B64: ${INTERNAL_JWT_PRIVATE_KEY_B64:?Run scripts/generate-local-jwt-keys.sh first}
-      INTERNAL_JWT_PUBLIC_KEY_B64: ${INTERNAL_JWT_PUBLIC_KEY_B64:?Run scripts/generate-local-jwt-keys.sh first}
+      JWT_PUBLIC_KEY_B64: ${JWT_PUBLIC_KEY_B64:?Run python3 scripts/python/local/generate_jwt_keys.py first}
+      INTERNAL_JWT_PRIVATE_KEY_B64: ${INTERNAL_JWT_PRIVATE_KEY_B64:?Run python3 scripts/python/local/generate_jwt_keys.py first}
+      INTERNAL_JWT_PUBLIC_KEY_B64: ${INTERNAL_JWT_PUBLIC_KEY_B64:?Run python3 scripts/python/local/generate_jwt_keys.py first}
     expose:
       - "11006"
     depends_on:
@@ -227,9 +227,9 @@ services:
       RATE_LIMIT_ENABLED: ${RATE_LIMIT_ENABLED:-true}
       RATE_LIMIT_GENERAL_RPM: ${RATE_LIMIT_GENERAL_RPM:-300}
       RATE_LIMIT_AUTH_RPM: ${RATE_LIMIT_AUTH_RPM:-10}
-      JWT_PUBLIC_KEY_B64: ${JWT_PUBLIC_KEY_B64:?Run scripts/generate-local-jwt-keys.sh first}
-      INTERNAL_JWT_PRIVATE_KEY_B64: ${INTERNAL_JWT_PRIVATE_KEY_B64:?Run scripts/generate-local-jwt-keys.sh first}
-      INTERNAL_JWT_PUBLIC_KEY_B64: ${INTERNAL_JWT_PUBLIC_KEY_B64:?Run scripts/generate-local-jwt-keys.sh first}
+      JWT_PUBLIC_KEY_B64: ${JWT_PUBLIC_KEY_B64:?Run python3 scripts/python/local/generate_jwt_keys.py first}
+      INTERNAL_JWT_PRIVATE_KEY_B64: ${INTERNAL_JWT_PRIVATE_KEY_B64:?Run python3 scripts/python/local/generate_jwt_keys.py first}
+      INTERNAL_JWT_PUBLIC_KEY_B64: ${INTERNAL_JWT_PUBLIC_KEY_B64:?Run python3 scripts/python/local/generate_jwt_keys.py first}
       CATALOG_SVC_URL: http://catalog-svc:11002
       INVENTORY_SVC_URL: http://inventory-svc:11003
       PAYMENT_SVC_URL: http://payment-svc:11006
@@ -278,9 +278,9 @@ services:
       RATE_LIMIT_ENABLED: ${RATE_LIMIT_ENABLED:-true}
       RATE_LIMIT_GENERAL_RPM: ${RATE_LIMIT_GENERAL_RPM:-300}
       RATE_LIMIT_AUTH_RPM: ${RATE_LIMIT_AUTH_RPM:-10}
-      JWT_PUBLIC_KEY_B64: ${JWT_PUBLIC_KEY_B64:?Run scripts/generate-local-jwt-keys.sh first}
-      INTERNAL_JWT_PRIVATE_KEY_B64: ${INTERNAL_JWT_PRIVATE_KEY_B64:?Run scripts/generate-local-jwt-keys.sh first}
-      INTERNAL_JWT_PUBLIC_KEY_B64: ${INTERNAL_JWT_PUBLIC_KEY_B64:?Run scripts/generate-local-jwt-keys.sh first}
+      JWT_PUBLIC_KEY_B64: ${JWT_PUBLIC_KEY_B64:?Run python3 scripts/python/local/generate_jwt_keys.py first}
+      INTERNAL_JWT_PRIVATE_KEY_B64: ${INTERNAL_JWT_PRIVATE_KEY_B64:?Run python3 scripts/python/local/generate_jwt_keys.py first}
+      INTERNAL_JWT_PUBLIC_KEY_B64: ${INTERNAL_JWT_PUBLIC_KEY_B64:?Run python3 scripts/python/local/generate_jwt_keys.py first}
       MAIL_HOST: mailpit
       MAIL_PORT: 1025
       MAIL_SMTP_AUTH: "false"

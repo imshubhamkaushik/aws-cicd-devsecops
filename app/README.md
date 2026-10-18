@@ -95,7 +95,7 @@ Configuration comes from environment variables. The full local list is in [`.env
 | `MAIL_FROM`, `FRONTEND_BASE_URL` | notification-svc, user-svc | Sender address and the base URL used in email links |
 | `RATE_LIMIT_*` | all services | See above |
 
-Keys are Base64 of DER: PKCS#8 for private keys, X.509 for public keys. `scripts/generate-local-jwt-keys.sh` writes them into `.env`; on AWS Terraform generates them.
+Keys are Base64 of DER: PKCS#8 for private keys, X.509 for public keys. `python3 scripts/python/local/generate_jwt_keys.py` writes them into `.env`; on AWS Terraform generates them.
 
 ## Build and test
 

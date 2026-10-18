@@ -21,13 +21,13 @@ infra/ansible/
     jenkins/             Java 21, Jenkins, plugins, JCasC
 ```
 
-Run it through `python3 scripts/python/bootstrap.py ansible` (see [../../scripts/README.md](../../scripts/README.md)), which handles the vault, installs the collections and runs the two phases below. Running `ansible-playbook` by hand works too, but then you must do the two phases yourself.
+Run it through `python3 scripts/python/aws/bootstrap.py ansible` (see [../../scripts/README.md](../../scripts/README.md)), which handles the vault, installs the collections and runs the two phases below. Running `ansible-playbook` by hand works too, but then you must do the two phases yourself.
 
 ## Inventory
 
 `aws_ec2.yaml` uses the `amazon.aws.aws_ec2` plugin in `ap-south-1` and keeps running instances tagged `Project: catalogix`. The tag `Role` becomes the group name, so there are two groups, `jenkins` and `sonarqube`. Hosts are found by tag, so changing IP addresses does not matter. Change the region and tag here if you change them in Terraform.
 
-Jenkins sits in a public subnet and is reached on its public IP. SonarQube is in a private subnet with no public address, so `group_vars/sonarqube/vars.yaml` makes Ansible reach it through the Jenkins host (an SSH `ProxyCommand`). SSH uses the user `ubuntu` and the key `~/.ssh/catalogix-key` created by `scripts/bash/create-key-pair.sh`.
+Jenkins sits in a public subnet and is reached on its public IP. SonarQube is in a private subnet with no public address, so `group_vars/sonarqube/vars.yaml` makes Ansible reach it through the Jenkins host (an SSH `ProxyCommand`). SSH uses the user `ubuntu` and the key `~/.ssh/catalogix-key` created by `python3 scripts/python/setup/create_ssh_key.py`.
 
 ## Two phases
 
@@ -57,7 +57,7 @@ Installs Java 21 and Jenkins from the official apt repository (the playbook remo
 | Credentials | `github-token` and `sonarqube-token`, from environment variables |
 | Jobs | `platform-infra` (`scriptPath('infra/jenkins/Jenkinsfile.platform-infra')`) and `app-cicd` (`scriptPath('infra/jenkins/Jenkinsfile.app-cicd')`, with a `githubPush()` trigger), both on `*/main` |
 
-`unknown: reject` and `restricted: reject` make JCasC fail loudly on a typo instead of ignoring it. To change the job definitions or the trigger, edit this file and re-run `python3 scripts/python/bootstrap.py ansible` (see [../../docs/github-webhook.md](../../docs/github-webhook.md)). Editing a job in the Jenkins UI is overwritten the next time JCasC is applied.
+`unknown: reject` and `restricted: reject` make JCasC fail loudly on a typo instead of ignoring it. To change the job definitions or the trigger, edit this file and re-run `python3 scripts/python/aws/bootstrap.py ansible` (see [../../docs/github-webhook.md](../../docs/github-webhook.md)). Editing a job in the Jenkins UI is overwritten the next time JCasC is applied.
 
 Plugins are listed in `roles/jenkins/files/plugins.yaml`: Docker Pipeline, Configuration as Code, Matrix Authorization, Credentials and Credentials Binding, Pipeline (workflow-aggregator), Pipeline Graph View, Git, GitHub and GitHub Branch Source, Multibranch, Job DSL, NodeJS, Maven, SonarQube Scanner, AWS Credentials, Timestamper, Workspace Cleanup and the dark theme.
 

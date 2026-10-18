@@ -62,7 +62,7 @@ Nothing sensitive is in the values files. On AWS, External Secrets Operator copi
 | `catalogix-secrets` | `secretsManager.appSecretName` (everything in it), plus `secretsManager.operatorSecretName` for exactly `rabbitmq_user`, `rabbitmq_password`, `seed_admin_password` | Per-service DB credentials, RabbitMQ credentials, the seed admin password |
 | `catalogix-jwt-keys` | `secretsManager.jwtKeysSecretName` | `jwt_private_key_b64`, `jwt_public_key_b64`, `internal_jwt_private_key_b64`, `internal_jwt_public_key_b64` |
 
-The operator secret is listed key by key because it also holds the RDS master password and the Grafana login, which must not reach this namespace. The Secret and Cluster Secret Store (`aws-secrets-manager`) are created outside this chart by Terraform. On local Kubernetes, `secrets-local.yaml` generates `catalogix-secrets` (RabbitMQ and database passwords) on first install and keeps it across `helm upgrade`. It does **not** create `catalogix-jwt-keys`: run `scripts/generate-local-jwt-keys.sh --kubernetes` first (see below).
+The operator secret is listed key by key because it also holds the RDS master password and the Grafana login, which must not reach this namespace. The Secret and Cluster Secret Store (`aws-secrets-manager`) are created outside this chart by Terraform. On local Kubernetes, `secrets-local.yaml` generates `catalogix-secrets` (RabbitMQ and database passwords) on first install and keeps it across `helm upgrade`. It does **not** create `catalogix-jwt-keys`: run `python3 scripts/python/local/generate_jwt_keys.py --kubernetes` first (see below).
 
 ## NetworkPolicy
 
@@ -122,7 +122,7 @@ If step 2 succeeds, either the plugin is not enforcing policies or `networkPolic
 helm lint infra/helm/catalogix-hc --values infra/helm/catalogix-hc/values-dev.yaml
 helm template catalogix infra/helm/catalogix-hc -f infra/helm/catalogix-hc/values-dev.yaml \
   --set database.host=db.example.internal --set global.cloudProvider=aws
-scripts/ci/check-helm-image-tags.sh      # the pipeline's image keys must change the rendered image
+python3 scripts/python/ci/check_helm_image_tags.py      # the pipeline's image keys must change the rendered image
 ```
 
 `Jenkinsfile.lint` also validates the rendered manifests with kubeconform (`-ignore-missing-schemas`, because the External Secrets resources have no schema in its default catalogue).
@@ -133,7 +133,7 @@ Build the images, create the JWT key secret, then install with the dev file plus
 
 ```bash
 # from the repository root, with images tagged catalogix-<service>:latest built locally
-scripts/generate-local-jwt-keys.sh --kubernetes catalogix
+python3 scripts/python/local/generate_jwt_keys.py --kubernetes catalogix
 helm upgrade --install catalogix ./infra/helm/catalogix-hc \
   -f infra/helm/catalogix-hc/values-dev.yaml \
   -f infra/helm/catalogix-hc/values-local.yaml \

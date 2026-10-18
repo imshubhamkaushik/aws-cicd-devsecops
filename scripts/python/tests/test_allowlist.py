@@ -9,7 +9,7 @@ from datetime import date
 from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-import allowlist as a  # noqa: E402
+from aws import allowlist as a  # noqa: E402
 
 
 class FakeClientError(Exception):

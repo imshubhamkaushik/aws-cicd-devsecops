@@ -9,7 +9,8 @@
 #
 # Usage (from the repository root):
 #   bash scripts/bash/install-all.sh
-#   bash scripts/bash/install-all.sh --only terraform,aws     # extra arguments go to install_tools.py
+#   bash scripts/bash/install-all.sh --only terraform,aws     # install/check a selected subset
+#   bash scripts/bash/install-all.sh --yes                   # install all missing tools non-interactively
 set -euo pipefail
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -23,5 +24,5 @@ python3 "${REPO_ROOT}/scripts/python/install_tools.py" "$@"
 echo ""
 echo "Next steps:"
 echo "    1. aws configure                          set up your AWS credentials"
-echo "    2. bash scripts/bash/create-key-pair.sh   generate the EC2 SSH key pair"
-echo "    3. python3 scripts/python/bootstrap.py    bootstrap the platform"
+echo "    2. python3 scripts/python/setup/create_ssh_key.py   generate the EC2 SSH key pair"
+echo "    3. python3 scripts/python/aws/bootstrap.py    bootstrap the platform"

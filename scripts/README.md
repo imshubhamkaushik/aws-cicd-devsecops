@@ -1,128 +1,117 @@
-# Scripts
+# Catalogix scripts
 
-Everything an operator runs from a laptop or a Linux VM: installing tools, bootstrapping AWS, managing credentials and the IP allowlist, and the local checks that mirror the CI pipelines. All commands are run **from the repository root**. The shell scripts are only used where Python cannot yet exist; everything else is Python using the standard library (plus `boto3` and Ansible inside `.venv`).
+Catalogix keeps scripts grouped by **language and target**:
 
 ```text
 scripts/
-  generate-local-jwt-keys.sh   RSA keys for Compose and local Kubernetes
-  bash/
-    install-all.sh             bare Linux machine -> tools installed
-    install-python.sh          makes sure Python 3 exists
-    create-key-pair.sh         SSH key for the Jenkins and SonarQube servers
-  ci/
-    check-helm-image-tags.sh   contract test used by Jenkinsfile.lint
-  python/
-    install_tools.py           installs AWS CLI, Terraform, Ansible, jq, ssh-keygen
-    bootstrap.py               the AWS bootstrap CLI (below)
-    backend_bootstrap.py, bootstrap_infra.py, ansible_runner.py, credentials.py, allowlist.py, destroy_infra.py
-    local_scans/               local build, scan and smoke-test helpers
-    utils/                     command runner and .venv re-exec
-    tests/                     unit tests for allowlist.py and credentials.py
-    pyproject.toml             ruff settings (E, F, W, S rules)
+├── bash/                      # minimal bootstrap only
+│   ├── install-python.sh      # install Python on supported Linux distros
+│   └── install-all.sh         # delegate tool checks/install to Python
+└── python/
+    ├── install_tools.py       # inventory + interactive/selective tool installation
+    ├── setup/                 # workstation identity/key setup
+    ├── local/                 # local build, scan, Compose and smoke-test commands
+    ├── aws/                   # AWS bootstrap, Terraform orchestration, credentials, allowlist
+    ├── ci/                    # CI contract checks expressed in Python
+    ├── common/                # shared command and virtualenv helpers
+    └── tests/                 # offline unit tests for operator tooling
 ```
 
-## Setting up a machine
+Run commands from the repository root unless stated otherwise. All Python entry points remain independent: use the specific command needed rather than the full local gate.
+
+## 1. Machine setup and tool inventory
 
 ```bash
-bash scripts/bash/install-all.sh              # Python if missing, then every tool
-bash scripts/bash/install-all.sh --only terraform,aws     # extra arguments go to install_tools.py
+bash scripts/bash/install-all.sh
 ```
 
-`install_tools.py` installs the AWS CLI v2 (official installer), Terraform (official zip, checked against its published SHA-256; `--terraform-version` pins a version), Ansible and boto3 into a virtualenv at `.venv`, the Galaxy collections from `infra/ansible/requirements.yaml`, `jq` and `ssh-keygen`. It works on apt, dnf, yum and zypper systems; on Windows use WSL. Every other Python script re-executes itself inside `.venv` automatically (`utils/venv.py`), so there is nothing to activate. Docker, Maven, Node, kubectl and Helm are **not** installed by this script.
+The bootstrap first ensures Python 3 is available, then `install_tools.py` checks the managed tools: `jq`, OpenSSH (`ssh-keygen`), AWS CLI v2, Terraform, and Ansible plus `boto3` in the repository `.venv` (including required Ansible Galaxy collections).
 
-Then configure AWS (`aws configure`) and create the SSH key once:
+When something is missing, the installer offers to install **all missing tools**, select a subset, or quit. Tool-specific installers remain functions within `install_tools.py` so detection, version display, elevation, download verification, and error handling stay in one place; separate one-file Python installers would mostly duplicate those concerns.
+
+Useful alternatives:
 
 ```bash
-bash scripts/bash/create-key-pair.sh          # ed25519 key in ~/.ssh/catalogix-key(.pub), no passphrase, never in the repository
+python3 scripts/python/install_tools.py --check-only
+python3 scripts/python/install_tools.py --only terraform,aws
+python3 scripts/python/install_tools.py --yes                 # install all missing tools without a prompt
+python3 scripts/python/install_tools.py --terraform-version 1.12.2
 ```
 
-## Bootstrapping AWS (`bootstrap.py`)
+`--only` accepts any combination of `jq`, `ssh`, `aws`, `terraform`, and `ansible`. The installer targets Linux (including WSL). It does not install Docker Desktop, Maven, Node.js, kubectl, or Helm; install those separately for your local workflows. The Python scripts automatically re-execute inside `.venv` when that environment exists.
+
+Create the SSH key used by the EC2 bootstrap with:
 
 ```bash
-python3 scripts/python/bootstrap.py [backend|infra|ansible|credentials|full]     # default: full
+python3 scripts/python/setup/create_ssh_key.py
 ```
 
-It checks the required tools and that your AWS credentials work, then runs one step, or all of them in this order for `full`:
+It writes `~/.ssh/catalogix-key` and its public key. Existing keys are preserved unless replacement is confirmed; use `--force` only when rotation is intentional.
 
-| Step | What it does |
-|---|---|
-| `backend` | Terraform for `infra/terraform/backend-bootstrap`: the S3 state bucket. Shows the plan and asks before applying; skips the apply when nothing changed |
-| `infra` | Adds your current IP to the allowlist (`allowlist.py sync`), then Terraform for `bootstrap-infra` (VPC, Jenkins and SonarQube servers, ...), then waits until the instances answer |
-| `ansible` | Configures both servers: see [../infra/ansible/README.md](../infra/ansible/README.md) |
-| `credentials` | Prompts for the environment, then `credentials.py` stores the passwords you choose in AWS Secrets Manager |
+## 2. AWS/operator commands
 
-`full` asks for confirmation before the infrastructure step and finishes by telling you to run the `platform-infra` pipeline in Jenkins. Every step is safe to repeat.
-
-### Operator credentials (`credentials.py`)
-
-Stores one Secrets Manager secret per environment, `<cluster>/operator-credentials`: `db_master_password`, `rabbitmq_user`, `rabbitmq_password`, `seed_admin_password`, `grafana_admin_user`, `grafana_admin_password` and optionally a read-only database user. The password rules are the same ones the pipelines check. Passwords travel through a mode-600 temporary file, never the command line, and are never printed.
+These commands target AWS or manage bootstrap infrastructure; they are not local-only development commands.
 
 ```bash
-python3 scripts/python/credentials.py --env dev            # prompt for everything and save
-python3 scripts/python/credentials.py --env dev --check    # validate only, exit 1 if anything is missing or invalid
-python3 scripts/python/credentials.py --env dev --show     # which keys are set, never the values
-python3 scripts/python/credentials.py --env dev --only seed_admin_password    # change selected keys
-python3 scripts/python/credentials.py --env dev --delete --yes                # delete the secret (the platform-infra Destroy does this too)
+python3 scripts/python/aws/bootstrap.py [backend|infra|ansible|credentials|full]
+python3 scripts/python/aws/credentials.py --env dev
+python3 scripts/python/aws/credentials.py --env dev --check
+python3 scripts/python/aws/credentials.py --env dev --show
+python3 scripts/python/aws/credentials.py --env dev --only seed_admin_password
+python3 scripts/python/aws/allowlist.py sync
+python3 scripts/python/aws/allowlist.py list
+python3 scripts/python/aws/destroy_infra.py
 ```
 
-Only `dev` has this flow wired into the pipelines; see [../infra/README.md](../infra/README.md).
+`bootstrap.py` defaults to `full`. It runs the remote-state backend, bootstrap infrastructure, Ansible configuration, and operator-credential steps in order. The destroy script only handles the bootstrap layer; destroy the EKS/RDS platform through the platform-infrastructure pipeline first. Review every Terraform plan before applying it.
 
-### IP allowlist (`allowlist.py`)
+The operator-credentials CLI stores values in AWS Secrets Manager. `--show` prints credential names and non-secret usernames but never prints password values. `--only` can update selected fields on an existing valid secret; targeted creation of a new secret must still supply all required credentials, and the optional read-only database username/password are validated as a pair.
 
-The Jenkins security group (SSH 22, UI 8080) and the EKS API accept only addresses on a list kept in the state bucket (`access/allowed-cidrs.json`), so every machine you work from sees the same list. Terraform reads it through a generated variable file.
+The additive operator IP allowlist is stored in the Terraform state bucket. Removing an entry or deleting the list affects access controls; review the list before pruning or deleting it.
 
-```bash
-python3 scripts/python/allowlist.py sync                  # add my current IP if new; never removes anything
-python3 scripts/python/allowlist.py list
-python3 scripts/python/allowlist.py add 203.0.113.7/32 --label office
-python3 scripts/python/allowlist.py remove 203.0.113.7/32 [--force]     # --force lets you remove the IP you are on
-python3 scripts/python/allowlist.py prune --older-than 30 [--all-but-current] [--yes]
-python3 scripts/python/allowlist.py delete                # whole list, used by destroy_infra.py
-```
+## 3. Local development commands
 
-After changing the list, re-run Terraform (`bootstrap.py infra`, or the `platform-infra` pipeline for the EKS API) so the security groups pick it up.
-
-### Destroying the bootstrap infrastructure (`destroy_infra.py`)
-
-```bash
-python3 scripts/python/destroy_infra.py
-```
-
-Plans and shows a destroy of `bootstrap-infra`, asks for `yes`, applies it, then deletes the IP allowlist. It does **not** destroy the platform (EKS, RDS: use the pipeline's `Destroy` action first) and does **not** delete the state bucket from `backend-bootstrap`.
-
-## Local application keys (`generate-local-jwt-keys.sh`)
-
-```bash
-scripts/generate-local-jwt-keys.sh                          # write both key pairs into .env
-scripts/generate-local-jwt-keys.sh --kubernetes [namespace] # also create the catalogix-jwt-keys Secret (default namespace catalogix)
-```
-
-Creates the user-token pair (3072-bit; only user-svc gets the private half) and the one internal service-to-service pair (2048-bit) shared by every service, and writes them to `.env` (copied from `.env.example` if it does not exist). **Re-running replaces both pairs**, so every token already issued stops working. `.env` is git-ignored; keep it that way.
-
-## Local checks (`python/local_scans/`)
-
-These run the same tools as the pipelines so problems show up before a push. Tool versions come from `infra/ansible/group_vars/all/vars.yaml`. Docker must be running for most of them.
+Each command below is independently runnable and does not provision AWS infrastructure.
 
 | Script | Purpose |
 |---|---|
-| `devsecops_check.py` | The whole gate in order: Gitleaks, `mvn clean verify`, frontend install/test/build, SonarQube, Trivy, Compose build and smoke test. Flags: `--clear-cache`, `--start-sonarqube`, `--skip-sonar`, `--skip-trivy`, `--skip-gitleaks`, `--skip-smoke`, `--shutdown` |
-| `run_local.py` | Tests and builds only. `--backend-only`, `--frontend-only`, `--frontend-coverage`, `--skip-it`, `--clear-cache` |
-| `mvn.py`, `npm.py` | Targeted Maven or npm operations |
-| `gitleaks.py` | Gitleaks in Docker. Scans the full history when `.git` exists, otherwise the working tree |
-| `trivy_local.py` | `fs`, `config`, `images` or `all` targets; `--build` first builds the images |
-| `sonarqube_local.py` | SonarQube analysis; `--start-server` starts a local server on port 9000 and creates its token |
-| `compose.py` | `start`, `stop`, `restart`, `status`, `logs`, `build`, `down`, `pull`, `config` for the Compose stack, optionally per `--service` |
-| `smoke_test.py` | Checks through the gateway (`http://localhost:11000` by default), including a login as the seed admin. Works for Compose and local Kubernetes |
-| `docker_clean.py` | Brings the Compose stack down (with orphans); `--images`, `--volumes` (deletes local data, needs `--yes`) and `--builder-cache` are opt-in. No blanket `docker system prune` |
+| `scripts/python/local/run_local.py` | Backend/frontend test and build workflow; supports `--backend-only`, `--frontend-only`, `--frontend-coverage`, `--skip-it`, and `--clear-cache`. |
+| `scripts/python/local/mvn.py` | Target Maven operations; `--list-services` can be used without an action. |
+| `scripts/python/local/npm.py` | Targeted frontend npm operations. |
+| `scripts/python/local/gitleaks.py` | Run Gitleaks locally in Docker. |
+| `scripts/python/local/trivy_local.py` | Trivy filesystem/config/image scans; `--build` is explicit and only affects image scans. |
+| `scripts/python/local/sonarqube_local.py` | Local SonarQube analysis; optional managed local server. |
+| `scripts/python/local/compose.py` | Start/stop/log/build/configure the local Docker Compose stack. |
+| `scripts/python/local/smoke_test.py` | Check application endpoints and the seed-admin login through the gateway. |
+| `scripts/python/local/docker_clean.py` | Clean local Compose resources; volume/cache pruning is opt-in. |
+| `scripts/python/local/generate_jwt_keys.py` | Generate local RSA key pairs and update `.env`; optional `--kubernetes [namespace]`. |
+| `scripts/python/local/devsecops_check.py` | Run the complete local gate, with opt-out flags for optional stages. |
 
-Example: `python3 scripts/python/local_scans/devsecops_check.py --start-sonarqube --shutdown`.
-
-## Tests and linting
+Examples:
 
 ```bash
-python3 -m unittest discover -s scripts/python/tests     # 59 tests, no AWS access needed
-cd scripts/python && ruff check --select E,F,W,S .       # needs ruff installed
-bash scripts/ci/check-helm-image-tags.sh                 # needs Helm and PyYAML
+python3 scripts/python/local/mvn.py --list-services
+python3 scripts/python/local/mvn.py clean-verify --all
+python3 scripts/python/local/compose.py config
+python3 scripts/python/local/trivy_local.py fs
+python3 scripts/python/local/trivy_local.py images --build
+python3 scripts/python/local/devsecops_check.py --start-sonarqube --shutdown
+python3 scripts/python/local/generate_jwt_keys.py
+python3 scripts/python/local/generate_jwt_keys.py --kubernetes catalogix --force
 ```
 
-The unit tests cover the password rules and Secrets Manager handling in `credentials.py` and the CIDR logic in `allowlist.py`. The bootstrap scripts that run Terraform and Ansible have no automated tests.
+Rotating JWT keys invalidates tokens issued with the previous keys. The key-generation script now asks for explicit confirmation when it detects existing values in `.env`; `--force` is for deliberate scripted rotation only.
+
+`--skip-trivy` in the full gate disables vulnerability scanning, not image building required by the smoke-test step. Each local command is still usable by itself when you only need one check.
+
+## 4. CI checks and tests
+
+```bash
+python3 -m unittest discover -s scripts/python/tests -v
+cd scripts/python && ruff check --select E,F,W,S .
+python3 scripts/python/ci/check_helm_image_tags.py infra/helm/catalogix-hc/values-dev.yaml
+```
+
+The Helm image-tag contract check is intentionally retained as Python. It catches a distinct failure mode: Helm accepts unknown `--set` keys, so the pipeline could otherwise appear successful while a service falls back to the global image tag. It needs Helm and Python’s standard library only, so it also works on a clean Jenkins agent.
+
+The unit suite covers allowlist and credential behaviour, plus regression tests for command retry policy, Vault recovery, and local CLI behaviour. Changes to script paths should update this README and references in Terraform/Ansible documentation and Jenkinsfiles in the same change.

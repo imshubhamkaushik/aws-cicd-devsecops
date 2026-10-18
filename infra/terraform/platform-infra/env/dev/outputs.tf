@@ -29,7 +29,7 @@ output "operator_credentials_commands" {
   description = "How to see which operator credentials are set, or change one"
   value = {
     secret = "${local.env_prefix}/operator-credentials"
-    show   = "python scripts/python/credentials.py --env dev --show"
-    change = "python scripts/python/credentials.py --env dev --only <key>"
+    show   = "python scripts/python/aws/credentials.py --env dev --show"
+    change = "python scripts/python/aws/credentials.py --env dev --only <key>"
   }
 }

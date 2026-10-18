@@ -7,7 +7,7 @@ locals {
   my_ip_cidr = "${chomp(data.http.my_ip.response_body)}/32"
   #                      ↑ strips trailing newline    ↑ /32 = single host
 
-  # Operator access list. Normally supplied by scripts/python/allowlist.py
+  # Operator access list. Normally supplied by scripts/python/aws/allowlist.py
   # (additive, kept in the state bucket). Falls back to the IP detected right
   # now so a plain `terraform apply` still works; in that case the list is
   # just this one IP.

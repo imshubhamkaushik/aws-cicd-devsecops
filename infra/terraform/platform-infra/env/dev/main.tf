@@ -17,7 +17,7 @@ data "aws_iam_session_context" "current" {
   arn = data.aws_caller_identity.current.arn
 }
 
-# Credentials chosen by the operator (python3 scripts/python/bootstrap.py credentials) live in one
+# Credentials chosen by the operator (python3 scripts/python/aws/bootstrap.py credentials) live in one
 # Secrets Manager secret, "<env_prefix>/operator-credentials", which this pipeline reads.
 # Only the RDS master password passes through Terraform (and so lands in the encrypted
 # state); the app admin, RabbitMQ and Grafana passwords go straight to External Secrets.
@@ -35,12 +35,12 @@ locals {
   db_readonly_password = lookup(local.operator_credentials, "db_readonly_password", "")
 }
 
-# Same password policy as scripts/python/credentials.py; backstop for manual runs.
+# Same password policy as scripts/python/aws/credentials.py; backstop for manual runs.
 resource "terraform_data" "operator_credentials_check" {
   lifecycle {
     precondition {
       condition     = length(local.db_master_password) > 0
-      error_message = "db_master_password is missing from ${local.env_prefix}/operator-credentials. Run: python scripts/python/credentials.py --env dev"
+      error_message = "db_master_password is missing from ${local.env_prefix}/operator-credentials. Run: python scripts/python/aws/credentials.py --env dev"
     }
     precondition {
       condition = (
@@ -51,7 +51,7 @@ resource "terraform_data" "operator_credentials_check" {
         can(regex("[0-9]", local.db_master_password)) &&
         !can(regex("[/\"@[:space:]]", local.db_master_password))
       )
-      error_message = "db_master_password must be 8-64 characters with a lowercase letter, an uppercase letter and a digit, and must not contain / \" @ or whitespace (RDS rejects those). Change it with: python scripts/python/credentials.py --env dev --only db_master_password"
+      error_message = "db_master_password must be 8-64 characters with a lowercase letter, an uppercase letter and a digit, and must not contain / \" @ or whitespace (RDS rejects those). Change it with: python scripts/python/aws/credentials.py --env dev --only db_master_password"
     }
     precondition {
       condition     = (local.db_readonly_username == "") == (local.db_readonly_password == "")

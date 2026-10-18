@@ -3,9 +3,9 @@
 # has a default, so you only need the lines you want to change.
 
 # --- SSH key (required, but you usually do not have to write it here) ---------
-# Generate the pair with scripts/bash/create-key-pair.sh, which writes
+# Generate the pair with python3 scripts/python/setup/create_ssh_key.py, which writes
 # ~/.ssh/catalogix-key and ~/.ssh/catalogix-key.pub.
-# scripts/python/bootstrap_infra.py reads the .pub file automatically when
+# scripts/python/aws/bootstrap_infra.py reads the .pub file automatically when
 # public_key is not set here and TF_VAR_public_key is not exported.
 # If you set it by hand, paste the literal text of the .pub file. tfvars files
 # cannot call file(), so public_key = file("...") does NOT work.
@@ -40,8 +40,8 @@ cluster_name = "catalogix-cluster"
 environment  = "dev"
 
 # --- Who may reach Jenkins and the EKS API --------------------------------------
-# Do NOT set allowed_cidrs here. scripts/python/allowlist.py keeps the list in
+# Do NOT set allowed_cidrs here. scripts/python/aws/allowlist.py keeps the list in
 # the state bucket, adds your current IP only when it is new, and writes
 # allowed_cidrs.auto.tfvars.json for Terraform. Manage it with:
-#   python3 scripts/python/allowlist.py list | add | remove | prune
+#   python3 scripts/python/aws/allowlist.py list | add | remove | prune
 # If you run terraform by hand without that file, only your current IP is allowed.

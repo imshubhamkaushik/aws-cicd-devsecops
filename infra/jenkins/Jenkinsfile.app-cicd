@@ -348,7 +348,7 @@ pipeline {
         stage('Verify Operator Credentials') {
             when { expression { params.ENV == 'dev' } }
             steps {
-                sh "python3 scripts/python/credentials.py --env ${params.ENV} --check"
+                sh "python3 scripts/python/aws/credentials.py --env ${params.ENV} --check"
             }
         }
 

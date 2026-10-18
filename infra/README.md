@@ -63,18 +63,18 @@ flowchart LR
 
 ## Order of operations
 
-1. **Tools and credentials on your machine.** `bash scripts/bash/install-all.sh`, `aws configure`, `bash scripts/bash/create-key-pair.sh`.
-2. **Bootstrap.** `python3 scripts/python/bootstrap.py` runs, in order: state bucket, network and servers (plus waiting for the EC2 status checks), Ansible, and the operator credentials prompt. Each step can also be run alone: `backend`, `infra`, `ansible`, `credentials`.
+1. **Tools and credentials on your machine.** `bash scripts/bash/install-all.sh`, `aws configure`, `python3 scripts/python/setup/create_ssh_key.py`.
+2. **Bootstrap.** `python3 scripts/python/aws/bootstrap.py` runs, in order: state bucket, network and servers (plus waiting for the EC2 status checks), Ansible, and the operator credentials prompt. Each step can also be run alone: `backend`, `infra`, `ansible`, `credentials`.
 3. **Platform.** In Jenkins run `platform-infra` with `ACTION=Apply` and the chosen `ENV`. It needs the operator credentials secret to be complete and refuses to start otherwise.
 4. **Application.** Run `app-cicd` (or push to `main`, see [../docs/github-webhook.md](../docs/github-webhook.md)).
 
-Tear-down is the reverse: `platform-infra` with `ACTION=Destroy` and `CONFIRM_DESTROY=true`, then `python3 scripts/python/destroy_infra.py`. The platform must go first because the network layer cannot be deleted while the cluster's load balancers and network interfaces still exist.
+Tear-down is the reverse: `platform-infra` with `ACTION=Destroy` and `CONFIRM_DESTROY=true`, then `python3 scripts/python/aws/destroy_infra.py`. The platform must go first because the network layer cannot be deleted while the cluster's load balancers and network interfaces still exist.
 
 ## Secrets: who creates what
 
 | Secret in AWS Secrets Manager | Created by | Read by |
 |---|---|---|
-| `<cluster>/operator-credentials` | `python3 scripts/python/bootstrap.py credentials` (you choose the values) | Terraform (RDS master password, optional read-only login), External Secrets (RabbitMQ and admin password into `catalogix-secrets`; Grafana login into `grafana-admin-secret`) |
+| `<cluster>/operator-credentials` | `python3 scripts/python/aws/bootstrap.py credentials` (you choose the values) | Terraform (RDS master password, optional read-only login), External Secrets (RabbitMQ and admin password into `catalogix-secrets`; Grafana login into `grafana-admin-secret`) |
 | `<cluster>/db-credentials` | Terraform | Holds the RDS master login. No template reads it |
 | `<cluster>/app-secrets` | Terraform (`db_user_<svc>` and `db_password_<svc>` for each service) | External Secrets, into the `catalogix-secrets` Kubernetes Secret |
 | `<cluster>/jwt-keys` | Terraform (`tls_private_key`) | External Secrets, into the `catalogix-jwt-keys` Kubernetes Secret |
@@ -86,17 +86,17 @@ Tear-down is the reverse: `platform-infra` with `ACTION=Destroy` and `CONFIRM_DE
 
 SSH (22) and the Jenkins UI (8080) accept connections only from IPs on an allowlist, and the same list is added to the EKS public API endpoint. The list is **additive**:
 
-- `scripts/python/allowlist.py` stores it in the state bucket (`access/allowed-cidrs.json`). Every `python3 scripts/python/bootstrap.py infra` run adds the IP you are connecting from if it is new. Nothing is removed automatically, so an ISP change or a second operator never locks out the earlier IPs.
+- `scripts/python/aws/allowlist.py` stores it in the state bucket (`access/allowed-cidrs.json`). Every `python3 scripts/python/aws/bootstrap.py infra` run adds the IP you are connecting from if it is new. Nothing is removed automatically, so an ISP change or a second operator never locks out the earlier IPs.
 - Terraform receives the list through `allowed_cidrs.auto.tfvars.json` (git-ignored) and creates one security group rule per CIDR, so adding an IP never replaces the existing rules.
 - The list is deleted with the deployment by `destroy_infra.py`.
 
 ```bash
-python3 scripts/python/allowlist.py list
-python3 scripts/python/allowlist.py add 203.0.113.7/32 --label office
-python3 scripts/python/allowlist.py remove 203.0.113.7/32
-python3 scripts/python/allowlist.py prune --older-than 30        # drop entries not seen for 30 days (never your own IP)
-python3 scripts/python/allowlist.py prune --all-but-current
-python3 scripts/python/bootstrap.py infra                         # apply the change to the security groups
+python3 scripts/python/aws/allowlist.py list
+python3 scripts/python/aws/allowlist.py add 203.0.113.7/32 --label office
+python3 scripts/python/aws/allowlist.py remove 203.0.113.7/32
+python3 scripts/python/aws/allowlist.py prune --older-than 30        # drop entries not seen for 30 days (never your own IP)
+python3 scripts/python/aws/allowlist.py prune --all-but-current
+python3 scripts/python/aws/bootstrap.py infra                         # apply the change to the security groups
 ```
 
 After a change, run `platform-infra` (Apply) again so the EKS API list is updated too. Every stale IP is a hole, so prune now and then. EKS accepts at most 40 allowed ranges including Jenkins' own.

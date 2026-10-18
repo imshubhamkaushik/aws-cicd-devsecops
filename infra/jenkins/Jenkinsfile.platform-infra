@@ -151,7 +151,7 @@ pipeline {
                 expression { params.ACTION == 'Apply' && params.ENV == 'dev' }
             }
             steps {
-                sh "python3 scripts/python/credentials.py --env ${params.ENV} --check"
+                sh "python3 scripts/python/aws/credentials.py --env ${params.ENV} --check"
             }
         }
 
@@ -551,7 +551,7 @@ Are you absolutely sure?""",
                 }
             }
             steps {
-                sh "python3 scripts/python/credentials.py --env ${params.ENV} --delete --yes"
+                sh "python3 scripts/python/aws/credentials.py --env ${params.ENV} --delete --yes"
             }
         }
     }

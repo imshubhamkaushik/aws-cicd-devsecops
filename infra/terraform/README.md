@@ -31,8 +31,8 @@ State is stored in S3 with native lockfile locking (`use_lockfile = true`) under
 ## Prerequisites
 
 1. AWS CLI authenticated: `aws sts get-caller-identity`.
-2. The state bucket exists. `python3 scripts/python/bootstrap.py backend` creates it; by hand, apply `backend-bootstrap` first.
-3. Optional `terraform.tfvars` in the directory you are working in. Each root ships a `terraform.tfvars.example` with the variables and defaults; copy it to `terraform.tfvars` (git-ignored) only for values you want to change. In `bootstrap-infra` the SSH public key is the one required value, and `scripts/python/bootstrap_infra.py` reads it from `~/.ssh/catalogix-key.pub`.
+2. The state bucket exists. `python3 scripts/python/aws/bootstrap.py backend` creates it; by hand, apply `backend-bootstrap` first.
+3. Optional `terraform.tfvars` in the directory you are working in. Each root ships a `terraform.tfvars.example` with the variables and defaults; copy it to `terraform.tfvars` (git-ignored) only for values you want to change. In `bootstrap-infra` the SSH public key is the one required value, and `scripts/python/aws/bootstrap_infra.py` reads it from `~/.ssh/catalogix-key.pub`.
 4. For `platform-infra`: the operator credentials secret must exist and be complete (see [Secrets](#secrets)).
 
 Prefer the scripts and pipelines, which add the checks listed in [infra/README.md](../README.md). The manual commands below are what they run.
@@ -96,7 +96,7 @@ The PostgreSQL provider connects to RDS from the Jenkins host, which the RDS sec
 
 | Secret | Contents | Written by |
 |---|---|---|
-| `<cluster>/operator-credentials` | `db_master_password`, optional `db_readonly_username` and `db_readonly_password`, RabbitMQ user and password, admin password, Grafana login | `python3 scripts/python/credentials.py` (you choose them). Terraform only reads it |
+| `<cluster>/operator-credentials` | `db_master_password`, optional `db_readonly_username` and `db_readonly_password`, RabbitMQ user and password, admin password, Grafana login | `python3 scripts/python/aws/credentials.py` (you choose them). Terraform only reads it |
 | `<cluster>/db-credentials` | RDS master user and password | Terraform |
 | `<cluster>/app-secrets` | `db_user_<svc>` and `db_password_<svc>` for each service | Terraform |
 | `<cluster>/jwt-keys` | `jwt_private_key_b64`, `jwt_public_key_b64`, `internal_jwt_private_key_b64`, `internal_jwt_public_key_b64` | Terraform (`tls_private_key.jwt_user_access` and `tls_private_key.internal_service`) |
@@ -121,7 +121,7 @@ cd infra/terraform/platform-infra/env/dev
 terraform destroy
 ```
 
-Then destroy the bootstrap layer with `python3 scripts/python/destroy_infra.py`. The state bucket is protected by `prevent_destroy` and is left in place.
+Then destroy the bootstrap layer with `python3 scripts/python/aws/destroy_infra.py`. The state bucket is protected by `prevent_destroy` and is left in place.
 
 ## State bucket name
 
@@ -133,8 +133,8 @@ The bucket name `catalogix-tfstate` is written literally because Terraform backe
 - `infra/terraform/platform-infra/env/dev/providers.tf` and `env/dev/main.tf` (remote state)
 - `infra/terraform/platform-infra/env/staging/providers.tf` and `env/staging/main.tf`
 - `infra/jenkins/Jenkinsfile.platform-infra` (the bootstrap state check)
-- `scripts/python/allowlist.py` (or set `TFSTATE_BUCKET` in the environment)
-- `scripts/python/backend_bootstrap.py`
+- `scripts/python/aws/allowlist.py` (or set `TFSTATE_BUCKET` in the environment)
+- `scripts/python/aws/backend_bootstrap.py`
 
 The region `ap-south-1` is set in the same files plus the variable defaults.
 
@@ -147,6 +147,6 @@ To add `prod`:
 3. Change `local.env_prefix` (the cluster name) to `catalogix-cluster-prod` to match what the pipelines compute.
 4. Set `min_size`, `max_size` and `desired_size` for production capacity.
 5. In the RDS module call set `skip_final_snapshot = false` and `backup_retention_period` to at least 7.
-6. Add `infra/helm/catalogix-hc/values-prod.yaml` and add `prod` to the `ENV` choices in both Jenkinsfiles and to `CLUSTER_NAMES` in `scripts/python/credentials.py`.
+6. Add `infra/helm/catalogix-hc/values-prod.yaml` and add `prod` to the `ENV` choices in both Jenkinsfiles and to `CLUSTER_NAMES` in `scripts/python/aws/credentials.py`.
 
 Staging shares the VPC from `bootstrap-infra`. A real production environment should have its own network layer, ideally in a separate AWS account.
