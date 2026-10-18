@@ -1,0 +1,167 @@
+{{- if .Values.networkPolicy.enabled }}
+# Who may open a connection to whom (inbound traffic only).
+#
+# Two ideas, nothing else:
+#   1. default-deny-ingress: every pod in this namespace refuses all inbound connections...
+#   2. ...except the ones allowed below. Each policy says "pods labelled app=X accept
+#      connections only from these pods, on these ports".
+#
+# The table in $callers is the application's real call graph (it matches the *_SVC_URL
+# settings in the values files and the routes in app/gateway/nginx.conf). inventory-svc and
+# payment-svc are not reachable from the gateway at all, only from the services listed.
+#
+# Only inbound traffic is restricted. Outbound is left open so pods can still reach RDS, DNS,
+# SMTP and AWS APIs.
+#
+# IMPORTANT: Kubernetes accepts these objects on any cluster, but only enforces them if the
+# network plugin supports it. On EKS that means the VPC CNI add-on must have network policy
+# turned on (see infra/terraform/platform-infra/modules/eks). Without it these are silently ignored.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: {{ .Release.Namespace }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+---
+{{- $monitoring := .Values.networkPolicy.monitoringNamespace }}
+{{- $callers := dict
+      "user-svc"         (list "gateway" "checkout-svc" "notification-svc")
+      "catalog-svc"      (list "gateway" "cart-svc" "checkout-svc")
+      "inventory-svc"    (list "catalog-svc" "cart-svc" "checkout-svc")
+      "cart-svc"         (list "gateway" "checkout-svc")
+      "payment-svc"      (list "checkout-svc")
+      "checkout-svc"     (list "gateway")
+      "notification-svc" (list "gateway") }}
+{{- range $name, $svc := .Values.backendServices }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $name }}-allow
+  namespace: {{ $.Release.Namespace }}
+spec:
+  podSelector:
+    matchLabels:
+      app: {{ $name }}
+  policyTypes:
+    - Ingress
+  ingress:
+    # Other application pods that call this service.
+    - from:
+        {{- range (required (printf "networkpolicy.yaml has no caller list for %s" $name) (index $callers $name)) }}
+        - podSelector:
+            matchLabels:
+              app: {{ . }}
+        {{- end }}
+      ports:
+        - port: {{ $svc.port }}
+    # Prometheus (in the monitoring namespace) scrapes /actuator/prometheus.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $monitoring }}
+      ports:
+        - port: {{ $svc.port }}
+---
+{{- end }}
+# The gateway is the only door in: the ALB (or a local LoadBalancer) connects to it from outside
+# the cluster, so this rule has no "from".
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: gateway-allow
+  namespace: {{ .Release.Namespace }}
+spec:
+  podSelector:
+    matchLabels:
+      app: gateway
+  policyTypes:
+    - Ingress
+  ingress:
+    - ports:
+        - port: {{ .Values.gateway.service.port | default 11000 }}
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $monitoring }}
+      ports:
+        - port: 9113 # nginx exporter sidecar
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: frontend-allow
+  namespace: {{ .Release.Namespace }}
+spec:
+  podSelector:
+    matchLabels:
+      app: frontend
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: gateway
+      ports:
+        - port: {{ .Values.frontend.service.port | default 80 }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: rabbitmq-allow
+  namespace: {{ .Release.Namespace }}
+spec:
+  podSelector:
+    matchLabels:
+      app: rabbitmq
+  policyTypes:
+    - Ingress
+  ingress:
+    # Services that publish or consume messages.
+    - from:
+        {{- range (list "user-svc" "checkout-svc" "notification-svc") }}
+        - podSelector:
+            matchLabels:
+              app: {{ . }}
+        {{- end }}
+      ports:
+        - port: {{ .Values.rabbitmq.port | default 5672 }}
+    # RabbitMQ nodes talk to each other when clustered (any port).
+    - from:
+        - podSelector:
+            matchLabels:
+              app: rabbitmq
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $monitoring }}
+      ports:
+        - port: 15692 # rabbitmq_prometheus
+{{- if ne .Values.global.cloudProvider "aws" }}
+---
+# Local Kubernetes only: the in-cluster Postgres that stands in for RDS.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: postgres-local-allow
+  namespace: {{ .Release.Namespace }}
+spec:
+  podSelector:
+    matchLabels:
+      app: postgres-local
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        {{- range $name, $svc := .Values.backendServices }}
+        - podSelector:
+            matchLabels:
+              app: {{ $name }}
+        {{- end }}
+      ports:
+        - port: {{ .Values.database.port | default 5432 }}
+{{- end }}
+{{- end }}

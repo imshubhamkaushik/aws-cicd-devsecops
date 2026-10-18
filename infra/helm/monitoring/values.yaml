@@ -1,0 +1,297 @@
+# kube-prometheus-stack values
+
+global:
+  targetNamespace: catalogix
+  # Set at deploy time: --set global.alertingSecretName=<cluster-name>/alerting-secrets
+  # (Jenkins derives the name from CLUSTER_NAME).
+  alertingSecretName: ""
+
+  # Set at deploy time: --set global.operatorSecretName=<cluster-name>/operator-credentials
+  # Holds the operator-chosen Grafana login. Empty skips grafana-admin-secret, so Grafana
+  # keeps the chart's default credentials.
+  operatorSecretName: ""
+
+kube-prometheus-stack:
+
+# Prometheus
+  prometheus:
+    enabled: true
+
+    prometheusSpec:
+      retention: 10d
+
+      # Allow Prometheus to discover ServiceMonitors created by the chart
+      serviceMonitorSelectorNilUsesHelmValues: false
+      serviceMonitorSelector: {}
+      serviceMonitorNamespaceSelector: {}
+
+      # Allow Prometheus to discover PodMonitors created by the chart
+      podMonitorSelectorNilUsesHelmValues: false
+
+      resources:
+        requests:
+          cpu: 200m
+          memory: 128Mi
+        limits:
+          cpu: 500m
+          memory: 1Gi
+
+      storageSpec:
+        volumeClaimTemplate:
+          spec:
+            storageClassName: "gp3-sc"
+            accessModes: ["ReadWriteOnce"]
+            resources:
+              requests:
+                storage: 5Gi
+
+  # Grafana
+  grafana:
+    enabled: true
+
+    # The pipeline sets existingSecret to "grafana-admin-secret" (templates/grafana-admin-secret.yaml).
+    # Left empty, Grafana would use the chart's well-known default password.
+
+    admin:
+      existingSecret: ""
+
+    service:
+      type: ClusterIP
+
+    sidecar:
+      dashboards:
+        enabled: true
+        label: grafana_dashboard
+      datasources:
+        enabled: true
+        label: grafana_datasource
+    
+    persistence:
+      enabled: true
+      storageClassName: "gp3-sc"
+      accessModes: ["ReadWriteOnce"]
+      size: 2Gi
+
+    resources:
+      requests:
+        cpu: 250m
+        memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 256Mi
+  
+    dashboardProviders:
+      dashboardproviders.yaml:
+        apiVersion: 1
+        providers:
+        - name: 'default'
+          orgId: 1
+          folder: ''
+          type: file
+          disableDeletion: false
+          editable: true
+          options:
+            path: /var/lib/grafana/dashboards/default
+
+  # Alertmanager
+  alertmanager:
+    enabled: true
+
+    alertmanagerSpec:
+      resources:
+        requests:
+          cpu: 50m
+          memory: 64Mi
+        limits:
+          cpu: 200m
+          memory: 256Mi
+      # Mounts the Secret created by templates/alertmanager-secrets.yaml at
+      # /etc/alertmanager/secrets/alertmanager-secrets/<key>.
+      secrets:
+        - alertmanager-secrets
+
+    config:
+      global:
+        resolve_timeout: 5m
+
+      # critical -> critical-receiver (SMTP email); warning and everything else -> null.
+      route:
+        receiver: "null"
+        group_by: ["alertname", "namespace", "service"]
+        group_wait: 30s
+        group_interval: 5m
+        repeat_interval: 3h
+        routes:
+          - matchers:
+              - name: severity
+                value: critical
+            receiver: "critical-receiver"
+            repeat_interval: 1h
+          - matchers:
+              - name: severity
+                value: warning
+            receiver: "null"
+      
+      receivers:
+        # Discards alerts silently (warnings and unmapped alerts).
+        - name: "null"
+ 
+        # auth_password_file keeps the SMTP password out of this file. If smtp_password is
+        # empty the file is empty and Alertmanager logs a send failure per critical alert.
+        - name: "critical-receiver"
+          email_configs:
+            # Empty placeholders: Alertmanager config has no ${VAR} interpolation, so
+            # Jenkinsfile.platform-infra supplies the values with --set at deploy time.
+            - to: ""            # --set 'kube-prometheus-stack.alertmanager.config.receivers[1].email_configs[0].to=ops@example.com'
+              from: "alertmanager@catalogix.local"
+              smarthost: ""     # --set 'kube-prometheus-stack.alertmanager.config.receivers[1].email_configs[0].smarthost=smtp.example.com:587'
+              auth_username: "" # --set 'kube-prometheus-stack.alertmanager.config.receivers[1].email_configs[0].auth_username=alerts@example.com'
+              auth_password_file: /etc/alertmanager/secrets/alertmanager-secrets/smtp_password
+              require_tls: true
+              send_resolved: true
+ 
+      # Inhibit rules: one outage should fire one alert (ServiceUnavailable), not also
+      # HighErrorRate and HighLatencyP95.
+      inhibit_rules:
+        - source_matchers:
+            - name: alertname
+              value: ServiceUnavailable
+          target_matchers:
+            - name: alertname
+              value: HighErrorRate
+          equal: ["namespace"]
+        - source_matchers:
+            - name: alertname
+              value: ServiceUnavailable
+          target_matchers:
+            - name: alertname
+              value: HighLatencyP95
+          equal: ["namespace"]
+
+  # Custom Alert Rules
+  additionalPrometheusRulesMap:
+    catalogix-alerts:
+      groups:
+        - name: service-availability
+          rules:
+            - alert: ServiceUnavailable
+              # kube_deployment_status_replicas_available comes from kube-state-metrics.
+              expr: |
+                kube_deployment_status_replicas_available{namespace="catalogix"} == 0
+              for: 3m
+              labels:
+                severity: critical
+              annotations:
+                summary: "Deployment {{ $labels.deployment }} has no available replicas"
+                description: "Deployment {{ $labels.deployment }} in namespace {{ $labels.namespace }} has had 0 available replicas for more than 3 minutes."
+
+        - name: error-rate
+          rules:
+            - alert: HighErrorRate
+              # Namespace filter limits this to catalogix; summing by namespace keeps the ratio
+              # per namespace instead of diluting it with unrelated traffic.
+              expr: |
+                (
+                  sum by (namespace) (
+                    rate(http_server_requests_seconds_count{status=~"5..",namespace="catalogix"}[5m])
+                  )
+                  /
+                  sum by (namespace) (
+                    rate(http_server_requests_seconds_count{namespace="catalogix"}[5m])
+                  )
+                ) > 0.05
+              for: 5m
+              labels:
+                severity: critical
+              annotations:
+                summary: "High 5xx error rate in {{ $labels.namespace }}"
+                description: "5xx responses exceed 5% of total traffic in namespace {{ $labels.namespace }} for more than 5 minutes."
+
+
+        - name: high-latency
+          rules:
+            - alert: HighLatencyP95
+              # Namespace filter as in HighErrorRate. Sum by (le, job): Actuator metrics have no
+              # 'service' label, the ServiceMonitor's 'job' label identifies the service.
+              expr: |
+                histogram_quantile(
+                  0.95,
+                  sum by (le, job) (
+                    rate(http_server_requests_seconds_bucket{namespace="catalogix"}[5m])
+                  )
+                ) > 1.5
+              for: 5m
+              labels:
+                severity: warning
+              annotations:
+                summary: "High p95 latency for {{ $labels.job }}"
+                description: "95th percentile latency for {{ $labels.job }} exceeds 1.5s for more than 5 minutes."
+
+        - name: pod-health
+          rules:
+            - alert: PodCrashLooping
+              # Restarts is a counter, so increase() over a window detects repeated restarts.
+              expr: |
+                increase(kube_pod_container_status_restarts_total{namespace="catalogix"}[15m]) >= 3
+              for: 5m
+              labels:
+                severity: critical
+              annotations:
+                summary: "{{ $labels.pod }} is crash-looping"
+                description: "Container {{ $labels.container }} in pod {{ $labels.pod }} (namespace {{ $labels.namespace }}) has restarted 3+ times in the last 15 minutes."
+
+        - name: checkout-outbox
+          rules:
+            - alert: OutboxDeadLetterBacklog
+              # Either durable outbox can require operator intervention after retry exhaustion.
+              # The count only drops when the corresponding row is resolved.
+              expr: |
+                checkout_outbox_dead_letter_count{namespace="catalogix"} > 0
+                or checkout_order_event_outbox_dead_letter_count{namespace="catalogix"} > 0
+              for: 10m
+              labels:
+                severity: critical
+              annotations:
+                summary: "checkout-svc has dead-lettered outbox entries"
+                description: "{{ $value }} outbox entries need manual review: stock compensation or order-event publication may be stuck. Inspect checkout-svc outbox rows and logs."
+
+        - name: rabbitmq
+          rules:
+            # rabbitmq_* metrics come from the rabbitmq_prometheus plugin (see the
+            # catalogix-rabbitmq ServiceMonitor).
+            - alert: RabbitMQQueueBacklogGrowing
+              # Sustained backlog only (for: 10m), usually a stuck or slow consumer.
+              expr: |
+                rabbitmq_queue_messages_ready{namespace="catalogix"} > 500
+              for: 10m
+              labels:
+                severity: warning
+              annotations:
+                summary: "Queue {{ $labels.queue }} has a growing backlog"
+                description: "{{ $value }} messages ready and waiting in {{ $labels.queue }} for over 10 minutes — a consumer may be stuck or too slow."
+
+            - alert: DeadLetterQueueNotEmpty
+              # notification-svc dead-letters events after retries are exhausted; nothing consumes
+              # that queue, so entries are emails that were never sent.
+              expr: |
+                rabbitmq_queue_messages{namespace="catalogix", queue=~".*dlq.*"} > 0
+              for: 10m
+              labels:
+                severity: warning
+              annotations:
+                summary: "Dead-letter queue {{ $labels.queue }} is not empty"
+                description: "{{ $value }} undelivered message(s) in {{ $labels.queue }} for over 10 minutes — emails were dropped after retries. Inspect in the RabbitMQ management UI (kubectl port-forward svc/rabbitmq 15672:15672 -n catalogix)."
+
+            - alert: RabbitMQQueueNoConsumers
+              # Messages waiting and no consumers. An idle queue (0 consumers, 0 messages) is fine.
+              expr: |
+                rabbitmq_queue_consumers{namespace="catalogix"} == 0
+                and on (queue)
+                rabbitmq_queue_messages_ready{namespace="catalogix"} > 0
+              for: 5m
+              labels:
+                severity: critical
+              annotations:
+                summary: "Queue {{ $labels.queue }} has messages but no consumers"
+                description: "{{ $labels.queue }} has had 0 consumers for 5+ minutes while messages are waiting — nothing is processing this queue."
+

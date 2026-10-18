@@ -1,0 +1,798 @@
+// Application CI/CD pipeline Jenkinsfile. Builds, tests, and deploys the Catalogix application to EKS whenever changes are pushed to the main branch.
+//
+// ensureKubernetesAccess() lives in the shared library (vars/ensureKubernetesAccess.groovy)
+// so Jenkinsfile.platform-infra and this file share one implementation.
+// Requires the library to be registered once in JCasC under
+// unclassified.globalLibraries — see that file's header comment for the exact block to add.
+@Library('catalogix-shared-library') _
+
+// Service inventory — the single source of truth every dynamic stage below
+// reads from. Adding a service is a one-line addition here (+ a values-<env>.yaml
+// entry in the Helm chart) — no other part of this file changes shape.
+def BACKEND_SERVICES = [
+    'user-svc', 'catalog-svc', 'inventory-svc', 'cart-svc',
+    'payment-svc', 'checkout-svc', 'notification-svc'
+]
+// gateway is built, scanned and pushed like every other image. On EKS it still provides the
+// /api/* path rewriting and per-endpoint rate limiting defined in app/gateway/nginx.conf.
+def ALL_IMAGES = BACKEND_SERVICES + ['frontend', 'gateway']
+
+// Populated by 'Determine Per-Service Image Tags' below: svc name -> the tag
+// it should run at after this deploy (either this run's new IMAGE_TAG, if
+// it's being rebuilt, or whatever tag it's already running, read back from
+// the currently-deployed release).
+def IMAGE_TAGS = [:]
+
+pipeline {
+    agent any
+
+    options {
+        // Two overlapping runs would fight over the same Helm release
+        // ("another operation is in progress") and leave it pending-upgrade.
+        // Queue, never abort: aborting a run mid-`helm upgrade` is exactly
+        // how a release gets stuck.
+        disableConcurrentBuilds()
+        timeout(time: 90, unit: 'MINUTES')
+        timestamps()
+        buildDiscarder(logRotator(numToKeepStr: '30', artifactNumToKeepStr: '10'))
+    }
+
+    environment {
+        // AWS
+        AWS_REGION = "ap-south-1"
+
+        // Cluster Name — must equal Terraform's local.env_prefix for the
+        // selected environment ("${var.cluster_name}-${var.environment}").
+        // Both Terraform environments default var.cluster_name to
+        // "catalogix-cluster" (infra/terraform/platform-infra/env/*/variables.tf),
+        // so the real names are "catalogix-cluster-dev" and
+        // "catalogix-cluster-staging".
+        // Everything else that is named after the cluster derives from this
+        // one value at deploy time: the SSM parameter paths below, the
+        // Secrets Manager secret names (passed to Helm in 'Prepare Helm
+        // Arguments'), and the per-cluster kubeconfig file.
+        // Keep this expression identical in Jenkinsfile.platform-infra.
+        CLUSTER_NAME = "${params.ENV == 'dev' ? 'catalogix-cluster-dev' : 'catalogix-cluster-' + params.ENV}"
+
+        // ECR repositories are created by Terraform (modules/ecr) as
+        // "catalogix-<service>" and shared by dev and staging. Every place
+        // that names an image — docker build/tag, push, and the Helm
+        // image.repository values — derives the repository from this prefix.
+        ECR_REPO_PREFIX = "catalogix-"
+
+        // Image tags
+        MAJOR_VERSION = "2.0"
+        IMAGE_TAG = "${MAJOR_VERSION}-${BUILD_NUMBER}"
+
+        // Kubernetes / Helm
+        HELM_CHART_DIR = "infra/helm/catalogix-hc"
+        K8S_NAMESPACE = "catalogix"
+
+        // One kubeconfig file PER CLUSTER. A single shared file let a run for
+        // one environment silently reuse the other environment's cluster
+        // context (kubectl "worked", so nothing regenerated it).
+        // ensureKubernetesAccess() rewrites this file on every run and
+        // verifies the active context really is CLUSTER_NAME. Ansible does
+        // not create any kubeconfig — the pipeline owns it entirely.
+        KUBECONFIG     = "/var/lib/jenkins/.kube/${CLUSTER_NAME}.config"
+
+        // SSM Parameter Store
+        SSM_RDS_PATH = "/${CLUSTER_NAME}/rds-endpoint"
+
+        MAVEN_CACHE = "/var/lib/jenkins/.m2/repository"
+        NPM_CACHE = "/var/lib/jenkins/.npm"
+    }
+
+    parameters {
+        choice(
+            name: 'ENV',
+            choices: ['dev', 'staging'],
+            description: 'Select the deployment environment. This determines which EKS cluster and Helm values are used.'
+        )
+        booleanParam(
+            name: 'CLEAR_MAVEN_CACHE',
+            defaultValue: false,
+            description: 'Option to clear the Maven cache before building. Use this if you have made changes to dependencies that are not being picked up, or if you want to ensure a clean build without any cached artifacts.'
+        )
+        booleanParam(
+            name: 'FORCE_ALL_TESTS',
+            defaultValue: false,
+            description: 'Run the full test suite for every backend service, ignoring change detection. Use for release builds or when you don\'t trust the diff (e.g. after a rebase).'
+        )
+        booleanParam(
+            name: 'RUN_DAST',
+            defaultValue: false,
+            description: 'Optional manual OWASP ZAP baseline scan after deployment. It is not part of the core deployment gate.'
+        )
+        booleanParam(
+            name: 'FORCE_ALL_BUILDS',
+            defaultValue: false,
+            description: 'Build, scan, and push every image regardless of change detection, and retag every service to this run\'s IMAGE_TAG. Use for release builds, or if you suspect the previous release\'s recorded tags (read back from `helm get values`) are stale or wrong.'
+        )
+        string(
+            name: 'INGRESS_HOST',
+            defaultValue: '',
+            description: 'Optional public DNS name for the site (e.g. shop.example.com). Sets the ALB host rule and is the single source for the app\'s public URL (email links). Leave blank to use the raw ALB hostname.'
+        )
+        string(
+            name: 'TLS_CERT_ARN',
+            defaultValue: '',
+            description: 'Optional ACM certificate ARN. When set, the ALB serves HTTPS, redirects HTTP to HTTPS, and the refresh-token cookie is automatically marked Secure. Leave blank for HTTP-only.'
+        )
+    }
+
+    tools {
+        // Tool names must match the installation names defined in JCasC jcasc.yaml.
+        // maven → tool.maven.installations[].name
+        // node  → tool.nodejs.installations[].name
+        maven 'maven'
+        nodejs 'node'
+    }
+
+    stages {
+
+        stage('Clean Workspace') {
+            steps { cleanWs() }
+        }
+
+        stage('Checkout') {
+            steps { checkout scm }
+        }
+
+        stage('Secrets Scanning - Gitleaks') {
+            steps {
+                sh """
+                set -e
+
+                docker run --rm \\
+                    -v \$(pwd):/repo \\
+                    zricethezav/gitleaks:v8.21.2 detect \\
+                    --source /repo \\
+                    --exit-code 1 \\
+                    --redact
+                """
+            }
+        }
+
+        // AWS Authentication stage is run before the Login to Amazon ECR stage to ensure the necessary environment variables are set for ECR login and Kubernetes access.
+        stage('AWS Authentication') {
+            steps {
+                script {
+                    // Read Trivy version from Ansible vars — single source of truth.
+                    env.TRIVY_TAG = sh(
+                        script: "grep '^trivy_version:' infra/ansible/group_vars/all/vars.yaml | awk -F'\"' '{print \$2}'",
+                        returnStdout: true).trim()
+
+                    if (!env.TRIVY_TAG) {
+                        error("TRIVY_TAG is empty — 'trivy_version' key not found in infra/ansible/group_vars/all/vars.yaml. Check the key name and file path.")
+                    }
+                    env.TRIVY_IMAGE = "aquasec/trivy:${env.TRIVY_TAG}"
+
+                    // Read SonarQube scanner version from Ansible vars — single source of truth.
+                    env.SONAR_SCANNER_TAG = sh(
+                        script: "grep '^sonar_scanner_version:' infra/ansible/group_vars/all/vars.yaml | awk -F'\"' '{print \$2}'",
+                        returnStdout: true).trim()
+
+                    if (!env.SONAR_SCANNER_TAG) {
+                        error("SONAR_SCANNER_TAG is empty — 'sonar_scanner_version' key not found in infra/ansible/group_vars/all/vars.yaml. Check the key name and file path.")
+                    }
+                    env.SONAR_SCANNER_IMAGE = "sonarsource/sonar-scanner-cli:${env.SONAR_SCANNER_TAG}"
+
+                    // AWS Identity
+                    env.AWS_ACCOUNT_ID = sh(
+                        script: "aws sts get-caller-identity --query Account --output text",
+                        returnStdout: true
+                    ).trim()
+
+                    // ECR — repository = ECR_REPO_PREFIX + service directory name
+                    env.ECR_REGISTRY = "${env.AWS_ACCOUNT_ID}.dkr.ecr.${env.AWS_REGION}.amazonaws.com"
+                }
+            }
+        }
+
+        stage('Login to Amazon ECR') {
+            steps {
+                sh """
+                set -e
+
+                aws ecr get-login-password --region ${AWS_REGION} \\
+                    | docker login --username AWS --password-stdin ${ECR_REGISTRY}
+                """
+            }
+        }
+
+        stage('Ensure Kubernetes Access') {
+            steps {
+                script {
+                    ensureKubernetesAccess(env.AWS_REGION, env.CLUSTER_NAME, env.KUBECONFIG)
+                }
+            }
+        }
+
+        // Determines which BACKEND_SERVICES changed since the previous commit
+        // — used both for the test stage (as before) and now also to seed
+        // IMAGES_TO_BUILD below.
+        stage('Detect Changed Services') {
+            steps {
+                script {
+                    if (params.FORCE_ALL_TESTS) {
+                        echo "FORCE_ALL_TESTS is set — running tests for all backend services."
+                        env.CHANGED_BACKEND = BACKEND_SERVICES.join(',')
+                    } else {
+                        def changed = getChangedServices(BACKEND_SERVICES, [prefix: 'app/backend/'])
+                        env.CHANGED_BACKEND = changed.join(',')
+                    }
+
+                    // A change to the shared security-common module affects
+                    // every backend service that depends on it, including
+                    // JWT validation, CORS, and rate limiting. Any change to
+                    // security-common therefore invalidates per-service
+                    // change detection and forces all backend services through
+                    // the test path.
+                    def securityCommonChanged = getChangedServices(
+                        ['security-common'], [prefix: 'app/backend/']
+                    ).contains('security-common')
+                    if (securityCommonChanged) {
+                        echo "app/backend/security-common changed — every backend service will be tested AND rebuilt this run."
+                        env.CHANGED_BACKEND = BACKEND_SERVICES.join(',')
+                    }
+
+                    echo "Services to test this run: ${env.CHANGED_BACKEND ?: '(none — no backend changes detected)'}"
+
+                    def changedBackendForBuild = env.CHANGED_BACKEND ? env.CHANGED_BACKEND.split(',') as List : []
+
+                    def frontendChanged = getChangedServices(
+                        ['frontend'], [prefix: 'app/']
+                    ).contains('frontend')
+                    def gatewayChanged = getChangedServices(
+                        ['gateway'], [prefix: 'app/']
+                    ).contains('gateway')
+
+                    def imagesToBuild = (changedBackendForBuild + (frontendChanged ? ['frontend'] : []) + (gatewayChanged ? ['gateway'] : [])) as Set
+
+                    // First-ever deploy: there's no previously-deployed release
+                    // to read existing tags from (see 'Determine Per-Service
+                    // Image Tags' below), so every image must be built —
+                    // there's nothing to fall back to for the ones that
+                    // "didn't change".
+                    env.RELEASE_EXISTS = sh(
+                        script: "helm status catalogix --namespace ${K8S_NAMESPACE} >/dev/null 2>&1 && echo true || echo false",
+                        returnStdout: true
+                    ).trim()
+
+                    if (params.FORCE_ALL_BUILDS || env.RELEASE_EXISTS == 'false') {
+                        echo (env.RELEASE_EXISTS == 'false'
+                            ? "No existing 'catalogix' release found — building every image (nothing to fall back to for a skipped one)."
+                            : "FORCE_ALL_BUILDS is set — building every image.")
+                        imagesToBuild = ALL_IMAGES as Set
+                    }
+
+                    env.IMAGES_TO_BUILD = imagesToBuild.join(',')
+                    echo "Images to build+scan+push this run: ${env.IMAGES_TO_BUILD ?: '(none — nothing changed)'}"
+                }
+            }
+        }
+
+        // Resolves the actual tag each service will run at after this
+        // deploy. Services being rebuilt this run (IMAGES_TO_BUILD) get the
+        // new IMAGE_TAG; everyone else keeps whatever tag is already live,
+        // read back from the currently-deployed release so an unchanged
+        // service's Deployment spec doesn't move at all (Kubernetes won't
+        // even restart its pods if the image reference is byte-identical).
+        stage('Determine Per-Service Image Tags') {
+            steps {
+                script {
+                    def toBuild = env.IMAGES_TO_BUILD ? env.IMAGES_TO_BUILD.split(',') as List : []
+
+                    def prevValuesJson = "{}"
+                    if (env.RELEASE_EXISTS == 'true') {
+                        prevValuesJson = sh(
+                            script: "helm get values catalogix --namespace ${K8S_NAMESPACE} -o json 2>/dev/null || echo '{}'",
+                            returnStdout: true
+                        ).trim()
+                        if (!prevValuesJson) { prevValuesJson = "{}" }
+                    }
+                    writeFile file: 'prev-values.json', text: prevValuesJson
+
+                    ALL_IMAGES.each { svc ->
+                        if (toBuild.contains(svc)) {
+                            IMAGE_TAGS[svc] = env.IMAGE_TAG
+                            return
+                        }
+                        def jsonPath = (svc == 'frontend')
+                            ? '.frontend.image.tag'
+                            : (svc == 'gateway')
+                                ? '.gateway.image.tag'
+                                : ".backendServices.\"${svc}\".image.tag"
+                        def prevTag = sh(
+                            script: "jq -r '(${jsonPath} // .global.imageTag // empty)' prev-values.json",
+                            returnStdout: true
+                        ).trim()
+                        if (!prevTag) {
+                            // Nothing recorded anywhere (shouldn't happen once
+                            // RELEASE_EXISTS is true, but don't deploy a
+                            // service with no image reference at all if it does).
+                            error("Could not determine a previous tag for unchanged service '${svc}' — refusing to deploy with no image reference. Re-run with FORCE_ALL_BUILDS=true to rebuild everyone and reset the tag scheme cleanly.")
+                        }
+                        IMAGE_TAGS[svc] = prevTag
+                    }
+
+                    echo "Resolved per-service tags for this deploy:"
+                    IMAGE_TAGS.each { svc, tag -> echo "  ${svc}: ${tag}" }
+                }
+            }
+        }
+        // One Hadolint branch per image, generated from ALL_IMAGES — always
+        // runs for everyone, it's cheap (pure Dockerfile lint, no build).
+        stage('Hadolint — Dockerfile Linting') {
+            steps {
+                script {
+                    def branches = ALL_IMAGES.collectEntries { svc ->
+                        def dockerfilePath = (svc == 'frontend') ? 'app/frontend/Dockerfile' : ((svc == 'gateway') ? 'app/gateway/Dockerfile' : "app/backend/${svc}/Dockerfile")
+                        [ "${svc}": {
+                            sh "docker run --rm -i hadolint/hadolint:v2.12.0 hadolint --config /dev/null - < ${dockerfilePath}"
+                        } ]
+                    }
+                    parallel branches
+                }
+            }
+        }
+
+        // Roles are approval-based: only an admin can grant seller/admin, so a deployment
+        // with no admin is a dead end — and the first admin (plus RabbitMQ) get their
+        // passwords from "<cluster>/operator-credentials", the secret YOU fill in with
+        // `python bootstrap.py credentials`. Fail HERE, before anything is built or
+        // deployed, if it is missing or incomplete; otherwise pods would sit waiting for a
+        // secret that never arrives. (Staging's Terraform still generates its own passwords,
+        // so this only guards dev.) Passwords are never printed.
+        stage('Verify Operator Credentials') {
+            when { expression { params.ENV == 'dev' } }
+            steps {
+                sh "python3 scripts/python/credentials.py --env ${params.ENV} --check"
+            }
+        }
+
+        stage('Clear Maven Cache') {
+            when { expression { return params.CLEAR_MAVEN_CACHE } }
+            steps {
+                sh "rm -rf ${MAVEN_CACHE} && echo 'Maven cache cleared.'"
+            }
+        }
+
+        // The per-service Maven stages resolve security-common as an ordinary dependency from
+        // ${MAVEN_CACHE}; they do not build it as part of a reactor. This stage installs this
+        // run's security-common first, so a clean cache cannot fail and a warm cache cannot
+        // serve a stale jar.
+        stage('Install Shared Modules (security-common)') {
+            steps {
+                sh """
+                set -e
+                mvn -B -N install -Dmaven.repo.local=${MAVEN_CACHE}
+                # security-common's tests are fast, and running them (instead of
+                # -DskipTests) is also what produces its jacoco report for Sonar.
+                mvn -B -f app/backend/security-common/pom.xml clean install -Dmaven.repo.local=${MAVEN_CACHE}
+                """
+            }
+        }
+
+        // Only iterates over CHANGED_BACKEND (or all, with FORCE_ALL_TESTS/first
+        // build) — this is the stage change-detection actually saves time on.
+        // The frontend's tests run here too (only when the frontend is being
+        // rebuilt) instead of in a separate always-on stage, and write the
+        // lcov report SonarQube reads.
+        stage('Unit & Integration Tests') {
+            steps {
+                script {
+                    def toTest = env.CHANGED_BACKEND ? env.CHANGED_BACKEND.split(',') as List : []
+                    def toBuild = env.IMAGES_TO_BUILD ? env.IMAGES_TO_BUILD.split(',') as List : []
+                    def testFrontend = toBuild.contains('frontend')
+                    if (toTest.isEmpty() && !testFrontend) {
+                        echo "No backend or frontend changes — skipping test stage."
+                        return
+                    }
+                    def branches = toTest.collectEntries { svc ->
+                        [ "${svc}": {
+                            dir("app/backend/${svc}") {
+                                sh "mvn -B clean verify -Dmaven.repo.local=${MAVEN_CACHE}"
+                            }
+                        } ]
+                    }
+                    if (testFrontend) {
+                        branches['frontend'] = {
+                            dir('app/frontend') {
+                                sh """
+                                set -e
+                                npm ci --cache ${NPM_CACHE}
+                                npm run test:coverage
+                                """
+                            }
+                        }
+                    }
+                    parallel branches
+                }
+            }
+        }
+
+        // SonarQube needs compiled classes for EVERY module it analyses, not just
+        // the ones tested this run — otherwise unchanged services would be
+        // analysed without bytecode (less accurate, and issues on untouched
+        // code would flap in and out between runs). `test-compile` is much
+        // cheaper than packaging all modules, and only runs for the
+        // services `mvn verify` did NOT already compile above.
+        stage('Compile Untested Modules (for SonarQube)') {
+            steps {
+                script {
+                    def tested = env.CHANGED_BACKEND ? env.CHANGED_BACKEND.split(',') as List : []
+                    def untested = BACKEND_SERVICES.findAll { !tested.contains(it) }
+                    if (untested.isEmpty()) {
+                        echo "Every backend service was tested (and therefore compiled) this run."
+                        return
+                    }
+                    def branches = untested.collectEntries { svc ->
+                        [ "${svc}": {
+                            dir("app/backend/${svc}") {
+                                sh "mvn -B -q test-compile -Dmaven.repo.local=${MAVEN_CACHE}"
+                            }
+                        } ]
+                    }
+                    parallel branches
+                }
+            }
+        }
+
+        // Single whole-repo scan driven by the repository-level
+        // sonar-project.properties (backend services + security-common + frontend).
+        stage('SonarQube Analysis') {
+            steps {
+                // withSonarQubeEnv references the 'sonarqube' installation
+                // JCasC configures, using the 'sonarqube-token' credential.
+                withSonarQubeEnv('sonarqube') {
+                    sh """
+                    set -e
+                    docker run --rm \\
+                        -v \$(pwd):/usr/src \\
+                        -e SONAR_HOST_URL \\
+                        -e SONAR_AUTH_TOKEN \\
+                        ${SONAR_SCANNER_IMAGE} \\
+                        -Dsonar.projectKey=catalogix \\
+                        -Dsonar.host.url=\$SONAR_HOST_URL \\
+                        -Dsonar.token=\$SONAR_AUTH_TOKEN
+                    """
+                }
+            }
+        }
+
+        // Waits for SonarQube's webhook callback (registered by the sonarqube Ansible role) and
+        // aborts the pipeline unless the gate is OK, so nothing is built or pushed on a breach.
+        // It reads .scannerwork/report-task.txt written by the scanner container into the
+        // bind-mounted workspace; if that file is missing the stage hangs until the webhook timeout.
+        stage('SonarQube Quality Gate') {
+            steps {
+                timeout(time: 5, unit: 'MINUTES') {
+                    waitForQualityGate(abortPipeline: true)
+                }
+            }
+        }
+
+        // Builds+scans only IMAGES_TO_BUILD — services that didn't change
+        // (and aren't forced via FORCE_ALL_BUILDS or a first-ever deploy)
+        // keep running their already-built, already-scanned image; see
+        // 'Determine Per-Service Image Tags' above for where that decision
+        // was made. buildAndScanImage() is the shared-library function that
+        // keeps the deployment logic in one shared block instead of repeating it per service.
+        stage('Build Docker Images and Trivy Image Scan') {
+            steps {
+                script {
+                    def toBuild = env.IMAGES_TO_BUILD ? env.IMAGES_TO_BUILD.split(',') as List : []
+                    if (toBuild.isEmpty()) {
+                        echo "No images need building this run — skipping."
+                        return
+                    }
+                    def branches = toBuild.collectEntries { svc ->
+                        [ "${svc}": {
+                            def imageRef = "${env.ECR_REGISTRY}/${env.ECR_REPO_PREFIX}${svc}:${IMAGE_TAGS[svc]}"
+                            if (svc == 'frontend') {
+                                buildAndScanImage(
+                                    imageRef: imageRef,
+                                    dockerfile: 'app/frontend/Dockerfile',
+                                    context: 'app/frontend',
+                                    trivyImage: env.TRIVY_IMAGE
+                                )
+                            } else if (svc == 'gateway') {
+                                buildAndScanImage(
+                                    imageRef: imageRef,
+                                    dockerfile: 'app/gateway/Dockerfile',
+                                    context: 'app/gateway',
+                                    trivyImage: env.TRIVY_IMAGE
+                                )
+                            } else {
+                                buildAndScanImage(
+                                    imageRef: imageRef,
+                                    dockerfile: "app/backend/${svc}/Dockerfile",
+                                    context: '.',
+                                    target: 'runtime',
+                                    trivyImage: env.TRIVY_IMAGE
+                                )
+                            }
+                        } ]
+                    }
+                    parallel branches
+                }
+            }
+        }
+
+        stage('Push Docker Images to Amazon ECR') {
+            steps {
+                script {
+                    def toBuild = env.IMAGES_TO_BUILD ? env.IMAGES_TO_BUILD.split(',') as List : []
+                    if (toBuild.isEmpty()) {
+                        echo "No images need pushing this run — skipping."
+                        return
+                    }
+                    def branches = toBuild.collectEntries { svc ->
+                        [ "${svc}": {
+                            pushImageWithRetry("${env.ECR_REGISTRY}/${env.ECR_REPO_PREFIX}${svc}:${IMAGE_TAGS[svc]}")
+                        } ]
+                    }
+                    parallel branches
+                }
+            }
+        }
+
+        // ---- Everything that can be checked WITHOUT building an image runs
+        // before any image is built or pushed. Chart validation and required
+        // configuration lookups therefore fail the run before an image can
+        // be published when those checks fail.
+        // ECR's lifecycle policy only keeps the last few tags per repo.
+        stage('Fetch RDS Endpoint') {
+            steps {
+                script {
+                    env.RDS_ENDPOINT = sh(
+                        script: "aws ssm get-parameter --name ${SSM_RDS_PATH} --query Parameter.Value --output text --region ${AWS_REGION}",
+                        returnStdout: true
+                    ).trim()
+                }
+            }
+        }
+
+        // Builds the ONE list of --set arguments used by both the pre-push
+        // validation below and the real deploy, so they can never drift.
+        stage('Prepare Helm Arguments') {
+            steps {
+                script {
+                    // Free-form parameters end up on a shell command line —
+                    // validate their shape instead of trusting them.
+                    if (params.INGRESS_HOST && !(params.INGRESS_HOST ==~ /^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$/)) {
+                        error("INGRESS_HOST '${params.INGRESS_HOST}' is not a valid DNS name.")
+                    }
+                    if (params.TLS_CERT_ARN && !(params.TLS_CERT_ARN ==~ /^arn:aws:acm:[a-z0-9-]+:[0-9]{12}:certificate\/[a-f0-9-]+$/)) {
+                        error("TLS_CERT_ARN '${params.TLS_CERT_ARN}' is not an ACM certificate ARN.")
+                    }
+
+                    def setArgs = [
+                        "global.imageRegistry=${env.ECR_REGISTRY}",
+                        "global.imageTag=${env.IMAGE_TAG}",
+                        "global.cloudProvider=aws",
+                        "database.host=${env.RDS_ENDPOINT}",
+                        // Secrets Manager names are derived from the cluster
+                        // name exactly like Terraform derives them
+                        // (modules/secrets-manager: "<env_prefix>/...").
+                        "secretsManager.appSecretName=${env.CLUSTER_NAME}/app-secrets",
+                        "secretsManager.jwtKeysSecretName=${env.CLUSTER_NAME}/jwt-keys",
+                        // ALB names are unique per account+region; dev and
+                        // staging share both, so the name must be per-env.
+                        "ingress.loadBalancerName=catalogix-${params.ENV}-alb",
+                    ]
+                    // Passwords the operator chose (RabbitMQ, bootstrap admin) are synced straight
+                    // from this secret by External Secrets. Dev only: staging's Terraform still
+                    // puts generated values in app-secrets.
+                    if (params.ENV == 'dev') { setArgs << "secretsManager.operatorSecretName=${env.CLUSTER_NAME}/operator-credentials" }
+                    if (params.INGRESS_HOST) { setArgs << "ingress.host=${params.INGRESS_HOST}" }
+                    if (params.TLS_CERT_ARN) { setArgs << "ingress.tlsCertArn=${params.TLS_CERT_ARN}" }
+
+                    ALL_IMAGES.each { svc ->
+                        // Keys must match the chart: backendServices.<svc>.image.*, frontend.image.*, gateway.image.*
+                        def prefix = (svc == 'frontend') ? 'frontend'
+                                   : (svc == 'gateway')  ? 'gateway'
+                                   : "backendServices.${svc}"
+                        setArgs << "${prefix}.image.repository=${env.ECR_REPO_PREFIX}${svc}"
+                        setArgs << "${prefix}.image.tag=${IMAGE_TAGS[svc]}"
+                    }
+                    env.HELM_SET_ARGS = setArgs.collect { "--set ${it}" }.join(' ')
+                }
+            }
+        }
+
+        stage('Trivy Scan Helm Charts') {
+            steps {
+                sh """
+                set -e
+                docker run --rm \\
+                  -v \$(pwd)/${HELM_CHART_DIR}:/chart \\
+                  ${TRIVY_IMAGE} config \\
+                  --severity HIGH,CRITICAL \\
+                  --exit-code 1 \\
+                  /chart
+                """
+            }
+        }
+
+        stage('Deploy to EKS using Helm') {
+            steps {
+                // All --set arguments come from 'Prepare Helm Arguments'.
+                sh """
+                set -e
+
+                DEPLOYED=0
+                for i in 1 2 3; do
+                    if helm upgrade --install catalogix ${HELM_CHART_DIR} \\
+                        --namespace ${K8S_NAMESPACE} \\
+                        --create-namespace \\
+                        -f ${HELM_CHART_DIR}/values-${params.ENV}.yaml \\
+                        ${HELM_SET_ARGS} \\
+                        --wait --timeout 300s; then
+                        DEPLOYED=1
+                        break
+                    fi
+                    echo "Helm attempt \$i failed — retrying in 30s..."
+                    [ \$i -eq 3 ] && break
+                    sleep 30
+                done
+
+                [ "\$DEPLOYED" -ne 1 ] && { echo "ERROR: Helm deploy failed after 3 attempts."; exit 1; }
+                """
+            }
+        }
+
+        // Post-deployment verification: check that the application is running and responding correctly after deployment.
+        stage('Post-Deployment Verification') {
+            steps {
+                sh """
+                set -e
+
+                echo "===== Application Deployment ====="
+                echo ""
+                echo "<---- Deployment status ---->"
+                kubectl get deployment -n ${K8S_NAMESPACE}
+                echo ""
+                echo "<-- Pod status -->"
+                kubectl get pods -n ${K8S_NAMESPACE}
+                echo ""
+                echo "<-- Services -->"
+                kubectl get svc -n ${K8S_NAMESPACE}
+                echo ""
+                echo "<-- Ingress -->"
+                kubectl get ingress -n ${K8S_NAMESPACE}
+
+                echo ""
+                echo "===== Smoke Test ====="
+
+                ALB_HOST=\$(kubectl get ingress catalogix-gateway-ingress -n ${K8S_NAMESPACE} \\
+                    -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)
+
+                if [ -z "\$ALB_HOST" ]; then
+                    echo "WARNING: ALB hostname not yet assigned — skipping smoke test."
+                else
+                    echo "ALB hostname: \$ALB_HOST"
+                    PASSED=0
+                    for i in \$(seq 1 30); do
+                        HTTP_CODE=\$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "http://\$ALB_HOST/" || echo "000")
+                        if echo "\$HTTP_CODE" | grep -qE '^(200|301|302)\$'; then
+                            echo "Smoke test passed — HTTP \$HTTP_CODE"; PASSED=1; break
+                        fi
+                        echo "Attempt \$i/30 — HTTP \$HTTP_CODE, waiting 10s..."; sleep 10
+                    done
+                    [ "\$PASSED" -eq 0 ] && { echo "ERROR: Smoke test failed after 300s."; exit 1; }
+                fi
+                """
+            }
+        }
+        
+        // Optional passive security check; core CI/CD remains build/test/scan/deploy.
+        stage('DAST Scan — OWASP ZAP Baseline') {
+            when { expression { params.RUN_DAST } }
+            steps {
+                sh """
+                set -e
+
+                ALB_HOST=\$(kubectl get ingress catalogix-gateway-ingress -n ${K8S_NAMESPACE} \\
+                    -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)
+
+                if [ -z "\$ALB_HOST" ]; then
+                    echo "WARNING: ALB hostname not available — skipping ZAP scan."
+                else
+                    mkdir -p zap-report
+                    docker run --rm \\
+                        -v \$(pwd)/zap-report:/zap/wrk:rw \\
+                        -t zaproxy/zap-stable:2.16.1 \\
+                        zap-baseline.py \\
+                        -t "http://\$ALB_HOST/" \\
+                        -r zap-baseline-report.html \\
+                        -I
+                fi
+                """
+                archiveArtifacts artifacts: 'zap-report/*.html', allowEmptyArchive: true
+            }
+        }
+    }
+
+    post {
+        success {
+            echo "Application Deployment Successful!!! — Release '${K8S_NAMESPACE}' is live. Rebuilt this run: ${env.IMAGES_TO_BUILD ?: '(none)'}. Full per-service tags logged in 'Determine Per-Service Image Tags' above."
+
+        }
+
+        failure {
+            echo "Deployment failed - rolling back to last known-good revision..."
+
+            sh """
+            set -e
+
+            echo "=== Pod status ==="
+            kubectl get pods -n ${K8S_NAMESPACE} || true
+
+            echo "=== Events ==="
+            kubectl get events -n ${K8S_NAMESPACE} --sort-by='.lastTimestamp' | tail -30 || true
+
+            echo "=== ExternalSecret status ==="
+            kubectl get externalsecret -n ${K8S_NAMESPACE} || true
+
+            echo "=== Release history ==="
+            helm history catalogix --namespace ${K8S_NAMESPACE} || true
+
+            SUPERSEDED_COUNT=\$(helm history catalogix \\
+                --namespace ${K8S_NAMESPACE} \\
+                --output json 2>/dev/null \\
+                | jq -r '[.[] | select(.status=="superseded")] | length')
+
+            if [ -z "\$SUPERSEDED_COUNT" ] || [ "\$SUPERSEDED_COUNT" = "0" ]; then
+                echo "No previously deployed revision found — skipping rollback."
+            else
+                # `helm rollback catalogix` with no revision number targets
+                # current_revision - 1 — NOT "the last release that actually
+                # worked". The retry loop above calls `helm upgrade --install`
+                # up to 3 times, and Helm records a new revision on every
+                # call whether it succeeds or fails. After a 2nd or 3rd
+                # failed retry, current - 1 is another FAILED attempt from
+                # this same run, not the last known-good deployment — a bare
+                # `helm rollback` here could "roll back" straight into an
+                # equally broken revision. Explicitly resolve the highest
+                # revision number still marked "superseded" (the actual
+                # last-good release, which is what SUPERSEDED_COUNT above
+                # was already checking for) and target it by number instead
+                # of relying on rollback's implicit "previous" default.
+                LAST_GOOD_REVISION=\$(helm history catalogix \\
+                    --namespace ${K8S_NAMESPACE} \\
+                    --output json 2>/dev/null \\
+                    | jq -r '[.[] | select(.status=="superseded")] | max_by(.revision) | .revision')
+
+                if [ -z "\$LAST_GOOD_REVISION" ] || [ "\$LAST_GOOD_REVISION" = "null" ]; then
+                    echo "Could not resolve a specific last-good revision number despite \$SUPERSEDED_COUNT superseded entries — refusing to guess. Manual rollback required: 'helm rollback catalogix <revision> -n ${K8S_NAMESPACE}'."
+                    exit 1
+                fi
+
+                echo "Found \$SUPERSEDED_COUNT superseded revision(s) — rolling back to revision \$LAST_GOOD_REVISION ..."
+                if ! helm rollback catalogix \$LAST_GOOD_REVISION --namespace ${K8S_NAMESPACE}; then
+                    echo "========================================================="
+                    echo "  ROLLBACK FAILED — manual intervention required"
+                    echo "  Cluster may be in a partially broken state."
+                    echo "========================================================="
+                    echo "=== Current Helm release state ==="
+                    helm status catalogix --namespace ${K8S_NAMESPACE} || true
+                    echo "=== Pod state ==="
+                    kubectl get pods -n ${K8S_NAMESPACE} -o wide || true
+                    exit 1
+                fi
+                echo "Rollback to revision \$LAST_GOOD_REVISION successful."
+            fi
+            """
+        }
+
+        always {
+            // `docker system prune` also deletes unused BuildKit cache — which is
+            // exactly the Maven/npm cache the Dockerfiles now rely on. Prune only
+            // containers and dangling images, and age out old build cache.
+            sh "docker container prune -f || true; docker image prune -f || true; docker builder prune -f --filter until=168h || true"
+        }
+    }
+}

@@ -1,0 +1,20 @@
+Catalogix deployed to namespace: {{ .Release.Namespace }}
+
+Backend services ({{ len .Values.backendServices }} total, all reached through the gateway at /api/<service>/...):
+{{- range $name, $svc := .Values.backendServices }}
+  - {{ $name }} :{{ $svc.port }}
+{{- end }}
+  - frontend :{{ .Values.frontend.service.port }}
+  - gateway  :{{ .Values.gateway.service.port }} (the only workload the ALB routes to)
+
+Check rollout status:
+  kubectl get pods -n {{ .Release.Namespace }}
+  kubectl get deployment -n {{ .Release.Namespace }}
+
+Get the ALB hostname:
+  kubectl get ingress catalogix-gateway-ingress -n {{ .Release.Namespace }} \
+    -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
+
+RabbitMQ management UI (port-forward, don't expose publicly):
+  kubectl port-forward svc/rabbitmq 15672:15672 -n {{ .Release.Namespace }}
+  then open http://localhost:15672

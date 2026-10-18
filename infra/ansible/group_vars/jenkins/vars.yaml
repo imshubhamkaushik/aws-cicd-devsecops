@@ -1,0 +1,14 @@
+# Non-sensitive Jenkins configuration variables.
+# Sensitive values (tokens, passwords) live in the encrypted group_vars/all/vault.yaml,
+# created by `python3 scripts/python/bootstrap.py ansible`.
+#
+# Expected vault variables:
+#   vault_jenkins_admin_password: <strong password>
+#   vault_github_token:           <GitHub personal access token>
+#   vault_sonar_admin_password:
+#   vault_sonar_token:            <SonarQube user token>
+#
+# Reference vault vars in tasks via: "{{ vault_jenkins_admin_password }}"
+
+jenkins_admin_user: "admin"
+git_repo_url: "https://github.com/imshubhamkaushik/aws-cicd-devsecops.git"  # UPDATE THIS

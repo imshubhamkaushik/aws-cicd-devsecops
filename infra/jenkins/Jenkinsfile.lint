@@ -1,0 +1,231 @@
+// =============================================================================
+// Lint / static-analysis pipeline. NOT created by jcasc.yaml (it defines only
+// the platform-infra and app-cicd jobs). To use it, add a pipelineJob with
+// scriptPath('infra/jenkins/Jenkinsfile.lint') to jcasc.yaml or create the job by hand.
+//
+// This is the home for checks that don't need a running cluster or built
+// images (Terraform fmt, ansible-lint, ruff, Helm lint/validation, shellcheck).
+// app-cicd repeats only the cheap Dockerfile lint, Gitleaks and the Helm chart
+// Trivy scan, because it gates deploys.
+// =============================================================================
+
+pipeline {
+    agent any
+
+    options {
+        timestamps()
+        disableConcurrentBuilds(abortPrevious: true)
+        timeout(time: 10, unit: 'MINUTES')
+    }
+
+    environment {
+        HELM_CHART_DIR = "infra/helm/catalogix-hc"
+    }
+
+    stages {
+
+        stage('Checkout') {
+            steps {
+                cleanWs()
+                checkout scm
+            }
+        }
+
+        // Reads the Trivy version from Ansible vars, same source of truth
+        // app-cicd uses, so both pipelines always run the same scanner version.
+        stage('Resolve Tool Versions') {
+            steps {
+                script {
+                    env.TRIVY_TAG = sh(
+                        script: "grep '^trivy_version:' infra/ansible/group_vars/all/vars.yaml | awk -F'\"' '{print \$2}'",
+                        returnStdout: true).trim()
+                    if (!env.TRIVY_TAG) {
+                        error("TRIVY_TAG is empty — check 'trivy_version' in infra/ansible/group_vars/all/vars.yaml")
+                    }
+                    env.TRIVY_IMAGE = "aquasec/trivy:${env.TRIVY_TAG}"
+                }
+            }
+        }
+
+        // Pure Dockerfile lint, no build required — runs here instead of in
+        // app-cicd so a Dockerfile mistake is caught before a deploy run,
+        // not during one.
+        stage('Hadolint — Dockerfile Linting') {
+            steps {
+                sh '''
+                set -e
+                for dockerfile in $(find app -maxdepth 3 -name Dockerfile); do
+                    echo "=== hadolint: ${dockerfile} ==="
+                    docker run --rm -i hadolint/hadolint:v2.12.0 hadolint --config /dev/null - < "${dockerfile}"
+                done
+                '''
+            }
+        }
+
+        // ── Terraform ────────────────────────────────────────────────────────
+        //
+        // fmt -check is pure formatting and safe to run repo-wide, regardless
+        // of provider config. (terraform validate is intentionally not run
+        // here — module directories don't declare their own providers, so
+        // validating them directly fails for reasons unrelated to the actual
+        // code; real validation happens per-environment in the infra pipeline.)
+        stage('Terraform Format Check') {
+            steps {
+                sh '''
+                set -e
+                terraform fmt -check -recursive -diff infra/terraform/
+                '''
+            }
+        }
+
+        // ── Ansible ──────────────────────────────────────────────────────────
+        //
+        // No ansible-lint config or ignore file exists in the repository, so this
+        // runs the default rules. Existing style findings (for example missing
+        // FQCNs) will fail the stage until they are fixed or an ignore file is added.
+        stage('Ansible Lint') {
+            steps {
+                sh '''
+                set -e
+                cd infra/ansible
+                ansible-lint playbook.yaml
+                '''
+            }
+        }
+
+        // ── Python ───────────────────────────────────────────────────────────
+        //
+        // ruff's default ruleset covers style/correctness; --select S adds
+        // its security checks (bandit-equivalent), so one tool covers what
+        // would otherwise be flake8 + bandit.
+        stage('Python Lint') {
+            steps {
+                sh '''
+                set -e
+                cd scripts/python
+                ruff check --select E,F,W,S .
+                '''
+            }
+        }
+
+        // Password policy + Secrets Manager handling of the credentials tool
+        // (scripts/python/credentials.py) — pure unit tests, no AWS access needed.
+        stage('Python Unit Tests') {
+            steps {
+                sh 'python3 -m unittest discover -s scripts/python/tests'
+            }
+        }
+
+        // ── Helm ─────────────────────────────────────────────────────────────
+        stage('Helm Dependencies') {
+            steps {
+                // infra/helm/monitoring's sub-chart (kube-prometheus-stack) must be
+                // present before it can be linted or rendered; without this both
+                // `helm lint` and `helm template` fail on a clean workspace.
+                sh '''
+                set -e
+                helm repo add prometheus-community https://prometheus-community.github.io/helm-charts >/dev/null 2>&1 || true
+                helm repo update prometheus-community >/dev/null
+                helm dependency build infra/helm/monitoring
+                '''
+            }
+        }
+
+        stage('Helm Lint') {
+            steps {
+                sh '''
+                set -e
+                helm lint infra/helm/catalogix-hc --values infra/helm/catalogix-hc/values-dev.yaml
+                helm lint infra/helm/catalogix-hc --values infra/helm/catalogix-hc/values-staging.yaml
+                helm lint infra/helm/monitoring
+                '''
+            }
+        }
+
+        // `helm lint` only checks the chart's structure. Rendering the chart
+        // and validating it against the Kubernetes schemas also catches typo'd
+        // fields and wrong apiVersions. Two details matter here:
+        //   * -ignore-missing-schemas — ExternalSecret / ServiceMonitor etc.
+        //     are CRDs with no schema in kubeconform's default catalogue;
+        //     without the flag every one of them is reported as a failure.
+        //   * render to a FILE first — in plain `sh`, `set -e` does not catch
+        //     a failing left side of a pipe, so a chart that fails to render
+        //     would feed kubeconform an empty stream and "pass".
+        stage('Helm Rendered-Manifest Validation') {
+            steps {
+                sh '''
+                set -e
+                for values in values-dev.yaml values-staging.yaml; do
+                    echo "=== kubeconform: infra/helm/catalogix-hc (${values}) ==="
+                    helm template infra/helm/catalogix-hc --values infra/helm/catalogix-hc/${values} > rendered.yaml
+                    docker run --rm -i ghcr.io/yannh/kubeconform:v0.6.7 \\
+                        -strict -summary -ignore-missing-schemas < rendered.yaml
+                done
+
+                echo "=== kubeconform: infra/helm/monitoring ==="
+                helm template infra/helm/monitoring > rendered.yaml
+                docker run --rm -i ghcr.io/yannh/kubeconform:v0.6.7 \\
+                    -strict -summary -ignore-missing-schemas < rendered.yaml
+                '''
+            }
+        }
+
+        // The pipeline's per-service image tag/repository keys must match what
+        // the chart reads (see the script's header for the bug this prevents).
+        stage('Helm Image Tag Contract') {
+            steps {
+                sh 'scripts/ci/check-helm-image-tags.sh infra/helm/catalogix-hc/values-dev.yaml'
+            }
+        }
+
+        stage('Helm Charts Trivy Scan') {
+            steps {
+                sh """
+                set -e
+                docker run --rm \\
+                  -v \$(pwd)/${HELM_CHART_DIR}:/chart \\
+                  ${TRIVY_IMAGE} config \\
+                  --severity HIGH,CRITICAL \\
+                  --exit-code 1 \\
+                  /chart
+                """
+            }
+        }
+
+        // ── Shell scripts ────────────────────────────────────────────────────
+        stage('Shellcheck') {
+            steps {
+                sh '''
+                set -e
+                shellcheck scripts/*.sh scripts/bash/*.sh scripts/ci/*.sh
+                '''
+            }
+        }
+
+        // ── Secrets ──────────────────────────────────────────────────────────
+        //
+        // Full-repo scan, same image and flags as the first stage of app-cicd.
+        stage('Secrets Scanning') {
+            steps {
+                sh '''
+                set -e
+                docker run --rm \\
+                    -v $(pwd):/repo \\
+                    zricethezav/gitleaks:v8.21.2 detect \\
+                    --source /repo \\
+                    --exit-code 1 \\
+                    --redact
+                '''
+            }
+        }
+    }
+
+    post {
+        success {
+            echo "Lint pipeline passed — hadolint, terraform fmt, ansible-lint, ruff, helm lint, kubeconform, shellcheck, gitleaks all clean."
+        }
+        failure {
+            echo "Lint pipeline failed — check which stage above for the specific tool and finding."
+        }
+    }
+}
