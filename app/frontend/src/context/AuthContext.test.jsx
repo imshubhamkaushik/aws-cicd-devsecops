@@ -120,7 +120,7 @@ describe("AuthContext", () => {
     await waitFor(() => expect(screen.getByTestId("auth-state")).toHaveTextContent("in"));
 
     await act(async () => {
-      // Matches what api.jsx's performRefresh actually dispatches now: no
+      // Matches what the API client's performRefresh actually dispatches now: no
       // refreshToken field — the rotated cookie is set directly by the
       // Set-Cookie header on the /users/refresh response, never surfaced
       // to JS.

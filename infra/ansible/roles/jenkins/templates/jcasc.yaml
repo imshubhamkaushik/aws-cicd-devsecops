@@ -88,9 +88,40 @@ credentials:
               id: "sonarqube-token"
               secret: "${SONARQUBE_TOKEN}"
 
-# Job Definitions — both pipelines created automatically on Jenkins startup
+# Job Definitions. The multibranch quality/security gate is the only webhook-driven job.
 jobs:
-  # Platform Infra Pipeline
+  # Pre-deployment quality and security gate (pull requests + branches).
+  # The repo URL is parsed so this works after the operator sets GIT_REPO_URL.
+  - script: |
+      def cloneUrl = System.getenv('GIT_REPO_URL') ?: ''
+      def matcher = (cloneUrl =~ /github\.com[:\/]([^\/]+)\/([^\/]+?)(?:\.git)?$/)
+      if (!matcher.find()) { throw new IllegalStateException('GIT_REPO_URL must be a GitHub HTTPS or SSH repository URL') }
+      def repoOwner = matcher.group(1)
+      def repoName = matcher.group(2)
+      multibranchPipelineJob('quality-security-gate') {
+        description('Required repository lint, quality and security checks for pushes and pull requests')
+        branchSources {
+          github {
+            id('catalogix-quality-security-gate')
+            repoOwner(repoOwner)
+            repository(repoName)
+            credentialsId('github-token')
+            traits {
+              gitHubBranchDiscovery { strategyId(1) }
+              gitHubPullRequestDiscovery { strategyId(1) }
+            }
+          }
+        }
+        factory {
+          workflowBranchProjectFactory {
+            scriptPath('infra/jenkins/Jenkinsfile.lint')
+          }
+        }
+        orphanedItemStrategy { discardOldItems { numToKeep(20) } }
+        triggers { periodicFolderTrigger { interval('1d') } }
+      }
+
+  # Platform Infra Pipeline — manual only; never triggered directly by repository webhooks.
   - script: >
       pipelineJob('platform-infra') {
         description('Provision infrastructure using Terraform')
@@ -113,10 +144,7 @@ jobs:
   # Application CICD Pipeline
   - script: >
       pipelineJob('app-cicd') {
-        description('Application CICD Pipeline - Build, Scan, Deploy')
-        triggers {
-          githubPush()
-        }
+        description('Application CICD Pipeline - Build, Scan, Deploy (triggered only by a successful quality/security gate or manually)')
         definition {
           cpsScm {
             scm {

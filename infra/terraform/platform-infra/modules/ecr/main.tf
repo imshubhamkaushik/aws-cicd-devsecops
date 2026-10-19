@@ -19,11 +19,10 @@ resource "aws_ecr_repository" "repos" {
     encryption_type = "AES256"
   }
 
-  # Only env/dev creates these repos; staging pulls from them. Destroying dev
-  # would silently break staging, so prevent_destroy makes it a hard error.
-  lifecycle {
-    prevent_destroy = true
-  }
+  # These repositories are owned by the dev platform lifecycle. The repository is a learning
+  # project with an explicit full-destroy workflow; force_delete permits cleanup of tagged images.
+  # Any environment intended to share ECR independently must move these resources to a separate
+  # shared-services Terraform state before relying on it.
 }
 
 resource "aws_ecr_lifecycle_policy" "repos" {

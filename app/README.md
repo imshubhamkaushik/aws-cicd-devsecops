@@ -7,7 +7,7 @@ app/
   backend/         security-common and seven Spring Boot services (Maven modules, parent pom.xml at the repository root)
   frontend/        React 19 + Vite 8 + Tailwind CSS 4 single-page app, built to static files and served by Nginx
   gateway/         Nginx reverse proxy: routing, rate limiting, security headers
-  postgres-init/   01-create-databases.sh: one database and one login role per service (Docker Compose only)
+  postgres-init/   01-create-databases.sql: one database and one login role per service (Docker Compose only)
 ```
 
 For a guided tour of how a request and an order travel through the services, read [../docs/app-guide.md](../docs/app-guide.md). This page is the reference.
@@ -26,7 +26,7 @@ For a guided tour of how a request and an order travel through the services, rea
 | `gateway` | 11000 | none | no | The only published port; `/gateway/health` is its health check |
 | `frontend` | 11001 | none | no | Static files |
 
-Database names contain hyphens, so they must be quoted in SQL. The init script does this with `%I`. The same names are created on Docker Compose (`postgres-init`), on local Kubernetes (`infra/helm/catalogix-hc/templates/postgres-local.yaml`) and on RDS (`infra/terraform/platform-infra/modules/db-roles`). The three must stay in step.
+Database names contain hyphens, so they must be quoted in SQL. The SQL init file does this with `%I`. The same names are created on Docker Compose (`postgres-init`), on local Kubernetes (`infra/helm/catalogix-hc/templates/postgres-local.yaml`) and on RDS (`infra/terraform/platform-infra/modules/db-roles`). The three must stay in step. The official PostgreSQL image executes the `.sql` file on the first empty data volume, so no custom shell script is needed.
 
 Every service validates its schema against Flyway migrations (`src/main/resources/db/migration/*.sql`) with `spring.jpa.hibernate.ddl-auto=validate`; Hibernate never changes the schema.
 
@@ -134,4 +134,4 @@ Pages live in `frontend/src/components/`, one component per page, with routes in
 | `/my-products` | `SELLER` and `ADMIN` |
 | `/users`, `/admin/moderation`, `/admin/outbox`, `/notifications` | `ADMIN` |
 
-`frontend/src/api.jsx` attaches the access token to requests and refreshes it through the cookie when it expires. Styling is Tailwind CSS 4 with a few Radix components (dialog and dropdown menu) in `frontend/src/components/ui/`. Colours and fonts are CSS variables at the top of `frontend/src/index.css`, and the dark theme follows the browser setting. The build output is plain static files, so the Dockerfile, Helm chart and gateway do not depend on any framework server.
+`frontend/src/api/client.js` attaches the access token to requests and refreshes it through the cookie when it expires; `frontend/src/api/index.js` re-exports domain-specific API modules to preserve existing imports. Styling is Tailwind CSS 4 with a few Radix components (dialog and dropdown menu) in `frontend/src/components/ui/`. Colours and fonts are CSS variables at the top of `frontend/src/index.css`, and the dark theme follows the browser setting. The build output is plain static files, so the Dockerfile, Helm chart and gateway do not depend on any framework server.

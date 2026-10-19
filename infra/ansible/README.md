@@ -1,6 +1,6 @@
 # Ansible
 
-Configures the two EC2 servers created by `infra/terraform/bootstrap-infra`: a Jenkins server and a SonarQube server. Nothing on them is set up by hand. Jenkins is configured with Jenkins Configuration as Code (JCasC) and starts with both pipeline jobs already present.
+Configures the two EC2 servers created by `infra/terraform/bootstrap-infra`: a Jenkins server and a SonarQube server. Nothing on them is set up by hand. Jenkins is configured with Jenkins Configuration as Code (JCasC) and defines the `quality-security-gate`, `platform-infra`, and `app-cicd` jobs.
 
 ```text
 infra/ansible/
@@ -55,7 +55,7 @@ Installs Java 21 and Jenkins from the official apt repository (the playbook remo
 | SonarQube | Server `sonarqube` at `http://<private ip>:9000` with the `sonarqube-token` credential |
 | Tools | `git`, Maven 3.9.9, Node.js 24.11.0 (keep it in step with the frontend Dockerfile, `.nvmrc` and `engines`) |
 | Credentials | `github-token` and `sonarqube-token`, from environment variables |
-| Jobs | `platform-infra` (`scriptPath('infra/jenkins/Jenkinsfile.platform-infra')`) and `app-cicd` (`scriptPath('infra/jenkins/Jenkinsfile.app-cicd')`, with a `githubPush()` trigger), both on `*/main` |
+| Jobs | `quality-security-gate` multibranch job (`Jenkinsfile.lint`) for GitHub push/PR checks; `platform-infra` (manual); `app-cicd` triggered after a successful main-branch gate |
 
 `unknown: reject` and `restricted: reject` make JCasC fail loudly on a typo instead of ignoring it. To change the job definitions or the trigger, edit this file and re-run `python3 scripts/python/aws/bootstrap.py ansible` (see [../../docs/github-webhook.md](../../docs/github-webhook.md)). Editing a job in the Jenkins UI is overwritten the next time JCasC is applied.
 

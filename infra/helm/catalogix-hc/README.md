@@ -36,7 +36,7 @@ Values the pipeline sets at deploy time (you do not edit them): `database.host` 
 Staging notes:
 
 - `values-staging.yaml` is **not** tested by CI beyond `helm lint` and rendering in `Jenkinsfile.lint`; the image-tag contract test checks dev only. Treat it as unproven until you deploy it.
-- No `operatorSecretName` is set and nothing creates a staging operator-credentials secret, so `SEED_ADMIN_PASSWORD` is absent and user-svc logs an error and creates **no admin account**. Create `catalogix-cluster-staging/operator-credentials` (keys `rabbitmq_user`, `rabbitmq_password`, `seed_admin_password`) and set `secretsManager.operatorSecretName` to use an admin in staging.
+- No `applicationCredentialsSecretName` is set and nothing creates a staging application credentials secret, so `SEED_ADMIN_PASSWORD` is absent and user-svc logs an error and creates **no admin account**. Create `catalogix-cluster-staging/credentials/application` (keys `rabbitmq_user`, `rabbitmq_password`, `seed_admin_password`) and set `secretsManager.applicationCredentialsSecretName` to use an admin in staging.
 
 Email: the chart does not deploy a mail server. Dev points `MAIL_HOST` at `mailpit`, which exists only in Docker Compose, so verification and password-reset emails are not delivered in a dev cluster unless you set `MAIL_HOST` and `MAIL_PORT` (and credentials) on `notification-svc` to a real SMTP server.
 
@@ -59,10 +59,10 @@ Nothing sensitive is in the values files. On AWS, External Secrets Operator copi
 
 | Kubernetes Secret | Source | Holds |
 |---|---|---|
-| `catalogix-secrets` | `secretsManager.appSecretName` (everything in it), plus `secretsManager.operatorSecretName` for exactly `rabbitmq_user`, `rabbitmq_password`, `seed_admin_password` | Per-service DB credentials, RabbitMQ credentials, the seed admin password |
+| `catalogix-secrets` | `secretsManager.appSecretName` (Terraform-generated per-service DB roles/passwords), plus the three explicitly selected keys from `secretsManager.applicationCredentialsSecretName` | Per-service DB credentials, RabbitMQ credentials, the seed admin password |
 | `catalogix-jwt-keys` | `secretsManager.jwtKeysSecretName` | `jwt_private_key_b64`, `jwt_public_key_b64`, `internal_jwt_private_key_b64`, `internal_jwt_public_key_b64` |
 
-The operator secret is listed key by key because it also holds the RDS master password and the Grafana login, which must not reach this namespace. The Secret and Cluster Secret Store (`aws-secrets-manager`) are created outside this chart by Terraform. On local Kubernetes, `secrets-local.yaml` generates `catalogix-secrets` (RabbitMQ and database passwords) on first install and keeps it across `helm upgrade`. It does **not** create `catalogix-jwt-keys`: run `python3 scripts/python/local/generate_jwt_keys.py --kubernetes` first (see below).
+Operator-selected credentials are separate Secrets Manager resources under one common name prefix: `<cluster>/credentials/database`, `<cluster>/credentials/application`, and `<cluster>/credentials/observability`. This is deliberate: Secrets Manager has no real folders or per-JSON-key IAM boundary, and Terraform reads the whole `SecretString` for the database category into state. That category contains only the RDS master password and optional read-only DB login; the app chart requests only `rabbitmq_user`, `rabbitmq_password`, and `seed_admin_password` from the application category. Grafana credentials are synced only into a Kubernetes Secret in the monitoring namespace. The SecretStore and ClusterSecretStore are created outside this chart by Terraform. On local Kubernetes, `secrets-local.yaml` generates `catalogix-secrets` (RabbitMQ and database passwords) on first install and keeps it across `helm upgrade`. It does **not** create `catalogix-jwt-keys`: run `python3 scripts/python/local/generate_jwt_keys.py --kubernetes` first (see below).
 
 ## NetworkPolicy
 

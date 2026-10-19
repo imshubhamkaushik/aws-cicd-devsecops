@@ -1,20 +1,17 @@
 #!/usr/bin/env python3
 
 """
-Manage the operator-selected Catalogix credentials in AWS Secrets Manager.
+Manage operator-selected Catalogix credentials in categorized AWS Secrets Manager secrets.
 
-The script owns one Secrets Manager secret per environment:
+Secrets (AWS Secrets Manager uses a name prefix, not real folders):
+    <cluster-name>/credentials/database       RDS master + optional read-only DB login
+    <cluster-name>/credentials/application    RabbitMQ login + seed admin password
+    <cluster-name>/credentials/observability  Grafana admin login
 
-    <cluster-name>/operator-credentials
-
-Required credentials:
-    db_master_password
-    rabbitmq_user / rabbitmq_password
-    seed_admin_password
-    grafana_admin_user / grafana_admin_password
-
-Optional credentials:
-    db_readonly_username / db_readonly_password
+The legacy <cluster-name>/operator-credentials secret can be migrated with --migrate-legacy.
+It is deliberately retained after migration until the operator verifies the new secrets and
+removes the old one. Terraform reads only the database category; ESO reads application and
+observability categories directly, keeping those human/application passwords out of Terraform state.
 
 The same password rules are used by the validation and pipeline checks.
 The standard library is used so the script runs on a developer machine and
@@ -52,7 +49,12 @@ CLUSTER_NAMES = {
     "staging": "catalogix-cluster-staging",
 }
 
-SECRET_SUFFIX = "operator-credentials"  # NOSONAR - this is a secret name, not a credential
+LEGACY_SECRET_SUFFIX = "operator-credentials"  # NOSONAR - legacy secret name, not a credential
+CATEGORY_SUFFIXES = {
+    "database": "credentials/database",
+    "application": "credentials/application",
+    "observability": "credentials/observability",
+}
 MIN_LENGTH = 8
 MAX_LENGTH = 64
 FORBIDDEN_CHARS = '/"@'
@@ -104,6 +106,17 @@ CREDENTIALS = [
         required=False,
     ),
 ]
+
+CREDENTIALS_BY_CATEGORY = {
+    "database": ["db_master_password", "db_readonly_username", "db_readonly_password"],
+    "application": ["rabbitmq_user", "rabbitmq_password", "seed_admin_password"],
+    "observability": ["grafana_admin_user", "grafana_admin_password"],
+}
+CATEGORY_BY_KEY = {
+    key: category
+    for category, keys in CREDENTIALS_BY_CATEGORY.items()
+    for key in keys
+}
 
 
 # ---------------------------------------------------------------------------
@@ -171,97 +184,133 @@ def generate_password(length: int = 20) -> str:
 
 # ---------------------------------------------------------------------------
 # AWS access
-# ---------------------------------------------------------------------------
 
 class SecretNotFound(Exception):
-    """Raised when the environment secret does not exist."""
+    """Raised when a requested Secrets Manager secret does not exist."""
 
 
-def secret_id(env: str) -> str:
-    """Return the Secrets Manager identifier for an environment."""
+def legacy_secret_id(env: str) -> str:
+    """Return the pre-categorisation secret name used by older repository versions."""
+    return f"{CLUSTER_NAMES[env]}/{LEGACY_SECRET_SUFFIX}"
 
-    return f"{CLUSTER_NAMES[env]}/{SECRET_SUFFIX}"
+
+def secret_id(env: str, category: str | None = None) -> str:
+    """Return a category secret name; with no category, return the legacy name."""
+    if category is None:
+        return legacy_secret_id(env)
+    if category not in CATEGORY_SUFFIXES:
+        raise ValueError(f"Unknown credential category: {category}")
+    return f"{CLUSTER_NAMES[env]}/{CATEGORY_SUFFIXES[category]}"
 
 
 def _aws(args: list[str], region: str | None):
     """Run an AWS Secrets Manager CLI command."""
-
     command = ["aws", "secretsmanager", *args]
     if region:
         command += ["--region", region]
-
     return subprocess.run(command, capture_output=True, text=True)
 
 
-def fetch_secret(env: str, region: str) -> dict[str, Any]:
-    """Return the current secret or raise SecretNotFound."""
-
+def _fetch_secret_id(sid: str, region: str) -> dict[str, Any]:
     result = _aws(
-        [
-            "get-secret-value",
-            "--secret-id",
-            secret_id(env),
-            "--query",
-            "SecretString",
-            "--output",
-            "text",
-        ],
+        ["get-secret-value", "--secret-id", sid, "--query", "SecretString", "--output", "text"],
         region,
     )
-
     if result.returncode != 0:
-        if "ResourceNotFoundException" in result.stderr:
-            raise SecretNotFound(secret_id(env))
-        raise RuntimeError(
-            f"aws secretsmanager get-secret-value failed: {result.stderr.strip()}"
-        )
+        if "ResourceNotFoundException" in result.stderr or "Secrets Manager can't find the specified secret" in result.stderr:
+            raise SecretNotFound(sid)
+        raise RuntimeError(f"aws secretsmanager get-secret-value failed for {sid}: {result.stderr.strip()}")
+    try:
+        value = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"Secret {sid} does not contain valid JSON.") from exc
+    if not isinstance(value, dict):
+        raise RuntimeError(f"Secret {sid} must contain a JSON object.")
+    return value
 
-    return json.loads(result.stdout)
+
+def fetch_category_secret(env: str, region: str, category: str) -> dict[str, Any]:
+    """Read one category secret."""
+    return _fetch_secret_id(secret_id(env, category), region)
+
+
+def fetch_legacy_secret(env: str, region: str) -> dict[str, Any]:
+    """Read the legacy combined secret."""
+    return _fetch_secret_id(legacy_secret_id(env), region)
+
+
+def load_credential_state(
+    env: str, region: str
+) -> tuple[dict[str, Any], set[str], bool]:
+    """Return merged values, present categories, and whether the legacy secret exists.
+
+    New category secrets take precedence over legacy fields. Legacy values are only a migration
+    fallback; --check still requires all new category secrets to exist.
+    """
+    values: dict[str, Any] = {}
+    present_categories: set[str] = set()
+    for category in CATEGORY_SUFFIXES:
+        try:
+            category_values = fetch_category_secret(env, region, category)
+        except SecretNotFound:
+            continue
+        allowed = set(CREDENTIALS_BY_CATEGORY[category])
+        unexpected = set(category_values) - allowed
+        if unexpected:
+            raise RuntimeError(
+                f"Secret {secret_id(env, category)} contains keys outside the {category} category: "
+                + ", ".join(sorted(unexpected))
+            )
+        values.update(category_values)
+        present_categories.add(category)
+
+    legacy_exists = False
+    try:
+        legacy_values = fetch_legacy_secret(env, region)
+        legacy_exists = True
+        for key, value in legacy_values.items():
+            values.setdefault(key, value)
+    except SecretNotFound:
+        pass
+
+    if not present_categories and not legacy_exists:
+        raise SecretNotFound(secret_id(env, "database"))
+    return values, present_categories, legacy_exists
+
+
+def fetch_secret(env: str, region: str) -> dict[str, Any]:
+    """Return the merged operator credential view (category secrets preferred over legacy)."""
+    values, _, _ = load_credential_state(env, region)
+    return values
 
 
 def store_secret(
     env: str,
     region: str,
+    category: str,
     values: dict[str, Any],
     exists: bool,
 ) -> None:
-    """Write the JSON secret through a 0600 temporary file.
-
-    Using file:// keeps credential values out of the AWS CLI process arguments.
-    """
-
+    """Write one category JSON through a private temporary file (mode 0600)."""
+    allowed = set(CREDENTIALS_BY_CATEGORY[category])
+    payload = {key: value for key, value in values.items() if key in allowed and value not in (None, "")}
     fd, path = tempfile.mkstemp(prefix="catalogix-cred-", suffix=".json")
-
     try:
         os.chmod(path, 0o600)
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            json.dump(values, handle)
+            json.dump(payload, handle)
 
+        sid = secret_id(env, category)
         if exists:
-            args = [
-                "put-secret-value",
-                "--secret-id",
-                secret_id(env),
-                "--secret-string",
-                f"file://{path}",
-            ]
+            args = ["put-secret-value", "--secret-id", sid, "--secret-string", f"file://{path}"]
         else:
             args = [
-                "create-secret",
-                "--name",
-                secret_id(env),
-                "--secret-string",
-                f"file://{path}",
-                "--description",
-                "Operator-chosen credentials for Catalogix "
-                "(scripts/python/aws/credentials.py)",
+                "create-secret", "--name", sid, "--secret-string", f"file://{path}",
+                "--description", f"Catalogix {category} credentials ({env}); managed by credentials.py",
             ]
-
         result = _aws(args, region)
         if result.returncode != 0:
-            raise RuntimeError(
-                f"aws secretsmanager write failed: {result.stderr.strip()}"
-            )
+            raise RuntimeError(f"aws secretsmanager write failed for {sid}: {result.stderr.strip()}")
     finally:
         try:
             os.remove(path)
@@ -269,23 +318,59 @@ def store_secret(
             pass
 
 
+def _category_exists(env: str, region: str, category: str) -> bool:
+    try:
+        fetch_category_secret(env, region, category)
+        return True
+    except SecretNotFound:
+        return False
+
+
+def cmd_migrate_legacy(env: str, region: str) -> int:
+    """Split a valid legacy combined secret into category secrets without deleting the source."""
+    try:
+        legacy = fetch_legacy_secret(env, region)
+    except SecretNotFound:
+        print(f"Legacy secret {legacy_secret_id(env)} does not exist; nothing to migrate.")
+        return 0 if all(_category_exists(env, region, c) for c in CATEGORY_SUFFIXES) else 1
+
+    problems = check_values(legacy)
+    if problems:
+        print(f"ERROR: cannot migrate invalid legacy secret {legacy_secret_id(env)}:")
+        _print_problems(problems)
+        print("Repair the legacy secret first, or run the credential editor against a backup.")
+        return 1
+
+    for category, keys in CREDENTIALS_BY_CATEGORY.items():
+        existing = {}
+        try:
+            existing = fetch_category_secret(env, region, category)
+            exists = True
+        except SecretNotFound:
+            exists = False
+        payload = {key: legacy[key] for key in keys if key in legacy}
+        # Keep any already-migrated category values rather than overwriting newer rotations.
+        payload = {**payload, **existing}
+        store_secret(env, region, category, payload, exists)
+        print(f"Migrated {category} credentials to {secret_id(env, category)}")
+
+    print("Migration complete. The legacy secret was retained for recovery.")
+    print("Run --check, confirm the platform/app pipelines work, then remove the legacy secret manually.")
+    return 0
+
+
 # ---------------------------------------------------------------------------
 # Check / show
-# ---------------------------------------------------------------------------
 
 def check_values(values: dict[str, Any]) -> list[str]:
-    """Return problems with a stored secret."""
-
+    """Return problems with a merged credential view."""
     problems: list[str] = []
-
     for credential in CREDENTIALS:
         value = values.get(credential.key)
-
         if value in (None, ""):
             if credential.required:
                 problems.append(f"{credential.key}: missing")
             continue
-
         for problem in value_problems(credential, value):
             problems.append(f"{credential.key}: {problem}")
 
@@ -295,7 +380,6 @@ def check_values(values: dict[str, Any]) -> list[str]:
         problems.append("db_readonly_username: required when db_readonly_password is set")
     elif readonly_user and not readonly_password:
         problems.append("db_readonly_password: required when db_readonly_username is set")
-
     return problems
 
 
@@ -306,54 +390,57 @@ def _print_problems(problems: list[str]) -> None:
 
 def cmd_check(env: str, region: str) -> int:
     try:
-        values = fetch_secret(env, region)
+        values, present_categories, legacy_exists = load_credential_state(env, region)
     except SecretNotFound:
-        print(
-            f"ERROR: {secret_id(env)} does not exist. "
-            f"Run: python scripts/python/aws/credentials.py --env {env}"
-        )
+        print(f"ERROR: categorized credential secrets for {env} do not exist. Run: python scripts/python/aws/credentials.py --env {env}")
+        return 1
+
+    missing_categories = set(CATEGORY_SUFFIXES) - present_categories
+    if missing_categories:
+        print("ERROR: these credential categories are missing: " + ", ".join(sorted(missing_categories)))
+        if legacy_exists:
+            print(f"Migrate the old combined secret with: python scripts/python/aws/credentials.py --env {env} --migrate-legacy")
+        else:
+            print(f"Create/fill all categories with: python scripts/python/aws/credentials.py --env {env}")
         return 1
 
     problems = check_values(values)
     if problems:
-        print(f"ERROR: {secret_id(env)} is incomplete or invalid:")
+        print(f"ERROR: categorized credentials for '{env}' are incomplete or invalid:")
         _print_problems(problems)
-        print(
-            f"Fix with: python scripts/python/aws/credentials.py --env {env}"
-        )
+        print(f"Fix with: python scripts/python/aws/credentials.py --env {env}")
         return 1
 
-    print(
-        f"OK: {secret_id(env)} has every required credential "
-        "and they meet the password policy."
-    )
+    print(f"OK: all credential categories for '{env}' exist and meet the password policy.")
     return 0
 
 
 def cmd_show(env: str, region: str) -> int:
     try:
-        values = fetch_secret(env, region)
+        values, present_categories, legacy_exists = load_credential_state(env, region)
     except SecretNotFound:
-        print(
-            f"{secret_id(env)} does not exist yet. "
-            "Run without --show to create it."
-        )
+        print(f"No credentials found for '{env}'. Run without --show to create them.")
         return 1
 
-    print(secret_id(env))
+    print(f"Credential categories for {env}:")
+    for category in CATEGORY_SUFFIXES:
+        status = "present" if category in present_categories else "MISSING"
+        print(f"  {category:14s} {secret_id(env, category)} [{status}]")
+    if legacy_exists:
+        print(f"  legacy         {legacy_secret_id(env)} [present; remove only after successful migration verification]")
 
-    for credential in CREDENTIALS:
-        value = values.get(credential.key)
-
-        if value in (None, ""):
-            state = "MISSING" if credential.required else "not set (optional)"
-        elif credential.is_secret:
-            state = "set (hidden)"
-        else:
-            state = f"set: {value}"
-
-        print(f"  {credential.key:24s} {state}")
-
+    for category, keys in CREDENTIALS_BY_CATEGORY.items():
+        print(f"\n{category.title()} credentials:")
+        for key in keys:
+            credential = next(item for item in CREDENTIALS if item.key == key)
+            value = values.get(key)
+            if value in (None, ""):
+                state = "MISSING" if credential.required else "not set (optional)"
+            elif credential.is_secret:
+                state = "set (hidden)"
+            else:
+                state = f"set: {value}"
+            print(f"  {key:24s} {state}")
     return 0
 
 
@@ -418,11 +505,11 @@ def _prompt_text(credential: Credential, current: Any) -> str:
         print("    Not accepted: " + "; ".join(problems))
 
 
-def _load_secret(env: str, region: str) -> tuple[dict[str, Any], bool]:
+def _load_secret(env: str, region: str) -> tuple[dict[str, Any], set[str], bool]:
     try:
-        return fetch_secret(env, region), True
+        return load_credential_state(env, region)
     except SecretNotFound:
-        return {}, False
+        return {}, set(), False
 
 
 def _select_credentials(
@@ -555,25 +642,28 @@ def _save_changes(
     region: str,
     values: dict[str, Any],
     changed: dict[str, str],
-    exists: bool,
+    present_categories: set[str],
 ) -> None:
     merged = {**values, **changed}
-    store_secret(env, region, merged, exists)
-
-    names = ", ".join(sorted(changed))
-    print(
-        f"\nSaved {len(changed)} value(s) to {secret_id(env)}: {names}"
-    )
-    print(
-        "Next: run the platform-infra pipeline "
-        "(Terraform reads db_master_password from here)."
-    )
-
-    if "seed_admin_password" in changed and exists:
-        print(
-            "Note: an admin that already exists keeps its current password — "
-            "change it on the Account page."
+    categories_to_write = sorted({CATEGORY_BY_KEY[key] for key in changed})
+    for category in categories_to_write:
+        category_payload = {key: merged[key] for key in CREDENTIALS_BY_CATEGORY[category] if key in merged}
+        store_secret(
+            env,
+            region,
+            category,
+            category_payload,
+            exists=category in present_categories,
         )
+        present_categories.add(category)
+        print(f"Saved {category} credentials to {secret_id(env, category)}")
+
+    print(f"\nSaved {len(changed)} value(s): {', '.join(sorted(changed))}")
+    print("Next: run the platform-infra pipeline. Terraform reads only the database category;")
+    print("application and observability credentials are fetched directly by External Secrets Operator.")
+
+    if "seed_admin_password" in changed and present_categories:
+        print("Note: an admin that already exists keeps its current password — change it on the Account page.")
 
 
 def interactive(
@@ -581,33 +671,40 @@ def interactive(
     region: str,
     only: list[str] | None = None,
 ) -> int:
-    values, exists = _load_secret(env, region)
+    values, present_categories, legacy_exists = _load_secret(env, region)
 
-    print(f"\nCredentials for '{env}' -> {secret_id(env)}")
+    if legacy_exists and present_categories != set(CATEGORY_SUFFIXES):
+        print("A legacy combined secret exists but categorized secrets are incomplete.")
+        print(f"Run: python scripts/python/aws/credentials.py --env {env} --migrate-legacy")
+        print("The migration preserves the old secret until you verify the new categories.")
+        return 1
+
+    print(f"\nCredentials for '{env}'")
+    for category in CATEGORY_SUFFIXES:
+        state = "present" if category in present_categories else "will be created"
+        print(f"  {category:14s} {secret_id(env, category)} [{state}]")
     print(
-        f"Password rule: {MIN_LENGTH}-{MAX_LENGTH} chars, "
-        "upper + lower + digit, no / \" @ or spaces "
-        "(12+ recommended).\n"
+        f"Password rule: {MIN_LENGTH}-{MAX_LENGTH} chars, upper + lower + digit, "
+        'no / " @ or spaces (12+ recommended).\n'
     )
 
     wanted, error_code = _select_credentials(only)
     if error_code is not None:
         return error_code
 
-    changed = _collect_changes(wanted, values, exists, only)
-
+    changed = _collect_changes(wanted, values, bool(present_categories), only)
     if not changed:
         print("\nNothing changed.")
-        return cmd_check(env, region) if exists else 1
+        return cmd_check(env, region) if present_categories else 1
 
-    problems = _validate_changes(values, changed, only, exists)
+    problems = _validate_changes(values, changed, only, bool(present_categories))
     if problems:
         print("\nNot saved — still incomplete:")
         _print_problems(problems)
         return 1
 
-    _save_changes(env, region, values, changed, exists)
-    return 0
+    _save_changes(env, region, values, changed, present_categories)
+    return cmd_check(env, region)
 
 
 # ---------------------------------------------------------------------------
@@ -637,41 +734,43 @@ def cmd_delete(
     region: str,
     assume_yes: bool,
 ) -> int:
-    """Permanently delete the operator-credentials secret."""
+    """Permanently delete categorized credential secrets and the legacy secret, if present."""
+    ids = [secret_id(env, category) for category in CATEGORY_SUFFIXES]
+    ids.append(legacy_secret_id(env))
+    existing_ids = []
+    for sid in ids:
+        try:
+            _fetch_secret_id(sid, region)
+            existing_ids.append(sid)
+        except SecretNotFound:
+            continue
 
-    sid = secret_id(env)
-
-    try:
-        fetch_secret(env, region)
-    except SecretNotFound:
-        print(f"{sid} does not exist — nothing to delete.")
+    if not existing_ids:
+        print(f"No operator credential secrets exist for {env} — nothing to delete.")
         return 0
 
     if not assume_yes:
         answer = input(
-            f"Permanently delete {sid}? This cannot be undone. "
-            "Type 'yes' to confirm: "
+            "Permanently delete these Secrets Manager secrets?\n  "
+            + "\n  ".join(existing_ids)
+            + "\nThis cannot be undone. Type 'yes' to confirm: "
         ).strip()
-
         if answer != "yes":
             print("Not deleted.")
             return 1
 
-    result = _aws(
-        [
-            "delete-secret",
-            "--secret-id",
-            sid,
-            "--force-delete-without-recovery",
-        ],
-        region,
-    )
-
-    if result.returncode != 0:
-        print(f"ERROR: could not delete {sid}: {result.stderr.strip()}")
+    failures = []
+    for sid in existing_ids:
+        result = _aws(["delete-secret", "--secret-id", sid, "--force-delete-without-recovery"], region)
+        if result.returncode != 0:
+            failures.append(f"{sid}: {result.stderr.strip()}")
+        else:
+            print(f"Deleted {sid}.")
+    if failures:
+        print("ERROR: one or more secrets could not be deleted:")
+        for failure in failures:
+            print(f"  - {failure}")
         return 1
-
-    print(f"Deleted {sid}.")
     return 0
 
 
@@ -708,9 +807,14 @@ def _build_parser() -> argparse.ArgumentParser:
         help="change only these keys",
     )
     parser.add_argument(
+        "--migrate-legacy",
+        action="store_true",
+        help="split the legacy operator-credentials secret into database/application/observability categories; keep the legacy secret",
+    )
+    parser.add_argument(
         "--delete",
         action="store_true",
-        help="permanently delete this environment's credentials secret",
+        help="permanently delete this environment's categorized credentials and legacy secret, if present",
     )
     parser.add_argument(
         "--yes",
@@ -723,6 +827,8 @@ def _build_parser() -> argparse.ArgumentParser:
 def _dispatch_command(args: argparse.Namespace, region: str) -> int:
     if args.delete:
         return cmd_delete(args.env, region, args.yes)
+    if args.migrate_legacy:
+        return cmd_migrate_legacy(args.env, region)
     if args.check:
         return cmd_check(args.env, region)
     if args.show:

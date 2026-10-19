@@ -65,8 +65,9 @@ flowchart LR
 
 1. **Tools and credentials on your machine.** `bash scripts/bash/install-all.sh`, `aws configure`, `python3 scripts/python/setup/create_ssh_key.py`.
 2. **Bootstrap.** `python3 scripts/python/aws/bootstrap.py` runs, in order: state bucket, network and servers (plus waiting for the EC2 status checks), Ansible, and the operator credentials prompt. Each step can also be run alone: `backend`, `infra`, `ansible`, `credentials`.
-3. **Platform.** In Jenkins run `platform-infra` with `ACTION=Apply` and the chosen `ENV`. It needs the operator credentials secret to be complete and refuses to start otherwise.
-4. **Application.** Run `app-cicd` (or push to `main`, see [../docs/github-webhook.md](../docs/github-webhook.md)).
+3. **Quality/security gate.** Push a branch or open a pull request. GitHub triggers the `quality-security-gate` multibranch job; configure its observed PR status check as required for `main`. A successful push to `main` starts `app-cicd` at the exact commit that passed.
+4. **Platform.** Run `platform-infra` manually from protected `main` after the gate passes, with `ACTION=Apply` and the chosen `ENV`. Infrastructure apply/destroy is never triggered automatically by every push. The pipeline checks that all three dev credential categories exist before applying.
+5. **Application.** The quality gate starts `app-cicd` after a successful `main` push. For deliberate manual runs, provide the exact gated `SOURCE_REVISION`; the emergency override is not for routine use. See [../docs/github-webhook.md](../docs/github-webhook.md).
 
 Tear-down is the reverse: `platform-infra` with `ACTION=Destroy` and `CONFIRM_DESTROY=true`, then `python3 scripts/python/aws/destroy_infra.py`. The platform must go first because the network layer cannot be deleted while the cluster's load balancers and network interfaces still exist.
 
@@ -74,13 +75,14 @@ Tear-down is the reverse: `platform-infra` with `ACTION=Destroy` and `CONFIRM_DE
 
 | Secret in AWS Secrets Manager | Created by | Read by |
 |---|---|---|
-| `<cluster>/operator-credentials` | `python3 scripts/python/aws/bootstrap.py credentials` (you choose the values) | Terraform (RDS master password, optional read-only login), External Secrets (RabbitMQ and admin password into `catalogix-secrets`; Grafana login into `grafana-admin-secret`) |
-| `<cluster>/db-credentials` | Terraform | Holds the RDS master login. No template reads it |
+| `<cluster>/credentials/database` | `credentials.py` (RDS master password and optional read-only login) | Terraform reads the whole JSON value into state because RDS needs these values; no app/Grafana credentials are included |
+| `<cluster>/credentials/application` | `credentials.py` (RabbitMQ username/password and seed-admin password) | External Secrets Operator, into `catalogix-secrets` |
+| `<cluster>/credentials/observability` | `credentials.py` (Grafana username/password) | External Secrets Operator, into `grafana-admin-secret` in the monitoring namespace |
 | `<cluster>/app-secrets` | Terraform (`db_user_<svc>` and `db_password_<svc>` for each service) | External Secrets, into the `catalogix-secrets` Kubernetes Secret |
 | `<cluster>/jwt-keys` | Terraform (`tls_private_key`) | External Secrets, into the `catalogix-jwt-keys` Kubernetes Secret |
 | `<cluster>/alerting-secrets` | Terraform (`smtp_password`) | External Secrets, into `alertmanager-secrets` in the `monitoring` namespace |
 
-`<cluster>` is `catalogix-cluster-dev` for `ENV=dev` and `catalogix-cluster-<env>` otherwise. The JWT secret holds four keys: `jwt_private_key_b64`, `jwt_public_key_b64` (the user access-token pair) and `internal_jwt_private_key_b64`, `internal_jwt_public_key_b64` (the one internal pair shared by all services). External Secrets refreshes every hour, and pods read secrets as environment variables at start, so a changed value needs a pod restart.
+`<cluster>` is `catalogix-cluster-dev` for `ENV=dev` and `catalogix-cluster-<env>` otherwise. These are three distinct Secrets Manager resources sharing a name prefix; AWS Secrets Manager does not provide real folders or per-JSON-field access boundaries. Keep app/Grafana credentials out of the database category because Terraform reads the entire database-category `SecretString` into state. The JWT secret holds four keys: `jwt_private_key_b64`, `jwt_public_key_b64` (the user access-token pair) and `internal_jwt_private_key_b64`, `internal_jwt_public_key_b64` (the one internal pair shared by all services). External Secrets refreshes every hour, and pods read secrets as environment variables at start, so a changed value needs a pod restart.
 
 ## Operator access (IP allowlist)
 

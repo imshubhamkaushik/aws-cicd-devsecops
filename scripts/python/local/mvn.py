@@ -99,7 +99,10 @@ def parse_args() -> argparse.Namespace:
         help="List backend Maven services and exit.",
     )
 
-    return parser.parse_args()
+    args = parser.parse_args()
+    if not args.list_services and not args.action:
+        parser.error("action is required unless --list-services is supplied")
+    return args
 
 
 def list_services() -> None:

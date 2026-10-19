@@ -33,7 +33,7 @@ State is stored in S3 with native lockfile locking (`use_lockfile = true`) under
 1. AWS CLI authenticated: `aws sts get-caller-identity`.
 2. The state bucket exists. `python3 scripts/python/aws/bootstrap.py backend` creates it; by hand, apply `backend-bootstrap` first.
 3. Optional `terraform.tfvars` in the directory you are working in. Each root ships a `terraform.tfvars.example` with the variables and defaults; copy it to `terraform.tfvars` (git-ignored) only for values you want to change. In `bootstrap-infra` the SSH public key is the one required value, and `scripts/python/aws/bootstrap_infra.py` reads it from `~/.ssh/catalogix-key.pub`.
-4. For `platform-infra`: the operator credentials secret must exist and be complete (see [Secrets](#secrets)).
+4. For `platform-infra`: all three operator credential categories must exist and pass validation (see [Secrets](#secrets)). Terraform reads only the database category; ESO retrieves application and observability credentials directly.
 
 Prefer the scripts and pipelines, which add the checks listed in [infra/README.md](../README.md). The manual commands below are what they run.
 
@@ -96,15 +96,16 @@ The PostgreSQL provider connects to RDS from the Jenkins host, which the RDS sec
 
 | Secret | Contents | Written by |
 |---|---|---|
-| `<cluster>/operator-credentials` | `db_master_password`, optional `db_readonly_username` and `db_readonly_password`, RabbitMQ user and password, admin password, Grafana login | `python3 scripts/python/aws/credentials.py` (you choose them). Terraform only reads it |
-| `<cluster>/db-credentials` | RDS master user and password | Terraform |
+| `<cluster>/credentials/database` | `db_master_password`, optional `db_readonly_username` and `db_readonly_password` | `credentials.py`; read by Terraform for RDS/db roles |
+| `<cluster>/credentials/application` | RabbitMQ username/password and seed-admin password | `credentials.py`; read directly by External Secrets Operator |
+| `<cluster>/credentials/observability` | Grafana admin username/password | `credentials.py`; read directly by External Secrets Operator in monitoring |
 | `<cluster>/app-secrets` | `db_user_<svc>` and `db_password_<svc>` for each service | Terraform |
 | `<cluster>/jwt-keys` | `jwt_private_key_b64`, `jwt_public_key_b64`, `internal_jwt_private_key_b64`, `internal_jwt_public_key_b64` | Terraform (`tls_private_key.jwt_user_access` and `tls_private_key.internal_service`) |
 | `<cluster>/alerting-secrets` | `smtp_password` | Terraform, from `var.smtp_password` (empty until you supply one) |
 
-A `terraform_data` check fails the plan with a clear message if `db_master_password` is missing from the operator secret. Secrets Manager secrets are deleted immediately on destroy (recovery window 0) so a later apply can reuse the name, which is a dev convenience.
+A `terraform_data` check fails the plan with a clear message if `db_master_password` is missing from the database-category secret. Secrets Manager secrets are deleted immediately on destroy (recovery window 0) so a later apply can reuse the name, which is a dev convenience.
 
-Terraform state contains the generated private keys and database passwords. The state bucket is encrypted and private; keep its IAM access tight.
+Terraform state contains the database-category values Terraform reads, generated private keys and per-service database passwords. Application and observability credentials are not read by Terraform. The state bucket is encrypted and private; keep its IAM access tight.
 
 Only one writer may own each Secrets Manager secret. Do not edit Terraform-managed secret versions by hand.
 

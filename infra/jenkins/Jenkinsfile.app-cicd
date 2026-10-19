@@ -1,4 +1,4 @@
-// Application CI/CD pipeline Jenkinsfile. Builds, tests, and deploys the Catalogix application to EKS whenever changes are pushed to the main branch.
+// Application CI/CD delivery pipeline. Normally started only after quality-security-gate passes on main.
 //
 // ensureKubernetesAccess() lives in the shared library (vars/ensureKubernetesAccess.groovy)
 // so Jenkinsfile.platform-infra and this file share one implementation.
@@ -55,7 +55,8 @@ pipeline {
         CLUSTER_NAME = "${params.ENV == 'dev' ? 'catalogix-cluster-dev' : 'catalogix-cluster-' + params.ENV}"
 
         // ECR repositories are created by Terraform (modules/ecr) as
-        // "catalogix-<service>" and shared by dev and staging. Every place
+        // "catalogix-<service>". The maintained dev platform owns their lifecycle.
+        // Every place
         // that names an image — docker build/tag, push, and the Helm
         // image.repository values — derives the repository from this prefix.
         ECR_REPO_PREFIX = "catalogix-"
@@ -97,7 +98,17 @@ pipeline {
         booleanParam(
             name: 'FORCE_ALL_TESTS',
             defaultValue: false,
-            description: 'Run the full test suite for every backend service, ignoring change detection. Use for release builds or when you don\'t trust the diff (e.g. after a rebase).'
+            description: 'Run the full backend test suite, ignoring change detection. Does not force image rebuilds; use FORCE_ALL_BUILDS for that.'
+        )
+        string(
+            name: 'SOURCE_REVISION',
+            defaultValue: '',
+            description: 'Commit SHA passed by the successful quality-security gate. Required for normal runs.'
+        )
+        booleanParam(
+            name: 'OVERRIDE_QUALITY_GATE',
+            defaultValue: false,
+            description: 'Explicit emergency/manual override only. Allows deploying current main without upstream gate provenance.'
         )
         booleanParam(
             name: 'RUN_DAST',
@@ -136,23 +147,45 @@ pipeline {
         }
 
         stage('Checkout') {
-            steps { checkout scm }
-        }
-
-        stage('Secrets Scanning - Gitleaks') {
             steps {
-                sh """
-                set -e
+                checkout scm
+                script {
+                    // A user-supplied SHA is not proof that the quality gate passed.
+                    // Trust only known orchestrator jobs; direct manual runs need the
+                    // explicit override checkbox, even when a SHA is supplied.
+                    def upstreamCauses = currentBuild.getBuildCauses('hudson.model.Cause$UpstreamCause')
+                    def trustedUpstream = upstreamCauses.any { cause ->
+                        def project = cause.upstreamProject ?: ''
+                        project.startsWith('quality-security-gate/') || project == 'platform-infra'
+                    }
 
-                docker run --rm \\
-                    -v \$(pwd):/repo \\
-                    zricethezav/gitleaks:v8.21.2 detect \\
-                    --source /repo \\
-                    --exit-code 1 \\
-                    --redact
-                """
+                    if (params.SOURCE_REVISION?.trim()) {
+                        if (!(params.SOURCE_REVISION ==~ /^[0-9a-fA-F]{40,64}$/)) {
+                            error('SOURCE_REVISION must be a full Git commit SHA.')
+                        }
+                        if (!trustedUpstream && !params.OVERRIDE_QUALITY_GATE) {
+                            error('SOURCE_REVISION alone does not prove the gate passed. Start from quality-security-gate/platform-infra, or explicitly enable OVERRIDE_QUALITY_GATE for an approved manual run.')
+                        }
+                        if (!trustedUpstream) {
+                            echo 'WARNING: QUALITY GATE OVERRIDE enabled. Deploying the manually selected revision without verified upstream gate provenance.'
+                        }
+                        sh "git cat-file -e '${params.SOURCE_REVISION}^{commit}'"
+                        sh "git checkout --detach '${params.SOURCE_REVISION}'"
+                        env.GIT_COMMIT = sh(script: 'git rev-parse HEAD', returnStdout: true).trim()
+                        echo "Using source revision ${env.GIT_COMMIT}"
+                    } else if (!params.OVERRIDE_QUALITY_GATE) {
+                        error('This job is normally started by quality-security-gate. Manual runs require an explicit OVERRIDE_QUALITY_GATE approval.')
+                    } else {
+                        echo 'WARNING: QUALITY GATE OVERRIDE enabled. Deploying the checked-out main revision without upstream gate provenance.'
+                    }
+                }
             }
         }
+
+        // Static/security preflight (Gitleaks, Hadolint, Terraform/Helm validation, Ruff and
+        // Ansible lint) is run by quality-security-gate before this deploy pipeline is allowed
+        // to proceed. Keep this pipeline focused on changed application tests, Sonar, built-image
+        // scanning, publishing, deploy and runtime verification.
 
         // AWS Authentication stage is run before the Login to Amazon ECR stage to ensure the necessary environment variables are set for ECR login and Kubernetes access.
         stage('AWS Authentication') {
@@ -215,31 +248,30 @@ pipeline {
         stage('Detect Changed Services') {
             steps {
                 script {
-                    if (params.FORCE_ALL_TESTS) {
-                        echo "FORCE_ALL_TESTS is set — running tests for all backend services."
-                        env.CHANGED_BACKEND = BACKEND_SERVICES.join(',')
-                    } else {
-                        def changed = getChangedServices(BACKEND_SERVICES, [prefix: 'app/backend/'])
-                        env.CHANGED_BACKEND = changed.join(',')
-                    }
+                    // Keep test selection independent from the image build set. FORCE_ALL_TESTS
+                    // broadens tests only; FORCE_ALL_BUILDS is the explicit image rebuild override.
+                    def changedBackend = getChangedServices(BACKEND_SERVICES, [prefix: 'app/backend/'])
+                    def testBackend = params.FORCE_ALL_TESTS ? BACKEND_SERVICES : changedBackend
 
-                    // A change to the shared security-common module affects
-                    // every backend service that depends on it, including
-                    // JWT validation, CORS, and rate limiting. Any change to
-                    // security-common therefore invalidates per-service
-                    // change detection and forces all backend services through
-                    // the test path.
+                    // security-common changes invalidate every backend binary and require every
+                    // backend test + image to be rebuilt. Disable the generic shared-file safety
+                    // net for this narrowly-scoped path check so Helm/Jenkins edits do not look
+                    // like security-common changes.
                     def securityCommonChanged = getChangedServices(
-                        ['security-common'], [prefix: 'app/backend/']
+                        ['security-common'], [prefix: 'app/backend/', checkSharedFiles: false]
                     ).contains('security-common')
                     if (securityCommonChanged) {
-                        echo "app/backend/security-common changed — every backend service will be tested AND rebuilt this run."
-                        env.CHANGED_BACKEND = BACKEND_SERVICES.join(',')
+                        echo "security-common changed — all backend services will be tested and rebuilt."
+                        testBackend = BACKEND_SERVICES
+                        changedBackend = BACKEND_SERVICES
+                    } else if (params.FORCE_ALL_TESTS) {
+                        echo "FORCE_ALL_TESTS is set — running all backend tests without forcing image rebuilds."
                     }
 
+                    env.CHANGED_BACKEND = testBackend.join(',')
                     echo "Services to test this run: ${env.CHANGED_BACKEND ?: '(none — no backend changes detected)'}"
 
-                    def changedBackendForBuild = env.CHANGED_BACKEND ? env.CHANGED_BACKEND.split(',') as List : []
+                    def changedBackendForBuild = changedBackend
 
                     def frontendChanged = getChangedServices(
                         ['frontend'], [prefix: 'app/']
@@ -322,29 +354,8 @@ pipeline {
                 }
             }
         }
-        // One Hadolint branch per image, generated from ALL_IMAGES — always
-        // runs for everyone, it's cheap (pure Dockerfile lint, no build).
-        stage('Hadolint — Dockerfile Linting') {
-            steps {
-                script {
-                    def branches = ALL_IMAGES.collectEntries { svc ->
-                        def dockerfilePath = (svc == 'frontend') ? 'app/frontend/Dockerfile' : ((svc == 'gateway') ? 'app/gateway/Dockerfile' : "app/backend/${svc}/Dockerfile")
-                        [ "${svc}": {
-                            sh "docker run --rm -i hadolint/hadolint:v2.12.0 hadolint --config /dev/null - < ${dockerfilePath}"
-                        } ]
-                    }
-                    parallel branches
-                }
-            }
-        }
-
-        // Roles are approval-based: only an admin can grant seller/admin, so a deployment
-        // with no admin is a dead end — and the first admin (plus RabbitMQ) get their
-        // passwords from "<cluster>/operator-credentials", the secret YOU fill in with
-        // `python bootstrap.py credentials`. Fail HERE, before anything is built or
-        // deployed, if it is missing or incomplete; otherwise pods would sit waiting for a
-        // secret that never arrives. (Staging's Terraform still generates its own passwords,
-        // so this only guards dev.) Passwords are never printed.
+        
+        // Dockerfile lint runs in quality-security-gate to avoid a duplicate scan here.
         stage('Verify Operator Credentials') {
             when { expression { params.ENV == 'dev' } }
             steps {
@@ -474,6 +485,81 @@ pipeline {
             }
         }
 
+        // Resolve required AWS configuration and render the exact release values before
+        // building/pushing images. The upstream quality gate validates the chart generally;
+        // this catches bad runtime overrides before the pipeline publishes new artifacts.
+        stage('Fetch RDS Endpoint') {
+            steps {
+                script {
+                    env.RDS_ENDPOINT = sh(
+                        script: "aws ssm get-parameter --name ${SSM_RDS_PATH} --query Parameter.Value --output text --region ${AWS_REGION}",
+                        returnStdout: true
+                    ).trim()
+                }
+            }
+        }
+
+        // Builds the ONE list of --set arguments used by both the pre-push
+        // validation below and the real deploy, so they can never drift.
+        stage('Prepare Helm Arguments') {
+            steps {
+                script {
+                    // Free-form parameters end up on a shell command line —
+                    // validate their shape instead of trusting them.
+                    if (params.INGRESS_HOST && !(params.INGRESS_HOST ==~ /^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$/)) {
+                        error("INGRESS_HOST '${params.INGRESS_HOST}' is not a valid DNS name.")
+                    }
+                    if (params.TLS_CERT_ARN && !(params.TLS_CERT_ARN ==~ /^arn:aws:acm:[a-z0-9-]+:[0-9]{12}:certificate\/[a-f0-9-]+$/)) {
+                        error("TLS_CERT_ARN '${params.TLS_CERT_ARN}' is not an ACM certificate ARN.")
+                    }
+
+                    def setArgs = [
+                        "global.imageRegistry=${env.ECR_REGISTRY}",
+                        "global.imageTag=${env.IMAGE_TAG}",
+                        "global.cloudProvider=aws",
+                        "database.host=${env.RDS_ENDPOINT}",
+                        // Secrets Manager names are derived from the cluster
+                        // name exactly like Terraform derives them
+                        // (modules/secrets-manager: "<env_prefix>/...").
+                        "secretsManager.appSecretName=${env.CLUSTER_NAME}/app-secrets",
+                        "secretsManager.jwtKeysSecretName=${env.CLUSTER_NAME}/jwt-keys",
+                        // ALB names are unique per account+region; dev and
+                        // staging share both, so the name must be per-env.
+                        "ingress.loadBalancerName=catalogix-${params.ENV}-alb",
+                    ]
+                    // Passwords the operator chose (RabbitMQ, bootstrap admin) are synced straight
+                    // from this secret by External Secrets. Dev only: staging's Terraform still
+                    // puts generated values in app-secrets.
+                    if (params.ENV == 'dev') { setArgs << "secretsManager.applicationCredentialsSecretName=${env.CLUSTER_NAME}/credentials/application" }
+                    if (params.INGRESS_HOST) { setArgs << "ingress.host=${params.INGRESS_HOST}" }
+                    if (params.TLS_CERT_ARN) { setArgs << "ingress.tlsCertArn=${params.TLS_CERT_ARN}" }
+
+                    ALL_IMAGES.each { svc ->
+                        // Keys must match the chart: backendServices.<svc>.image.*, frontend.image.*, gateway.image.*
+                        def prefix = (svc == 'frontend') ? 'frontend'
+                                   : (svc == 'gateway')  ? 'gateway'
+                                   : "backendServices.${svc}"
+                        setArgs << "${prefix}.image.repository=${env.ECR_REPO_PREFIX}${svc}"
+                        setArgs << "${prefix}.image.tag=${IMAGE_TAGS[svc]}"
+                    }
+                    env.HELM_SET_ARGS = setArgs.collect { "--set ${it}" }.join(' ')
+                }
+            }
+        }
+
+        stage('Validate Rendered Helm Release') {
+            steps {
+                sh """
+                set -e
+                helm template catalogix ${HELM_CHART_DIR} \
+                    --namespace ${K8S_NAMESPACE} \
+                    -f ${HELM_CHART_DIR}/values-${params.ENV}.yaml \
+                    ${HELM_SET_ARGS} > rendered-release.yaml
+                test -s rendered-release.yaml
+                """
+            }
+        }
+
         // Builds+scans only IMAGES_TO_BUILD — services that didn't change
         // (and aren't forced via FORCE_ALL_BUILDS or a first-ever deploy)
         // keep running their already-built, already-scanned image; see
@@ -539,83 +625,8 @@ pipeline {
             }
         }
 
-        // ---- Everything that can be checked WITHOUT building an image runs
-        // before any image is built or pushed. Chart validation and required
-        // configuration lookups therefore fail the run before an image can
-        // be published when those checks fail.
-        // ECR's lifecycle policy only keeps the last few tags per repo.
-        stage('Fetch RDS Endpoint') {
-            steps {
-                script {
-                    env.RDS_ENDPOINT = sh(
-                        script: "aws ssm get-parameter --name ${SSM_RDS_PATH} --query Parameter.Value --output text --region ${AWS_REGION}",
-                        returnStdout: true
-                    ).trim()
-                }
-            }
-        }
-
-        // Builds the ONE list of --set arguments used by both the pre-push
-        // validation below and the real deploy, so they can never drift.
-        stage('Prepare Helm Arguments') {
-            steps {
-                script {
-                    // Free-form parameters end up on a shell command line —
-                    // validate their shape instead of trusting them.
-                    if (params.INGRESS_HOST && !(params.INGRESS_HOST ==~ /^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$/)) {
-                        error("INGRESS_HOST '${params.INGRESS_HOST}' is not a valid DNS name.")
-                    }
-                    if (params.TLS_CERT_ARN && !(params.TLS_CERT_ARN ==~ /^arn:aws:acm:[a-z0-9-]+:[0-9]{12}:certificate\/[a-f0-9-]+$/)) {
-                        error("TLS_CERT_ARN '${params.TLS_CERT_ARN}' is not an ACM certificate ARN.")
-                    }
-
-                    def setArgs = [
-                        "global.imageRegistry=${env.ECR_REGISTRY}",
-                        "global.imageTag=${env.IMAGE_TAG}",
-                        "global.cloudProvider=aws",
-                        "database.host=${env.RDS_ENDPOINT}",
-                        // Secrets Manager names are derived from the cluster
-                        // name exactly like Terraform derives them
-                        // (modules/secrets-manager: "<env_prefix>/...").
-                        "secretsManager.appSecretName=${env.CLUSTER_NAME}/app-secrets",
-                        "secretsManager.jwtKeysSecretName=${env.CLUSTER_NAME}/jwt-keys",
-                        // ALB names are unique per account+region; dev and
-                        // staging share both, so the name must be per-env.
-                        "ingress.loadBalancerName=catalogix-${params.ENV}-alb",
-                    ]
-                    // Passwords the operator chose (RabbitMQ, bootstrap admin) are synced straight
-                    // from this secret by External Secrets. Dev only: staging's Terraform still
-                    // puts generated values in app-secrets.
-                    if (params.ENV == 'dev') { setArgs << "secretsManager.operatorSecretName=${env.CLUSTER_NAME}/operator-credentials" }
-                    if (params.INGRESS_HOST) { setArgs << "ingress.host=${params.INGRESS_HOST}" }
-                    if (params.TLS_CERT_ARN) { setArgs << "ingress.tlsCertArn=${params.TLS_CERT_ARN}" }
-
-                    ALL_IMAGES.each { svc ->
-                        // Keys must match the chart: backendServices.<svc>.image.*, frontend.image.*, gateway.image.*
-                        def prefix = (svc == 'frontend') ? 'frontend'
-                                   : (svc == 'gateway')  ? 'gateway'
-                                   : "backendServices.${svc}"
-                        setArgs << "${prefix}.image.repository=${env.ECR_REPO_PREFIX}${svc}"
-                        setArgs << "${prefix}.image.tag=${IMAGE_TAGS[svc]}"
-                    }
-                    env.HELM_SET_ARGS = setArgs.collect { "--set ${it}" }.join(' ')
-                }
-            }
-        }
-
-        stage('Trivy Scan Helm Charts') {
-            steps {
-                sh """
-                set -e
-                docker run --rm \\
-                  -v \$(pwd)/${HELM_CHART_DIR}:/chart \\
-                  ${TRIVY_IMAGE} config \\
-                  --severity HIGH,CRITICAL \\
-                  --exit-code 1 \\
-                  /chart
-                """
-            }
-        }
+        // Static chart lint/schema/IaC/secret scans are owned by the upstream quality-security-gate.
+        // This pipeline renders the exact runtime overrides above, then scans any newly built images.
 
         stage('Deploy to EKS using Helm') {
             steps {

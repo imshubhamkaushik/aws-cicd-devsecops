@@ -1,16 +1,26 @@
 # Jenkins pipelines
 
-Three Jenkinsfiles. Jenkins finds the first two through the `scriptPath(...)` entries in [`../ansible/roles/jenkins/templates/jcasc.yaml`](../ansible/roles/jenkins/templates/jcasc.yaml), which Ansible installs, so a moved or renamed file must be changed there too.
+Jenkins runs one repository-wide **quality/security gate** before application delivery. GitHub push and pull-request webhooks trigger only the multibranch `quality-security-gate` job. Pull requests get a required check; after a successful push to `main`, the gate starts `app-cicd` at the exact commit that passed. `platform-infra` remains a manual operation because applying or destroying cloud infrastructure must not happen automatically for every push. Run it from protected `main` after the quality gate is green.
 
-| File | Job | Trigger | Purpose |
+Job definitions live in [`../ansible/roles/jenkins/templates/jcasc.yaml`](../ansible/roles/jenkins/templates/jcasc.yaml), and Ansible installs them. Shared implementation lives in [`../../vars/`](../../vars).
+
+| Jenkins job | Jenkinsfile | Trigger | Responsibility |
 |---|---|---|---|
-| `Jenkinsfile.app-cicd` | `app-cicd` | `githubPush()` on `main`, or by hand | Test, scan, build and deploy the application |
-| `Jenkinsfile.platform-infra` | `platform-infra` | By hand | Create or destroy the EKS platform and the monitoring stack |
-| `Jenkinsfile.lint` | none | none | Static checks. **Not created by JCasC**: add a `pipelineJob` with `scriptPath('infra/jenkins/Jenkinsfile.lint')` or create the job by hand to use it |
+| `quality-security-gate` (multibranch) | `Jenkinsfile.lint` | GitHub push/PR webhook; daily scan is a fallback | Repository lint, configuration validation and source/IaC/chart security checks |
+| `app-cicd` | `Jenkinsfile.app-cicd` | Successful `main` gate, or explicit manual override | Changed-service tests, Sonar quality gate, image build and Trivy scan, ECR push, Helm deploy, runtime verification |
+| `platform-infra` | `Jenkinsfile.platform-infra` | Manual only | Terraform plan/approval/apply or explicitly approved destroy; deploy/verify monitoring |
 
-Both jobs check out `main` of the repository named by `GIT_REPO_URL` with the `github-token` credential. The Jenkins security group allows port 8080 only from the operator IPs, so GitHub cannot reach `githubPush()` unless you choose one of the options in [../../docs/github-webhook.md](../../docs/github-webhook.md).
+## Quality/security gate
 
-Shared steps live in [`../../vars/`](../../vars) (`buildAndScanImage`, `ensureKubernetesAccess`, `getChangedServices`, `pushImageWithRetry`) and are loaded as a global library.
+This job runs checks that do not need a live cluster or newly built application images: Gitleaks, Hadolint, Terraform formatting and Trivy IaC scan, Ansible lint, Ruff security/style checks, Python unit tests, Helm dependency build/lint/rendering, kubeconform, Helm image-tag contract validation, Trivy chart scan, and ShellCheck. Keep each check in one pipeline only.
+
+The gate does **not** replace deployment-specific checks: `app-cicd` still runs backend Maven verification and frontend tests when relevant, SonarQube analysis/quality gate, and Trivy scans on new container images. `platform-infra` still runs Terraform init/validate/plan against the selected environment before requesting human approval. Staging values remain a configuration example; this audit does not claim the staging Terraform root is deployable.
+
+### GitHub webhook and branch protection
+
+Configure a repository webhook at `https://<reachable-jenkins-host>/github-webhook/` with **Pushes** and **Pull requests** events, content type `application/json`, and a strong webhook secret if the Jenkins GitHub integration is configured to validate it. Jenkins must be reachable by GitHub over HTTPS (do not expose an unauthenticated Jenkins UI to the internet just to receive a webhook; use a secured reachable endpoint or polling in restricted networks).
+
+In GitHub repository settings, protect `main` and require the status check produced by the `quality-security-gate` pull-request job before merging. The exact status-context label is shown after the first PR run; select that observed check, not a guessed label.
 
 ## `Jenkinsfile.app-cicd`
 
@@ -18,86 +28,21 @@ Parameters:
 
 | Parameter | Default | Meaning |
 |---|---|---|
-| `ENV` | `dev` | `dev` or `staging`. Chooses the cluster (`catalogix-cluster-<env>`) and values file |
-| `FORCE_ALL_TESTS` | false | Test every backend service, ignoring change detection |
-| `FORCE_ALL_BUILDS` | false | Build, scan and push every image and retag every service to this run's tag |
-| `CLEAR_MAVEN_CACHE` | false | Delete the Maven cache before building |
-| `RUN_DAST` | false | Run an OWASP ZAP baseline scan after the deploy |
-| `INGRESS_HOST` | empty | Public DNS name. Drives the ALB host rule, the URL in emails and the cookie `Secure` flag |
-| `TLS_CERT_ARN` | empty | ACM certificate. Enables HTTPS and the HTTP-to-HTTPS redirect |
+| `ENV` | `dev` | Environment/cluster to deploy. Staging is illustrative, not represented as fully supported. |
+| `FORCE_ALL_TESTS` | false | Test all backend services; does not force image rebuilds. |
+| `FORCE_ALL_BUILDS` | false | Build, scan, push and retag every image. |
+| `SOURCE_REVISION` | empty | Exact commit passed from the quality gate. Normal runs require it. |
+| `OVERRIDE_QUALITY_GATE` | false | Explicit manual/emergency override; avoid for routine deployment. |
+| `CLEAR_MAVEN_CACHE` | false | Delete Maven cache before compiling. |
+| `RUN_DAST` | false | Optional OWASP ZAP baseline scan after deployment. |
+| `INGRESS_HOST`, `TLS_CERT_ARN` | empty | Optional public DNS name and ACM certificate; public/shared deployments should supply both. |
 
-`INGRESS_HOST` and `TLS_CERT_ARN` are validated against a pattern before they reach any shell command.
+Important stages: checkout the exact gated commit; authenticate to AWS; detect changed test targets and image targets independently; verify dev credential categories; run relevant Maven/frontend tests; compile untouched modules for Sonar; enforce the SonarQube quality gate; build/scan/push only images that need rebuilding; resolve existing tags for unchanged images; deploy with Helm; verify rollout and application access; optionally run DAST. Source lint/secrets/config scans are deliberately not repeated here.
 
-Image tags are `<MAJOR_VERSION>-<BUILD_NUMBER>`. Only one run at a time (`disableConcurrentBuilds`, queued, never aborted), a 90 minute limit, and the last 30 builds are kept.
-
-| Stage | What it does |
-|---|---|
-| Clean Workspace, Checkout | Fresh checkout of `main` |
-| Secrets Scanning - Gitleaks | Scans the full history. Any finding fails the build |
-| AWS Authentication, Login to Amazon ECR | Resolves the account, registry and image tag |
-| Ensure Kubernetes Access | Writes a kubeconfig and verifies it points at the selected environment's cluster |
-| Detect Changed Services | Diffs against the previous commit. A change to `security-common` selects every backend service. A first deploy (no `catalogix` Helm release) builds everything |
-| Determine Per-Service Image Tags | Rebuilt services get the new tag. Unchanged services keep the tag read back from the live release (`helm get values`), so their pods are not restarted |
-| Hadolint | One parallel branch per Dockerfile |
-| Verify Operator Credentials | Dev only: fails early if the operator credentials secret is missing or incomplete |
-| Clear Maven Cache | Only with `CLEAR_MAVEN_CACHE` |
-| Install Shared Modules | Installs this run's `security-common` into the Maven cache so the service builds never use a stale jar |
-| Unit & Integration Tests | Parallel `mvn clean verify` per changed service (Testcontainers provides PostgreSQL) and, when the frontend is rebuilt, `npm ci` and `npm run test:coverage` |
-| Compile Untested Modules | `test-compile` for the services not tested this run, so SonarQube always sees bytecode for every module |
-| SonarQube Analysis, Quality Gate | Scanner over the repository, then waits up to 5 minutes for the webhook and aborts if the gate fails |
-| Build Docker Images and Trivy Image Scan | Parallel per image through `buildAndScanImage`. Fixable HIGH and CRITICAL findings fail the build (`--ignore-unfixed`, exit code 1) |
-| Push Docker Images to Amazon ECR | Parallel, with retry |
-| Fetch RDS Endpoint | Read from SSM Parameter Store, never hard-coded |
-| Prepare Helm Arguments | Builds every `--set` argument in one place, including per-image repository and tag |
-| Trivy Scan Helm Charts | Kubernetes misconfiguration scan of `infra/helm/catalogix-hc` |
-| Deploy to EKS using Helm | `helm upgrade --install catalogix ... --wait --timeout 300s`, up to three attempts 30 seconds apart |
-| Post-Deployment Verification | Lists the workload, then requests the ALB address every 10 seconds for up to 5 minutes and accepts 200, 301 or 302. Skipped with a warning if the ALB has no hostname yet |
-| DAST Scan - OWASP ZAP Baseline | Only with `RUN_DAST`. Runs `zap-baseline.py` in informational mode and archives the HTML report |
-
-On failure the pipeline prints pod status, events and ExternalSecret status, then rolls back to the highest revision whose status is `superseded` (the last known-good release). It resolves the revision number explicitly because a plain `helm rollback` would target the previous revision, which can be one of this run's failed retries. If there is no earlier revision the rollback is skipped. After every run it prunes containers and dangling images but keeps the BuildKit cache.
-
-Accepted CVEs are in the root [`.trivyignore`](../../.trivyignore). Each entry carries the package, CVE id, severity, reason, a revisit condition and an expiry date, after which Trivy reports the finding again.
+`FORCE_ALL_TESTS` broadens test selection only. A change to `security-common` still triggers all backend tests and image rebuilds because every backend depends on that module. A first deploy or `FORCE_ALL_BUILDS` also builds all images.
 
 ## `Jenkinsfile.platform-infra`
 
-Parameters:
+This is manually triggered. `ACTION=Apply` runs Terraform format/init/validate/plan, asks for approval when the plan has changes, then verifies EKS and deploys monitoring. `ACTION=Destroy` requires `CONFIRM_DESTROY=true`, displays and approves a destroy plan, removes Kubernetes releases, then destroys the Terraform-managed platform. ECR repositories are now part of this dev platform's destroy lifecycle and `force_delete=true` allows tagged images to be removed; rebuild images before redeploying. Keep the separate bootstrap/state infrastructure intact.
 
-| Parameter | Default | Meaning |
-|---|---|---|
-| `ACTION` | `Apply` | `Apply` or `Destroy` |
-| `ENV` | `dev` | `dev` or `staging`. Terraform runs in `infra/terraform/platform-infra/env/<ENV>` |
-| `CONFIRM_DESTROY` | false | Must be true for `Destroy` |
-| `ALERT_EMAIL_TO`, `SMTP_HOST`, `SMTP_USERNAME` | empty | Alert email settings. Leave empty to keep alerting off. The SMTP password is a Terraform variable stored in Secrets Manager |
-| `DEPLOY_APP_AFTER_INFRA` | false | After the monitoring stack is verified, check that External Secrets Operator is available (it only warns if the two ExternalSecrets are not Ready yet), then start `app-cicd` for the same `ENV` without waiting for it |
-
-One run at a time (queued, never aborted, because killing `terraform apply` leaves a stale lock), with a 90 minute limit.
-
-**Apply**
-
-| Stage | What it does |
-|---|---|
-| Precheck Bootstrap State | Checks that the `bootstrap-infra` state object exists in S3 |
-| Verify Operator Credentials | Dev only: `credentials.py --check` |
-| Trivy Terraform IaC Scan | `trivy config` over `infra/terraform/platform-infra/`, fails on HIGH or CRITICAL, honouring `.trivyignore` |
-| Terraform Init, Validate | In `TF_DIR` |
-| Terraform Plan and Apply | `terraform plan -detailed-exitcode`. Exit 0 skips the apply and the approval; exit 2 waits for a human to approve the saved plan, then applies exactly that plan |
-| Ensure Kubernetes Access, Wait for EKS Ready | Waits for the node group to be `ACTIVE`, all nodes `Ready` and CoreDNS rolled out |
-| Install Metrics Server | Needed by the autoscalers and the dashboards |
-| Deploy Monitoring Stack | `helm upgrade --install monitoring infra/helm/monitoring` in the `monitoring` namespace, with the alert email settings and secret names as `--set` values |
-| Verify Monitoring Stack | Lists pods and services and checks the stack is up |
-
-**Destroy** (`ACTION=Destroy` and `CONFIRM_DESTROY=true`)
-
-| Stage | What it does |
-|---|---|
-| Destroy Safety Gate | Fails immediately if the box is not ticked |
-| Terraform Init, Plan - Destroy Preview, Destroy Approval | Shows the destroy plan and asks for approval |
-| Cleanup Kubernetes Resources | Uninstalls the `catalogix` and `monitoring` releases and waits for the load balancers to disappear |
-| Terraform Destroy | Destroys the platform |
-| Delete Operator Credentials | Deletes `<cluster>/operator-credentials` |
-
-Staging is not kept in step with dev. For `staging`, the operator-credentials check is skipped and Terraform still generates its own passwords.
-
-## `Jenkinsfile.lint`
-
-Not wired to a job. Stages: Hadolint on every Dockerfile under `app/`, `terraform fmt -check` on `infra/terraform`, `ansible-lint` on the playbook, `ruff` on `scripts/python`, the Python unit tests, `helm dependency build` for the monitoring chart, `helm lint` for both charts, kubeconform on the rendered manifests, the Helm image-tag contract test (`python3 scripts/python/ci/check_helm_image_tags.py`), a Trivy scan of the chart, `shellcheck` on the shell scripts, and Gitleaks. It exists so these checks can run without a cluster or built images. `app-cicd` repeats only Hadolint, Gitleaks and the Trivy scan of the chart, because those gate a deploy.
+Dev operator credentials must exist under `<cluster>/credentials/{database,application,observability}`. The pipeline validates them before apply and deletes all three categories during the explicit platform destroy. The legacy `<cluster>/operator-credentials` secret is retained by migration until the operator verifies and manually removes it.

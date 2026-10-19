@@ -120,7 +120,7 @@ Read these in order. Each one builds on the previous one.
 5. `app/backend/checkout-svc/.../svc/CheckoutSvc.java`: the order flow from section 4. Read `placeOrder` and `payOrderInternal` first.
 6. `app/backend/checkout-svc/.../svc/CompensationOutboxProcessor.java` and `OrderEventOutboxProcessor.java`: the retry jobs.
 7. `app/backend/security-common/.../JwtAuthFilter.java` and `JwtService.java`: how every request is authenticated.
-8. `app/frontend/src/App.jsx` and `app/frontend/src/api.jsx`: the pages, and how the browser attaches and refreshes the token.
+8. `app/frontend/src/App.jsx` and `app/frontend/src/api/client.js` and `app/frontend/src/api/index.js`: the pages, and how the browser attaches and refreshes the token.
 
 ## 8. Roles
 

@@ -40,7 +40,7 @@ def call(List<String> services, Map opts = [:]) {
 
     def changedFiles = diffOutput ? diffOutput.split('\n') as List : []
 
-    def sharedFilesTouched = changedFiles.any {
+    def sharedFilesTouched = opts.get('checkSharedFiles', true) && changedFiles.any {
         it == 'pom.xml' ||
         it.startsWith('infra/jenkins/') ||
         it.startsWith('infra/helm/') ||

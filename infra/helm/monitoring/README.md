@@ -12,7 +12,7 @@ infra/helm/monitoring/
     catalogix-dashboard-cm.yaml     the dashboard, labelled for the Grafana sidecar
     observability-datasources.yaml  the Prometheus data source
     alertmanager-secrets.yaml       ExternalSecret: SMTP password
-    grafana-admin-secret.yaml       ExternalSecret: Grafana admin login (only if operatorSecretName is set)
+    grafana-admin-secret.yaml       ExternalSecret: Grafana admin login (only if observabilitySecretName is set)
     ingress.yaml                    internal ALB with three host rules
 ```
 
@@ -59,7 +59,7 @@ The dashboard JSON lives in `dashboards/catalogix-service-health.json` and is lo
 
 The Prometheus data source is provisioned from a ConfigMap labelled `grafana_datasource`. The chart does not deploy Loki or Tempo, so there is no log or trace data source.
 
-Grafana's login comes from the operator-chosen password when `global.operatorSecretName` is set; only the two Grafana keys are read from that secret. `Jenkinsfile.platform-infra` passes it (and `--set kube-prometheus-stack.grafana.admin.existingSecret=grafana-admin-secret`) **for dev only**. Staging keeps the chart's default login, so change it before using Grafana there.
+Grafana's login comes from the observability category secret when `global.observabilitySecretName` is set. That secret contains only `grafana_admin_user` and `grafana_admin_password`. `Jenkinsfile.platform-infra` passes it (and `--set kube-prometheus-stack.grafana.admin.existingSecret=grafana-admin-secret`) for dev only. Staging keeps the chart's default login, so change it before using Grafana there.
 
 The Grafana Service listens on port 80 (forwarding to the container's 3000), which is why the ingress and the port-forward below use 80.
 

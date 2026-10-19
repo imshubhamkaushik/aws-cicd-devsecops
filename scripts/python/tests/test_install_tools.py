@@ -25,3 +25,15 @@ class InstallerSelectionTests(unittest.TestCase):
         with mock.patch("builtins.input", side_effect=["s", "unknown"]):
             with self.assertRaises(SystemExit):
                 install_tools.select_missing(["jq", "aws"])
+
+    def test_terraform_target_keeps_matching_requested_version(self):
+        self.assertIsNone(install_tools.resolve_terraform_target("1.12.2", "1.12.2", False, "1.13.0"))
+
+    def test_terraform_target_replaces_mismatched_requested_version(self):
+        self.assertEqual(install_tools.resolve_terraform_target("1.12.1", "1.12.2", False, None), "1.12.2")
+
+    def test_terraform_upgrade_selects_latest_version(self):
+        self.assertEqual(install_tools.resolve_terraform_target("1.12.1", None, True, "1.13.0"), "1.13.0")
+
+    def test_terraform_without_requested_upgrade_keeps_existing_version(self):
+        self.assertIsNone(install_tools.resolve_terraform_target("1.12.1", None, False, None))

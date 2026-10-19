@@ -94,7 +94,7 @@ class JwtAuthFilterTest {
     void letsAnUnauthenticatedCallerThroughOnAConfiguredPublicPath() throws Exception {
         // This is the exact scenario that was broken end-to-end: a browser
         // calling /users/login for the first time has no token to send —
-        // frontend-svc's api.jsx only attaches Authorization when
+        // the frontend API client only attaches Authorization when
         // getStoredAccessToken() returns non-null, which it never does
         // pre-login. Simulates what OncePerRequestFilter's real dispatch
         // does: shouldNotFilter()==true means doFilterInternal is skipped

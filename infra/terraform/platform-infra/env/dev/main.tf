@@ -17,22 +17,21 @@ data "aws_iam_session_context" "current" {
   arn = data.aws_caller_identity.current.arn
 }
 
-# Credentials chosen by the operator (python3 scripts/python/aws/bootstrap.py credentials) live in one
-# Secrets Manager secret, "<env_prefix>/operator-credentials", which this pipeline reads.
-# Only the RDS master password passes through Terraform (and so lands in the encrypted
-# state); the app admin, RabbitMQ and Grafana passwords go straight to External Secrets.
-data "aws_secretsmanager_secret_version" "operator" {
-  secret_id = "${local.env_prefix}/operator-credentials"
+# Human-selected credentials are split by access boundary. Terraform reads only the database
+# category because it needs the RDS master password and optional read-only login; this category
+# can enter Terraform state. Application and Grafana credentials are read by ESO directly.
+data "aws_secretsmanager_secret_version" "operator_database" {
+  secret_id = "${local.env_prefix}/credentials/database"
 }
 
 locals {
-  operator_credentials = jsondecode(data.aws_secretsmanager_secret_version.operator.secret_string)
+  database_credentials = jsondecode(data.aws_secretsmanager_secret_version.operator_database.secret_string)
 
-  db_master_password = lookup(local.operator_credentials, "db_master_password", "")
+  db_master_password = lookup(local.database_credentials, "db_master_password", "")
 
   # Optional read-only database login (both keys, or neither).
-  db_readonly_username = lookup(local.operator_credentials, "db_readonly_username", "")
-  db_readonly_password = lookup(local.operator_credentials, "db_readonly_password", "")
+  db_readonly_username = lookup(local.database_credentials, "db_readonly_username", "")
+  db_readonly_password = lookup(local.database_credentials, "db_readonly_password", "")
 }
 
 # Same password policy as scripts/python/aws/credentials.py; backstop for manual runs.
@@ -40,7 +39,7 @@ resource "terraform_data" "operator_credentials_check" {
   lifecycle {
     precondition {
       condition     = length(local.db_master_password) > 0
-      error_message = "db_master_password is missing from ${local.env_prefix}/operator-credentials. Run: python scripts/python/aws/credentials.py --env dev"
+      error_message = "db_master_password is missing from ${local.env_prefix}/credentials/database. Run: python scripts/python/aws/credentials.py --env dev"
     }
     precondition {
       condition = (
@@ -55,7 +54,7 @@ resource "terraform_data" "operator_credentials_check" {
     }
     precondition {
       condition     = (local.db_readonly_username == "") == (local.db_readonly_password == "")
-      error_message = "db_readonly_username and db_readonly_password must be set together (or both left out) in ${local.env_prefix}/operator-credentials."
+      error_message = "db_readonly_username and db_readonly_password must be set together (or both left out) in ${local.env_prefix}/credentials/database."
     }
   }
 }
@@ -207,7 +206,7 @@ module "rds" {
 
 # Per-service databases + roles (see modules/db-roles/main.tf). Database names use
 # hyphens (catalogix-users, catalogix-catalog, ...) and must match
-# app/postgres-init/01-create-databases.sh and infra/helm/catalogix-hc values-*.yaml `dbName`.
+# app/postgres-init/01-create-databases.sql and infra/helm/catalogix-hc values-*.yaml `dbName`.
 module "db_roles" {
   source = "../../modules/db-roles"
 
@@ -221,29 +220,15 @@ module "db_roles" {
     "notification-svc" = "catalogix-notification"
   }
 
-  # Optional read-only login, active only when both keys are in the operator secret.
+  # Optional read-only login, active only when both keys are in the database-category secret.
   readonly_username = local.db_readonly_username
   readonly_password = local.db_readonly_password
 
   depends_on = [module.rds]
 }
 
-# Secrets Manager: stores generated DB credentials for the app to read via ESO.
-module "secrets" {
-  source = "../../modules/secrets-manager"
-
-  # Namespaced to avoid collisions across environments.
-  secret_name = "${local.env_prefix}/db-credentials"
-
-  secret_values = {
-    db_user = local.db_username
-    db_pass = local.db_master_password
-  }
-}
-
-# JWT signing key and per-service DB credentials, separate from db-credentials so the
-# two rotate independently. Key names are copied verbatim into the 'catalogix-secrets'
-# K8s Secret by infra/helm/catalogix-hc/templates/external-secrets.yaml; rename with care.
+# Per-service DB credentials are generated separately from the operator-managed database
+# category. Key names are copied into 'catalogix-secrets' by the application chart's ExternalSecret.
 module "app_secrets" {
   source = "../../modules/secrets-manager"
 
@@ -253,7 +238,7 @@ module "app_secrets" {
   secret_values = merge(
     {
       # Machine credentials only. JWT signing material is isolated in <env_prefix>/jwt-keys;
-      # human-chosen passwords live in <env_prefix>/operator-credentials.
+      # human-chosen passwords live in <env_prefix>/credentials/* category secrets.
     },
     { for svc, creds in module.db_roles.credentials : "db_user_${replace(svc, "-", "_")}" => creds.username },
     { for svc, creds in module.db_roles.credentials : "db_password_${replace(svc, "-", "_")}" => creds.password }

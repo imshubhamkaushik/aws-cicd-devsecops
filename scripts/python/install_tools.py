@@ -16,7 +16,8 @@ What it installs
 
 Works on any Linux with apt, dnf, yum or zypper: Ubuntu, Debian, Amazon Linux, RHEL and its
 clones, Fedora, SUSE. Run it as a normal user (it uses sudo where needed) or as root (cloud VMs).
-Safe to re-run: anything already installed is skipped.
+Safe to re-run: installed tools are inventoried first. The interactive run offers an update
+check for existing tools; use --upgrade to upgrade selected/all installed tools non-interactively.
 
 Usage
     python3 scripts/python/install_tools.py                  # inspect, then install all/selectively
@@ -24,6 +25,8 @@ Usage
     python3 scripts/python/install_tools.py --yes             # install every missing tool non-interactively
     python3 scripts/python/install_tools.py --check-only
     python3 scripts/python/install_tools.py --terraform-version 1.12.2
+    python3 scripts/python/install_tools.py --upgrade
+    python3 scripts/python/install_tools.py --upgrade --only aws,terraform
 """
 
 import argparse
@@ -163,36 +166,65 @@ def install_package(tool):
         run(sudo() + [manager, "install", "-y", "-q", name])
 
 
-def install_jq():
+def upgrade_package(tool):
+    """Upgrade an already installed system package using the native package manager."""
+    manager = package_manager()
+    name = PACKAGE_NAMES[tool][manager]
+    if manager == "apt-get":
+        run(sudo() + ["apt-get", "update", "-qq"])
+        run(sudo() + ["apt-get", "install", "--only-upgrade", "-y", "-qq", name])
+    elif manager in ("dnf", "yum"):
+        run(sudo() + [manager, "upgrade", "-y", "-q", name])
+    else:
+        run(sudo() + ["zypper", "--non-interactive", "update", name])
+
+
+def install_jq(upgrade=False):
     info("jq")
-    if shutil.which("jq"):
+    installed = bool(shutil.which("jq"))
+    if installed and not upgrade:
         return skip(output(["jq", "--version"]))
+    if installed:
+        upgrade_package("jq")
+        ok(output(["jq", "--version"]))
+        return
     install_package("jq")
     ok(output(["jq", "--version"]))
 
 
-def install_ssh():
+def install_ssh(upgrade=False):
     info("ssh-keygen (OpenSSH client)")
-    if shutil.which("ssh-keygen"):
-        return skip("ssh-keygen")
+    installed = bool(shutil.which("ssh-keygen"))
+    if installed and not upgrade:
+        return skip("ssh-keygen available")
+    if installed:
+        upgrade_package("ssh")
+        ok("OpenSSH client updated")
+        return
     install_package("ssh")
     ok("ssh-keygen installed")
 
 
 # ---------------------------------------------------------------- AWS CLI
 
-def install_awscli():
+def install_awscli(upgrade=False):
     info("AWS CLI v2")
-    if shutil.which("aws") and "aws-cli/2" in output(["aws", "--version"]):
-        return skip(output(["aws", "--version"]))
+    installed = shutil.which("aws")
+    current = output(["aws", "--version"]) if installed else ""
+    is_v2 = "aws-cli/2" in current
+    if is_v2 and not upgrade:
+        return skip(current)
 
     aws_arch, _ = machine()
     with tempfile.TemporaryDirectory() as tmp:
         zip_path = Path(tmp) / "awscliv2.zip"
         download(f"https://awscli.amazonaws.com/awscli-exe-linux-{aws_arch}.zip", zip_path)
         unzip(zip_path, tmp)
-        # --update makes a re-run safe; default install location is /usr/local/aws-cli
-        run(sudo() + [str(Path(tmp) / "aws" / "install"), "--update"], stdout=subprocess.DEVNULL)
+        # --update is valid when AWS CLI v2 was installed by the official installer.
+        command = sudo() + [str(Path(tmp) / "aws" / "install")]
+        if is_v2:
+            command.append("--update")
+        run(command, stdout=subprocess.DEVNULL)
     ok(output(["aws", "--version"]) or "AWS CLI installed (open a new shell if `aws` is not found)")
 
 
@@ -206,40 +238,63 @@ def latest_terraform_version():
         return TERRAFORM_FALLBACK_VERSION
 
 
-def install_terraform(version=None):
+def installed_terraform_version():
+    """Return installed Terraform version without the leading label, or None."""
+    text = output(["terraform", "version"]) if shutil.which("terraform") else ""
+    if not text:
+        return None
+    return text.splitlines()[0].replace("Terraform ", "").strip().lstrip("v")
+
+
+def resolve_terraform_target(current, requested_version=None, upgrade=False, latest_version=None):
+    """Return the version to install, or None when the current version can be kept."""
+    requested = requested_version.lstrip("v") if requested_version else None
+    if requested:
+        return None if current == requested else requested
+    if current and not upgrade:
+        return None
+    return latest_version
+
+
+def install_terraform(version=None, upgrade=False):
     info("Terraform")
-    if shutil.which("terraform"):
-        return skip(output(["terraform", "version"]).splitlines()[0])
+    current = installed_terraform_version()
+    latest = latest_terraform_version() if upgrade or version is None and not current else None
+    target = resolve_terraform_target(current, version, upgrade, latest)
+    if target is None:
+        reason = f"Terraform {current} (requested version already installed)" if version else f"Terraform {current}"
+        return skip(reason)
 
     _, hashi_arch = machine()
-    version = version or latest_terraform_version()
-    base = f"https://releases.hashicorp.com/terraform/{version}"
-    zip_name = f"terraform_{version}_linux_{hashi_arch}.zip"
+    base = f"https://releases.hashicorp.com/terraform/{target}"
+    zip_name = f"terraform_{target}_linux_{hashi_arch}.zip"
 
     with tempfile.TemporaryDirectory() as tmp:
         zip_path = Path(tmp) / zip_name
         sums_path = Path(tmp) / "SHA256SUMS"
         download(f"{base}/{zip_name}", zip_path)
-        download(f"{base}/terraform_{version}_SHA256SUMS", sums_path)
+        download(f"{base}/terraform_{target}_SHA256SUMS", sums_path)
 
-        # Refuse to install a file whose checksum does not match HashiCorp's published list.
         expected = None
         for line in sums_path.read_text().splitlines():
             digest, _, name = line.partition("  ")
             if name.strip() == zip_name:
                 expected = digest
         actual = hashlib.sha256(zip_path.read_bytes()).hexdigest()
-        if expected != actual:
+        if not expected or expected != actual:
             fail(f"Terraform download failed its SHA-256 check (expected {expected}, got {actual}).")
 
         unzip(zip_path, tmp)
         run(sudo() + ["install", "-m", "0755", str(Path(tmp) / "terraform"), "/usr/local/bin/terraform"])
-    ok(output(["terraform", "version"]).splitlines()[0])
+    installed = installed_terraform_version()
+    if installed != target.lstrip("v"):
+        fail(f"Terraform version verification failed: requested {target}, found {installed or 'not found'}.")
+    ok(f"Terraform {installed}")
 
 
 # ---------------------------------------------------------------- Ansible + boto3 (virtualenv)
 
-def install_ansible():
+def install_ansible(upgrade=False):
     info(f"Ansible and boto3 in a virtualenv ({VENV_DIR})")
     python = VENV_DIR / "bin" / "python"
 
@@ -266,20 +321,31 @@ def install_ansible():
             and (VENV_DIR / "bin" / "ansible-galaxy").exists()
         )
 
-    if packages_ready:
+    if packages_ready and not upgrade:
         skip(output([str(VENV_DIR / "bin" / "ansible"), "--version"]).splitlines()[0])
     else:
         run([str(python), "-m", "pip", "install", "--quiet", "--upgrade", "pip"])
         # `ansible` is the full package; boto3/botocore support AWS inventory and operator tools.
-        run([str(python), "-m", "pip", "install", "--quiet", "ansible", "boto3", "botocore"])
+        run([str(python), "-m", "pip", "install", "--quiet", "--upgrade", "ansible", "boto3", "botocore"])
         ok(output([str(VENV_DIR / "bin" / "ansible"), "--version"]).splitlines()[0])
 
     # community.docker -> sonarqube role; amazon.aws -> dynamic EC2 inventory
     if ANSIBLE_REQUIREMENTS.is_file():
         info("Ansible Galaxy collections")
-        run([str(VENV_DIR / "bin" / "ansible-galaxy"), "collection", "install",
-             "-r", str(ANSIBLE_REQUIREMENTS)])
+        galaxy_args = [str(VENV_DIR / "bin" / "ansible-galaxy"), "collection", "install"]
+        if upgrade:
+            galaxy_args.append("--upgrade")
+        run(galaxy_args + ["-r", str(ANSIBLE_REQUIREMENTS)])
         ok(f"Collections installed from {ANSIBLE_REQUIREMENTS.relative_to(REPO_ROOT)}")
+
+
+INSTALLERS = {
+    "jq": install_jq,
+    "ssh": install_ssh,
+    "aws": install_awscli,
+    "terraform": install_terraform,
+    "ansible": install_ansible,
+}
 
 
 # ---------------------------------------------------------------- detection and interactive selection
@@ -296,11 +362,10 @@ def tool_status(name, terraform_version=None):
             return version
         return None
     if name == "terraform":
-        version_text = output(["terraform", "version"]) if shutil.which("terraform") else ""
-        if not version_text:
+        installed = installed_terraform_version()
+        if not installed:
             return None
-        installed = version_text.splitlines()[0].replace("Terraform ", "").strip()
-        if terraform_version and installed.lstrip("v") != terraform_version.lstrip("v"):
+        if terraform_version and installed != terraform_version.lstrip("v"):
             return None
         return installed
     if name == "ansible":
@@ -325,16 +390,20 @@ def tool_status(name, terraform_version=None):
     raise ValueError(f"Unknown tool: {name}")
 
 
-def print_status(statuses):
-    """Show a compact inventory of the tools managed by this installer."""
+def print_status(statuses, terraform_version=None):
+    """Show a compact inventory, distinguishing a missing tool from a version mismatch."""
     print("\nCatalogix tool inventory:")
     for index, name in enumerate(ALL_TOOLS, start=1):
         label = status_label(name)
         state = statuses[name]
         if state:
             print(f"  {index}. {label}: installed ({state})")
+        elif name == "terraform" and shutil.which("terraform"):
+            installed = installed_terraform_version() or "unknown version"
+            requested = terraform_version or "requested version"
+            print(f"  {index}. {label}: version mismatch (installed {installed}; required {requested})")
         else:
-            print(f"  {index}. {label}: MISSING")
+            print(f"  {index}. {label}: MISSING or incomplete")
 
 
 def status_label(name):
@@ -379,6 +448,35 @@ def select_missing(missing):
     return selected
 
 
+def select_existing_for_upgrade(installed):
+    """Ask whether to upgrade all or selected already-installed tools."""
+    if not installed:
+        return []
+    print("\nInstalled tools available for update:")
+    for index, name in enumerate(installed, start=1):
+        print(f"  {index}. {status_label(name)}")
+    choice = input("Upgrade [A]ll installed, [S]elect tools, or [Q]uit? [A/s/q]: ").strip().lower()
+    if choice in ("", "a", "all"):
+        return list(installed)
+    if choice in ("q", "quit", "n", "no"):
+        return []
+    if choice not in ("s", "select", "selective"):
+        print("Unrecognised choice; no tools will be upgraded.")
+        return []
+    answer = input("Enter comma-separated numbers or tool names (or q to cancel): ").strip().lower()
+    if answer in ("q", "quit", ""):
+        return []
+    by_number = {str(index): name for index, name in enumerate(installed, start=1)}
+    selected = []
+    for part in (value.strip() for value in answer.split(",")):
+        name = by_number.get(part, part)
+        if name not in installed:
+            fail(f"'{part}' is not installed/eligible. Choose: {', '.join(installed)}")
+        if name not in selected:
+            selected.append(name)
+    return selected
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Check Catalogix prerequisites and install missing tools (stdlib only)."
@@ -388,6 +486,10 @@ def main():
         help=f"Comma-separated tools to check/install: {', '.join(ALL_TOOLS)}",
     )
     parser.add_argument("--terraform-version", help="Require/install this Terraform version.")
+    parser.add_argument(
+        "--upgrade", action="store_true",
+        help="Upgrade selected installed tools as well as installing missing tools.",
+    )
     parser.add_argument(
         "--yes", action="store_true",
         help="Install all missing tools without prompting (for automation).",
@@ -412,25 +514,24 @@ def main():
 
     statuses = {name: tool_status(name, args.terraform_version if name == "terraform" else None)
                 for name in ALL_TOOLS}
-    print_status(statuses)
+    print_status(statuses, args.terraform_version)
 
     if args.check_only:
         missing = [name for name, status in statuses.items() if status is None]
         if missing:
-            print("\nMissing: " + ", ".join(missing))
+            print("\nMissing or mismatched: " + ", ".join(missing))
             return 1
-        print("\nAll managed tools are installed.")
+        print("\nAll managed tools satisfy the requested versions.")
         return 0
 
+    missing = [name for name, status in statuses.items() if status is None]
+    installed = [name for name, status in statuses.items() if status is not None]
+
     if requested is not None:
-        selected = requested
-    else:
-        missing = [name for name, status in statuses.items() if status is None]
-        if not missing:
-            info("All managed tools are already installed. Nothing to do.")
-            return 0
+        selected = list(requested)
+    elif missing:
         if args.yes:
-            selected = missing
+            selected = list(missing)
         elif sys.stdin.isatty():
             selected = select_missing(missing)
             if not selected:
@@ -438,29 +539,56 @@ def main():
                 return 0
         else:
             fail("Missing tools were found, but stdin is not interactive. Re-run with --yes or --only <tools>.")
+    else:
+        selected = []
 
-    # Do not reinstall explicitly requested tools that are already healthy.
+    # By default a healthy installation is left alone. Interactive users can opt into updating
+    # existing tools; automation opts in with --upgrade.
+    upgrade_selected = []
+    if args.upgrade:
+        upgrade_selected = [name for name in selected if name in installed]
+        if requested is None:
+            upgrade_selected = list(installed)
+    elif requested is None and not missing and sys.stdin.isatty():
+        choice = input("\nAll managed tools are installed. Upgrade existing tools to the latest available package/release? [y/N]: ").strip().lower()
+        if choice in ("y", "yes"):
+            upgrade_selected = select_existing_for_upgrade(installed)
+
     for name in selected:
         state = tool_status(name, args.terraform_version if name == "terraform" else None)
-        if state:
+        needs_upgrade = name in upgrade_selected or args.upgrade
+        if state and not needs_upgrade:
             skip(f"{status_label(name)} ({state})")
-            # Ansible status already includes the required Galaxy collections, so a healthy
-            # explicitly selected installation needs no package-manager or network work.
             continue
-        INSTALLERS[name](args.terraform_version) if name == "terraform" else INSTALLERS[name]()
+        if name == "terraform":
+            install_terraform(args.terraform_version, upgrade=needs_upgrade)
+        else:
+            INSTALLERS[name](upgrade=needs_upgrade) if name in installed else INSTALLERS[name]()
+
+    # Upgrade tools selected from the installed inventory (which may not be in `selected`).
+    for name in [tool for tool in upgrade_selected if tool not in selected]:
+        if name == "terraform":
+            install_terraform(args.terraform_version, upgrade=True)
+        else:
+            INSTALLERS[name](upgrade=True)
+
+    selected_for_check = list(dict.fromkeys(selected + upgrade_selected))
+    if not selected_for_check and not missing:
+        info("All managed tools are installed. No updates selected.")
+        return 0
 
     final = {name: tool_status(name, args.terraform_version if name == "terraform" else None)
-             for name in selected}
+             for name in selected_for_check}
     failed = [name for name, state in final.items() if state is None]
     if failed:
         fail("Installation did not satisfy: " + ", ".join(failed))
 
     info("Tool setup complete.")
-    if "ansible" in selected:
+    if "ansible" in selected_for_check:
         print(f"    Ansible lives in {VENV_DIR}; operator scripts use it automatically.")
-    if "aws" in selected:
+    if "aws" in selected_for_check:
         print("    Next: aws configure")
-    if "terraform" in selected or "ansible" in selected:
+    if "terraform" in selected_for_check or "ansible" in selected_for_check:
         print("    SSH key (when bootstrapping EC2): python3 scripts/python/setup/create_ssh_key.py")
 
 

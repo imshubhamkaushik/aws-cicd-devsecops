@@ -23,13 +23,14 @@ output "alb_role_arn" {
   value       = module.alb.alb_role_arn
 }
 
-# The passwords YOU chose (RDS master, RabbitMQ, app admin, Grafana) are not outputs — they live in
-# Secrets Manager. This prints the commands to review or change them (passwords are never shown).
+# Operator-selected credentials are not outputs. The helper prints only names/status, never passwords.
 output "operator_credentials_commands" {
   description = "How to see which operator credentials are set, or change one"
   value = {
-    secret = "${local.env_prefix}/operator-credentials"
-    show   = "python scripts/python/aws/credentials.py --env dev --show"
-    change = "python scripts/python/aws/credentials.py --env dev --only <key>"
+    database      = "${local.env_prefix}/credentials/database"
+    application   = "${local.env_prefix}/credentials/application"
+    observability = "${local.env_prefix}/credentials/observability"
+    show          = "python scripts/python/aws/credentials.py --env dev --show"
+    change        = "python scripts/python/aws/credentials.py --env dev --only <key>"
   }
 }

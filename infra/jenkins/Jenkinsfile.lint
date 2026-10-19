@@ -1,12 +1,10 @@
 // =============================================================================
-// Lint / static-analysis pipeline. NOT created by jcasc.yaml (it defines only
-// the platform-infra and app-cicd jobs). To use it, add a pipelineJob with
-// scriptPath('infra/jenkins/Jenkinsfile.lint') to jcasc.yaml or create the job by hand.
+// Repository quality/security gate. Triggered by GitHub push and pull-request events.
+// Pull requests receive a required check; a successful main-branch run can launch
+// app-cicd against the exact commit that passed this gate. platform-infra remains manual.
 //
-// This is the home for checks that don't need a running cluster or built
-// images (Terraform fmt, ansible-lint, ruff, Helm lint/validation, shellcheck).
-// app-cicd repeats only the cheap Dockerfile lint, Gitleaks and the Helm chart
-// Trivy scan, because it gates deploys.
+// Keep repository-wide/static scans here so app-cicd and platform-infra do not repeat them.
+// Runtime image scanning and deployment-specific tests remain in app-cicd.
 // =============================================================================
 
 pipeline {
@@ -15,11 +13,19 @@ pipeline {
     options {
         timestamps()
         disableConcurrentBuilds(abortPrevious: true)
-        timeout(time: 10, unit: 'MINUTES')
+        timeout(time: 25, unit: 'MINUTES')
     }
 
     environment {
         HELM_CHART_DIR = "infra/helm/catalogix-hc"
+    }
+
+    parameters {
+        booleanParam(
+            name: 'TRIGGER_APP_CICD',
+            defaultValue: true,
+            description: 'On a successful main-branch push gate, start app-cicd for this exact commit. Ignored on pull requests.'
+        )
     }
 
     stages {
@@ -75,6 +81,21 @@ pipeline {
                 set -e
                 terraform fmt -check -recursive -diff infra/terraform/
                 '''
+            }
+        }
+
+        stage('Trivy Terraform IaC Scan') {
+            steps {
+                sh """
+                set -e
+                docker run --rm \
+                  -v \$(pwd):/repo \
+                  ${TRIVY_IMAGE} config \
+                  --severity HIGH,CRITICAL \
+                  --exit-code 1 \
+                  --ignorefile /repo/.trivyignore \
+                  /repo/infra/terraform/
+                """
             }
         }
 
@@ -204,7 +225,7 @@ pipeline {
 
         // ── Secrets ──────────────────────────────────────────────────────────
         //
-        // Full-repo scan, same image and flags as the first stage of app-cicd.
+        // Full-repository secret scan is owned by this gate; do not duplicate it in app-cicd.
         stage('Secrets Scanning') {
             steps {
                 sh '''
@@ -222,10 +243,18 @@ pipeline {
 
     post {
         success {
-            echo "Lint pipeline passed — hadolint, terraform fmt, ansible-lint, ruff, helm lint, kubeconform, shellcheck, gitleaks all clean."
+            echo "Quality/security gate passed for ${env.GIT_COMMIT}."
+            script {
+                // Only a push to main can publish/deploy. PRs stop at the required check.
+                if (env.BRANCH_NAME == 'main' && !env.CHANGE_ID && params.TRIGGER_APP_CICD) {
+                    build job: 'app-cicd', wait: false, propagate: false, parameters: [
+                        string(name: 'SOURCE_REVISION', value: env.GIT_COMMIT)
+                    ]
+                }
+            }
         }
         failure {
-            echo "Lint pipeline failed — check which stage above for the specific tool and finding."
+            echo "Quality/security gate failed — downstream app-cicd will not be triggered."
         }
     }
 }

@@ -9,7 +9,7 @@ cluster_name = "catalogix-cluster"   # the cluster becomes "<cluster_name>-dev"
 environment  = "dev"
 
 # Passwords for RDS, RabbitMQ, the app admin and Grafana are NOT set here. They
-# live in Secrets Manager as "catalogix-cluster-dev/operator-credentials":
+# live in Secrets Manager under "catalogix-cluster-dev/credentials/database", `.../credentials/application`, and `.../credentials/observability`:
 #   python3 scripts/python/aws/bootstrap.py credentials
 
 # Optional: SMTP password for critical alert emails. The Jenkins job does not

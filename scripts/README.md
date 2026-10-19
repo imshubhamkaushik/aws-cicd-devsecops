@@ -65,7 +65,7 @@ python3 scripts/python/aws/destroy_infra.py
 
 `bootstrap.py` defaults to `full`. It runs the remote-state backend, bootstrap infrastructure, Ansible configuration, and operator-credential steps in order. The destroy script only handles the bootstrap layer; destroy the EKS/RDS platform through the platform-infrastructure pipeline first. Review every Terraform plan before applying it.
 
-The operator-credentials CLI stores values in AWS Secrets Manager. `--show` prints credential names and non-secret usernames but never prints password values. `--only` can update selected fields on an existing valid secret; targeted creation of a new secret must still supply all required credentials, and the optional read-only database username/password are validated as a pair.
+The credentials CLI stores three Secrets Manager category secrets: database, application, and observability. AWS Secrets Manager does not have real folders; slash-separated names group secrets by prefix. `--show` prints credential names and non-secret usernames but never prints password values. `--only` can update selected fields on an existing valid secret; targeted creation of a new secret must still supply all required credentials, and the optional read-only database username/password are validated as a pair.
 
 The additive operator IP allowlist is stored in the Terraform state bucket. Removing an entry or deleting the list affects access controls; review the list before pruning or deleting it.
 

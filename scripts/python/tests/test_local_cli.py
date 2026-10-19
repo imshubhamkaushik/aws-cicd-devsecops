@@ -21,6 +21,14 @@ class LocalCliTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("user-svc", result.stdout)
 
+    def test_mvn_requires_action_unless_listing_services(self):
+        result = subprocess.run(
+            [sys.executable, str(LOCAL_DIR / "mvn.py")],
+            cwd=REPO_ROOT, capture_output=True, text=True, check=False,
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("action is required", result.stderr)
+
     def test_skip_trivy_still_builds_images_before_smoke_test(self):
         calls = []
 

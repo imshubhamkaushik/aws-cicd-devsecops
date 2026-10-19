@@ -6,10 +6,9 @@ global:
   # (Jenkins derives the name from CLUSTER_NAME).
   alertingSecretName: ""
 
-  # Set at deploy time: --set global.operatorSecretName=<cluster-name>/operator-credentials
-  # Holds the operator-chosen Grafana login. Empty skips grafana-admin-secret, so Grafana
-  # keeps the chart's default credentials.
-  operatorSecretName: ""
+  # Set at deploy time: --set global.observabilitySecretName=<cluster-name>/credentials/observability
+  # Holds only the Grafana login. Empty skips grafana-admin-secret.
+  observabilitySecretName: ""
 
 kube-prometheus-stack:
 

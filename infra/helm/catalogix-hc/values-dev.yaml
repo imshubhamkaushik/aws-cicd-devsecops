@@ -28,9 +28,8 @@ database:
 secretsManager:
   appSecretName: "catalogix-cluster-dev/app-secrets"
   jwtKeysSecretName: "catalogix-cluster-dev/jwt-keys"  # user-token pair (private key only in user-svc) + one internal pair shared by all services
-  # Operator-chosen passwords (RabbitMQ, bootstrap admin), read directly by External Secrets.
-  # Leave empty to fall back to appSecretName.
-  operatorSecretName: "catalogix-cluster-dev/operator-credentials"
+  # Operator-selected runtime credentials, isolated from the database category that Terraform reads.
+  applicationCredentialsSecretName: "catalogix-cluster-dev/credentials/application"
 
 rabbitmq:
   host: "rabbitmq" # in-cluster headless Service, see templates/rabbitmq.yaml

@@ -141,10 +141,8 @@ pipeline {
             }
         }
 
-        // The passwords YOU chose (RDS master, RabbitMQ, app admin, Grafana) are read from
-        // "<cluster>/operator-credentials" in Secrets Manager — nothing is passed to this
-        // pipeline. Fail early, with a message that says what to do, if they aren't there
-        // yet or don't meet the policy, instead of a cryptic Terraform error mid-apply.
+        // The categorized credentials chosen by the operator live in Secrets Manager. This check
+        // requires database, application, and observability categories before dev is applied.
         // (Staging's Terraform still generates its own passwords — deferred with the rest of staging.)
         stage("Verify Operator Credentials") {
             when {
@@ -157,29 +155,9 @@ pipeline {
 
         // Terraform formatting for this directory is already gated in
         // Application CI/CD owns application test and scan execution.
-        stage("Trivy Terraform IaC Scan") {
-            when {
-                expression { params.ACTION == 'Apply' }
-            }
-            steps {
-                script {
-                    env.TRIVY_TAG = sh(
-                        script: "grep '^trivy_version:' infra/ansible/group_vars/all/vars.yaml | awk -F'\"' '{print \$2}'",
-                        returnStdout: true
-                    ).trim()
-                    env.TRIVY_IMAGE = "aquasec/trivy:${env.TRIVY_TAG}"
-                }
-                sh """
-                set -e
-                docker run --rm -v \$(pwd):/iac ${TRIVY_IMAGE} config \\
-                    --severity HIGH,CRITICAL --exit-code 1 \\
-                    --ignorefile /iac/.trivyignore \\
-                    /iac/infra/terraform/platform-infra/
-                """
-            }
-        }
-
-        // ── Shared stages (apply + destroy) ─────────────────────────────────
+        // Terraform format/security static checks are owned by the upstream quality-security-gate
+        // pipeline. This pipeline still performs Terraform init/validate/plan against the selected
+        // live environment before asking for approval.
 
         stage("Terraform Init") { 
             steps { 
@@ -369,7 +347,7 @@ pipeline {
                     // Grafana's login comes from the operator-chosen credentials (dev only —
                     // staging keeps the chart default until it is brought up to parity).
                     env.OPERATOR_HELM_ARGS = (params.ENV == 'dev')
-                        ? "--set global.operatorSecretName=${env.CLUSTER_NAME}/operator-credentials --set kube-prometheus-stack.grafana.admin.existingSecret=grafana-admin-secret"
+                        ? "--set global.observabilitySecretName=${env.CLUSTER_NAME}/credentials/observability --set kube-prometheus-stack.grafana.admin.existingSecret=grafana-admin-secret"
                         : ""
                 }
 
@@ -534,15 +512,8 @@ Are you absolutely sure?""",
             }
         }
 
-        // Terraform never created "<cluster>/operator-credentials" — it can't (see
-        // credentials.py's module docstring: the RDS master password must exist in it BEFORE
-        // Terraform's first apply, so Terraform can't be the thing that creates the container).
-        // Without this, a plain terraform destroy silently leaves it behind, and a later
-        // rebuild of this environment would quietly inherit the old passwords. Runs only for
-        // dev (--check earlier in this pipeline is dev-only for the same reason: staging's
-        // Terraform still generates its own secrets internally, deferred with the rest of
-        // staging) and only after the destroy above actually succeeded — never delete
-        // credentials for a cluster that destroy failed to tear down.
+        // Terraform does not create the operator-managed credential category secrets. Delete them only
+        // after the dev platform destroy succeeded, so a failed destroy never erases its credentials.
         stage("Delete Operator Credentials") {
             when {
                 allOf {
@@ -595,7 +566,10 @@ Are you absolutely sure?""",
                         echo "Triggering app deployment pipeline..."
                         
                         build job: 'app-cicd',
-                              parameters: [string(name: 'ENV', value: params.ENV)],
+                              parameters: [
+                                  string(name: 'ENV', value: params.ENV),
+                                  string(name: 'SOURCE_REVISION', value: env.GIT_COMMIT)
+                              ],
                               wait: false
                         
                         echo "App deployment pipeline triggered."

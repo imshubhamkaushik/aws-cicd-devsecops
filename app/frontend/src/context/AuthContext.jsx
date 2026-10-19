@@ -49,7 +49,7 @@ export function AuthProvider({ children }) {
     // local session on it (e.g. the backend being briefly unreachable
     // shouldn't trap the user in a "logged in" state on their own machine).
     // No refresh token to pass — it lives only in the httpOnly cookie, which
-    // the browser attaches to this request automatically (see api.jsx).
+    // the browser attaches to this request automatically (see api/client.js).
     try { await apiLogout(); } catch { /* already logged out locally */ }
   }, [persist]);
 
@@ -61,7 +61,7 @@ export function AuthProvider({ children }) {
     persist({ ...current, user: updatedUser });
   }, [persist]);
 
-  // api.jsx dispatches this when even a silent token refresh fails (refresh
+  // the API client dispatches this when even a silent token refresh fails (refresh
   // token itself expired/revoked) — there's no way to recover the session.
   useEffect(() => {
     const onForcedLogout = () => persist(null);
@@ -69,7 +69,7 @@ export function AuthProvider({ children }) {
     return () => window.removeEventListener("catalogix:unauthorized", onForcedLogout);
   }, [persist]);
 
-  // api.jsx calls this after silently refreshing an expired access token, so
+  // the API client calls this after silently refreshing an expired access token, so
   // the new access token is persisted without a full React state round-trip.
   // The rotated refresh token is never in e.detail — it arrived as a
   // Set-Cookie header the browser already stored on its own; there's nothing
@@ -110,7 +110,7 @@ export function useAuth() {
   return ctx;
 }
 
-// Read directly from storage (not React state) so api.jsx — which lives
+// Read directly from storage (not React state) so the API client — which lives
 // outside the component tree — can always grab the latest tokens without
 // needing a hook.
 export function getStoredAccessToken() {

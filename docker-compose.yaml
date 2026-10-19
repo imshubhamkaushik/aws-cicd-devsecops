@@ -13,10 +13,10 @@ services:
       SERVICE_DB_PASSWORD: ${SERVICE_DB_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql
-      # One database and one role per service, created on first start.
+      # SQL-only bootstrap: the official postgres image runs .sql files on the first empty volume.
       - ./app/postgres-init:/docker-entrypoint-initdb.d:ro
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
       interval: 5s
@@ -34,7 +34,7 @@ services:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
     ports:
-      - "25672:15672" # management UI (http://localhost:15672)
+      - "127.0.0.1:25672:15672" # management UI (http://localhost:25672)
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
       interval: 10s
@@ -50,7 +50,7 @@ services:
     image: axllent/mailpit:latest
     restart: unless-stopped
     ports:
-      - "8025:8025"
+      - "127.0.0.1:8025:8025"
     networks: [catalogix]
     
 
