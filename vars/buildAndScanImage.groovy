@@ -1,4 +1,4 @@
-// jenkins/shared-library/vars/buildAndScanImage.groovy
+// vars/buildAndScanImage.groovy  (Jenkins shared library, loaded as 'catalogix-shared-library')
 //
 // Builds a Docker image and fails the build on HIGH/CRITICAL CVEs, honoring
 // .trivyignore (entries there carry expiry dates). One function is used for all 9 application images (7 backend +
@@ -11,7 +11,7 @@
 //       imageRef: "${ECR_REGISTRY}/user-svc:${IMAGE_TAG}",
 //       dockerfile: 'app/backend/user-svc/Dockerfile',
 //       context: '.',
-//       target: 'app',              // optional — omit for single-stage builds (frontend)
+//       target: 'runtime',          // optional — omit for single-stage builds (frontend, gateway)
 //       trivyImage: env.TRIVY_IMAGE
 //   )
 

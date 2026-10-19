@@ -1,4 +1,4 @@
-// jenkins/shared-library/vars/ensureKubernetesAccess.groovy
+// vars/ensureKubernetesAccess.groovy
 //
 // Single implementation shared by Jenkinsfile.app-cicd and Jenkinsfile.platform-infra.
 //

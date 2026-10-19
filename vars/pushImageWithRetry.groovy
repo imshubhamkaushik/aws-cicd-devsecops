@@ -1,4 +1,4 @@
-// jenkins/shared-library/vars/pushImageWithRetry.groovy
+// vars/pushImageWithRetry.groovy
 //
 // Pushes a single image reference to ECR, retrying on transient failures
 // (throttling, brief auth-token expiry). Kept as its own step so the retry

@@ -1,9 +1,9 @@
-// jenkins/shared-library/vars/getChangedServices.groovy
+// vars/getChangedServices.groovy
 //
 // Returns the subset of `services` whose source changed since the last commit that
-// this job BUILT SUCCESSFULLY. Used to skip the expensive test stage for services
-// no one touched — NOT used to skip Docker build/scan/push (see Jenkinsfile
-// header comment on why every image still gets built+pushed every run).
+// this job BUILT SUCCESSFULLY. Jenkinsfile.app-cicd uses it to decide which services get
+// tested AND which images get rebuilt, scanned and pushed (unchanged services keep their
+// live image tag). FORCE_ALL_TESTS / FORCE_ALL_BUILDS override it.
 //
 // Baseline = env.GIT_PREVIOUS_SUCCESSFUL_COMMIT (set by the Jenkins Git plugin), not HEAD~1:
 // diffing against the last green build means a multi-commit push, a shared-file change in an
@@ -21,8 +21,6 @@
 //   def changed = getChangedServices(BACKEND_SERVICES, [prefix: 'app/backend/'])
 //   def changedFrontend = getChangedServices(['frontend'], [prefix: 'app/'])
 // Optional: [baseCommit: '<sha>'] overrides the baseline (used by tests).
-//
-// Tests: groovy vars/test/GetChangedServicesTest.groovy
 
 def call(List<String> services, Map opts = [:]) {
     String prefix = opts.prefix ?: ''
