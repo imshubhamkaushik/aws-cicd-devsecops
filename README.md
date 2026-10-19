@@ -1,5 +1,7 @@
 # Catalogix
 
+[![CI](https://github.com/imshubhamkaushik/aws-cicd-devsecops/actions/workflows/ci.yml/badge.svg)](https://github.com/imshubhamkaushik/aws-cicd-devsecops/actions/workflows/ci.yml)
+
 An e-commerce application made of seven Spring Boot services, a React front end and an Nginx gateway, plus the delivery platform around it: Terraform, Ansible, Jenkins, Helm on Amazon EKS, security scanning and monitoring.
 
 The application is deliberately modest in business logic. It is big enough to need real delivery engineering (several services, a database, a message broker, service-to-service authentication) and small enough that the platform stays the focus.
@@ -240,6 +242,8 @@ Some files stay at the repository root because the tool that reads them looks th
 
 ## Running on AWS
 
+**Before anything else:** S3 bucket names are global, so pick your own state bucket name once: `bash scripts/bash/rename-state-bucket.sh catalogix-tfstate-<your-name>-<digits>`.
+
 Prerequisites: an AWS account (the default region is `ap-south-1`), an AWS CLI profile allowed to create the bootstrap resources (a scoped IAM user is better than AdministratorAccess, and its key should be deleted after bootstrap), and a Linux machine or WSL.
 
 1. **Tools.** `bash scripts/bash/install-all.sh` installs Python if it is missing, then the AWS CLI, Terraform, Ansible, `jq` and `ssh-keygen`. Then `aws configure`.
@@ -314,7 +318,9 @@ Record the exact command, date, and result when these are run. Successful build 
 9. **Database per service on one instance.** Role-level isolation without paying for seven RDS instances. *Trade-off:* it is not failure isolation.
 10. **One shared internal signing key for service-to-service calls.** Seven private keys per environment are more to generate, store and explain than the threat justifies at this size. *Trade-off:* a compromised service could sign a token naming another service. The NetworkPolicy and the caller allowlists narrow what that can reach; per-service keys or mTLS would close it.
 11. **Python for tooling, shell only to install Python.** A bare VM has a shell but not always Python. One short script installs Python, and everything else is Python that behaves the same on apt, dnf, yum and zypper systems. *Trade-off:* the scripts need Python 3.9 or newer.
-12. **No further splitting.** No service discovery, config server or BFF. Kubernetes DNS and the gateway are enough at this scale.
+12. **Access token in `localStorage`, refresh token in an HttpOnly cookie.** The access token lives 15 minutes and the gateway sets a strict CSP (`script-src 'self'`), which is the main defence against the XSS that could read it. The long-lived refresh token, which is the valuable one, is never readable by JavaScript. *Trade-off:* keeping the access token only in memory (and restoring it with the refresh cookie on page load) removes the remaining exposure at the cost of a refresh round-trip on every reload; that is the first change to make if this ever handles real users.
+13. **Actuator on the application port.** Only `/actuator/health/**` and `/actuator/prometheus` are anonymous (probes and Prometheus); every other actuator endpoint needs a valid token, and the NetworkPolicy plus the gateway (which never routes `/actuator`) keep the port internal. *Trade-off:* a separate management port would isolate it fully but touches every probe, ServiceMonitor and NetworkPolicy rule.
+14. **No further splitting.** No service discovery, config server or BFF. Kubernetes DNS and the gateway are enough at this scale.
 
 ---
 
