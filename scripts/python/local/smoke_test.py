@@ -42,17 +42,17 @@ def request(base_url: str, path: str, *, method: str = "GET", body: object | Non
 
 def wait_for(base_url: str, path: str, ok: set[int], timeout_seconds: int, label: str) -> None:
     deadline = time.time() + timeout_seconds
-    status = 0;
-    
+    status = 0
+
     while time.time() < deadline:
         status, _ = request(base_url, path, timeout=5)
-        
+
         if status in ok:
             return
-        
+
         time.sleep(3)
     raise RuntimeError(
-        f"{label} did not become ready within {timeout_seconds}s" 
+        f"{label} did not become ready within {timeout_seconds}s"
         f"(last HTTP {status})."
     )
 

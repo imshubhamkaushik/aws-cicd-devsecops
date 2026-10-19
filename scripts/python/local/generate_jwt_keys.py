@@ -64,33 +64,62 @@ def read_env_key_names(path: Path) -> set[str]:
     return found
 
 
-def update_env(path: Path, updates: dict[str, str]) -> None:
-    if not path.exists():
-        if not ENV_EXAMPLE.is_file():
-            raise RuntimeError(f"Neither {path} nor {ENV_EXAMPLE} exists.")
-        shutil.copyfile(ENV_EXAMPLE, path)
+def _ensure_env_file(path: Path) -> None:
+    """Create the local env file from the example when it does not exist."""
+    if path.exists():
+        return
+    if not ENV_EXAMPLE.is_file():
+        raise RuntimeError(f"Neither {path} nor {ENV_EXAMPLE} exists.")
+    shutil.copyfile(ENV_EXAMPLE, path)
 
-    lines = path.read_text(encoding="utf-8").splitlines()
+
+def _env_assignment_key(line: str) -> str:
+    """Return an assignment's key, or an empty string for comments/blank lines."""
+    return line.split("=", 1)[0].strip() if "=" in line else ""
+
+
+def _is_legacy_key(key: str) -> bool:
+    return key in LEGACY_KEYS or key.startswith("SERVICE_JWT_")
+
+
+def _merge_env_lines(lines: list[str], updates: dict[str, str]) -> list[str]:
+    """Replace each updated key once, drop legacy JWT keys, and append missing keys."""
     result: list[str] = []
     written: set[str] = set()
+
     for line in lines:
-        key = line.split("=", 1)[0].strip() if "=" in line else ""
-        if key in LEGACY_KEYS or key.startswith("SERVICE_JWT_"):
+        key = _env_assignment_key(line)
+        if _is_legacy_key(key):
             continue
-        if key in updates:
-            if key not in written:
-                result.append(f"{key}={updates[key]}")
-                written.add(key)
+        if key not in updates:
+            result.append(line)
             continue
-        result.append(line)
-    for key, value in updates.items():
-        if key not in written:
-            result.append(f"{key}={value}")
-    path.write_text("\n".join(result).rstrip() + "\n", encoding="utf-8")
+        if key in written:
+            continue
+        result.append(f"{key}={updates[key]}")
+        written.add(key)
+
+    result.extend(
+        f"{key}={value}" for key, value in updates.items() if key not in written
+    )
+    return result
+
+
+def _write_private_env(path: Path, lines: list[str]) -> None:
+    """Write normalised env lines and restrict permissions where supported."""
+    path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
     try:
         path.chmod(0o600)
     except OSError:
+        # Some Windows/WSL-mounted filesystems do not support Unix permission modes.
         pass
+
+
+def update_env(path: Path, updates: dict[str, str]) -> None:
+    """Update key assignments while removing obsolete JWT settings."""
+    _ensure_env_file(path)
+    lines = path.read_text(encoding="utf-8").splitlines()
+    _write_private_env(path, _merge_env_lines(lines, updates))
 
 
 def apply_kubernetes_secret(namespace: str, updates: dict[str, str]) -> None:

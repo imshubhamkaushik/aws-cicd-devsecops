@@ -91,8 +91,7 @@ def check_aws_auth():
     # Use subprocess directly — we want to suppress output without affecting
     # run_command's retry/error logic for a simple auth check.
     result = subprocess.run(
-        "aws sts get-caller-identity",
-        shell=True,
+        ["aws", "sts", "get-caller-identity"],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )

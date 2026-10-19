@@ -7,6 +7,7 @@ import tempfile
 import unittest
 from datetime import date
 from pathlib import Path
+from typing import Optional
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from aws import allowlist as a  # noqa: E402
@@ -23,7 +24,8 @@ class FakeS3:
 
     def __init__(self):
         self.objects = {}
-        self.fail_next_put_with = None  # simulate a concurrent writer once
+        # A one-shot simulated S3 error; explicitly typed for Pylance.
+        self.fail_next_put_with: Optional[str] = None
 
     def get_object(self, Bucket, Key):
         if Key not in self.objects:
@@ -32,8 +34,9 @@ class FakeS3:
         return {"Body": io.BytesIO(body), "ETag": etag}
 
     def put_object(self, Bucket, Key, Body, IfMatch=None, IfNoneMatch=None, **_):
-        if self.fail_next_put_with:
-            code, self.fail_next_put_with = self.fail_next_put_with, None
+        if self.fail_next_put_with is not None:
+            code = self.fail_next_put_with
+            self.fail_next_put_with = None
             raise FakeClientError(code)
         if IfNoneMatch == "*" and Key in self.objects:
             raise FakeClientError("PreconditionFailed")
@@ -153,8 +156,11 @@ class StoreTests(unittest.TestCase):
         class NoBucket(FakeS3):
             def get_object(self, Bucket, Key):
                 raise FakeClientError("NoSuchBucket")
+        # Keep setup outside assertRaises so only the expected operation is inside it.
+        client = NoBucket()
+        store = a.Store(client)
         with self.assertRaises(a.AllowlistError) as ctx:
-            a.Store(NoBucket()).load()
+            store.load()
         self.assertIn("bootstrap.py backend", str(ctx.exception))
 
     def test_corrupt_object_is_reported(self):

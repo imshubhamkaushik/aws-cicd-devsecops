@@ -108,7 +108,7 @@ Rotating JWT keys invalidates tokens issued with the previous keys. The key-gene
 
 ```bash
 python3 -m unittest discover -s scripts/python/tests -v
-cd scripts/python && ruff check --select E,F,W,S .
+cd scripts/python && ruff check .
 python3 scripts/python/ci/check_helm_image_tags.py infra/helm/catalogix-hc/values-dev.yaml
 ```
 

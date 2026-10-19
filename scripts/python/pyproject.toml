@@ -4,12 +4,15 @@ target-version = "py39"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "S"]
+# Cosmetic only: long user-facing messages are more readable on one line.
+ignore = ["E501"]
 
 # Narrow exceptions for operator-run AWS CLIs. Directly executable files add scripts/python to
 # sys.path before importing shared helpers, so E402 is expected in those entry points. Commands
 # use argv arrays (the shared runner no longer invokes a shell); only reviewed subprocess/path
 # rules are relaxed where invoking the operator-installed CLI is intentional.
 [tool.ruff.lint.per-file-ignores]
+"aws/allowlist.py" = ["E402"]
 "aws/bootstrap.py" = ["E402", "S603", "S607"]
 "aws/bootstrap_infra.py" = ["E402", "S603", "S607"]
 "aws/backend_bootstrap.py" = ["E402", "S603", "S607"]
@@ -17,9 +20,14 @@ select = ["E", "F", "W", "S"]
 "aws/ansible_runner.py" = ["E402", "S603", "S607"]
 # credentials.py only calls the `aws` CLI with fixed argument lists (no shell, no untrusted input);
 # passwords travel through a 0600 temp file, never the command line. The tests use fake passwords.
-"aws/credentials.py" = ["E402", "S603", "S607"]
-"tests/*" = ["S105", "S106", "S108"]
 "common/command.py" = ["S603"]
 # local/ are local-only helpers: fixed argv lists (no shell), executables resolved with shutil.which,
 # and urllib only talks to http(s) URLs on localhost.
 "local/*" = ["S603", "S607", "S310", "S105"]
+# Same pattern everywhere below: fixed argv lists, no shell, no untrusted input.
+"ci/*" = ["S603", "S607"]
+"setup/*" = ["S603", "S607"]
+"install_tools.py" = ["S603", "S607", "S310"]  # downloads only pinned https release URLs
+"common/venv.py" = ["S606"]  # re-executes this same interpreter inside the project venv
+"aws/credentials.py" = ["E402", "S603", "S607", "S105"]  # S105: a secret *name*, not a secret
+"tests/*" = ["S105", "S106", "S108", "S324", "S603", "S607"]  # md5 is only a fake S3 ETag

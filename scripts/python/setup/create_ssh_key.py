@@ -9,6 +9,45 @@ import sys
 from pathlib import Path
 
 
+def handle_existing_key_pair(key_path: Path, public_path: Path, force: bool) -> int | None:
+    """Confirm replacement of an existing key pair; return an exit code if cancelled."""
+    if not (key_path.exists() or public_path.exists()):
+        return None
+
+    print(f"An SSH key file already exists at {key_path} or {public_path}.")
+    if not force:
+        if not sys.stdin.isatty():
+            print(
+                "Refusing to replace it non-interactively. Re-run with --force if rotation is intended.",
+                file=sys.stderr,
+            )
+            return 2
+        answer = input("Replacing it can break access to existing EC2 instances. Type 'yes' to replace: ").strip()
+        if answer != "yes":
+            print("Existing key pair preserved; nothing changed.")
+            return 0
+
+    key_path.unlink(missing_ok=True)
+    public_path.unlink(missing_ok=True)
+    return None
+
+
+def print_next_steps(key_path: Path, public_path: Path) -> None:
+    """Print guidance for configuring the public key in Terraform."""
+    default_key = (Path.home() / ".ssh" / "catalogix-key").resolve()
+    print("\nNext steps:")
+    print(f'  - Optional: set public_key = file("{public_path}") in infra/terraform/bootstrap-infra/terraform.tfvars.')
+    if key_path == default_key:
+        print("  - The bootstrap uses ~/.ssh/catalogix-key.pub by default.")
+    else:
+        print(
+            f'  - For a custom path, set public_key = file("{public_path}") '
+            "in infra/terraform/bootstrap-infra/terraform.tfvars."
+        )
+    print("  - Do not replace this key after provisioning unless you also plan to update server access.")
+    print("  - For multiple operators, use individual keys or AWS Systems Manager Session Manager.")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -38,18 +77,9 @@ def main(argv: list[str] | None = None) -> int:
         # chmod semantics vary on Windows/WSL-mounted filesystems; creation must still be reported.
         pass
 
-    if key_path.exists() or public_path.exists():
-        print(f"An SSH key file already exists at {key_path} or {public_path}.")
-        if not args.force:
-            if not sys.stdin.isatty():
-                print("Refusing to replace it non-interactively. Re-run with --force if rotation is intended.", file=sys.stderr)
-                return 2
-            answer = input("Replacing it can break access to existing EC2 instances. Type 'yes' to replace: ").strip()
-            if answer != "yes":
-                print("Existing key pair preserved; nothing changed.")
-                return 0
-        key_path.unlink(missing_ok=True)
-        public_path.unlink(missing_ok=True)
+    replacement_result = handle_existing_key_pair(key_path, public_path, args.force)
+    if replacement_result is not None:
+        return replacement_result
 
     print(f"Generating an Ed25519 SSH key at {key_path} ...")
     result = subprocess.run(
@@ -69,14 +99,7 @@ def main(argv: list[str] | None = None) -> int:
 
     print(f"Private key: {key_path} (target mode 400; keep private)")
     print(f"Public key:  {public_path} (target mode 644; this is the key Terraform receives)")
-    print("\nNext steps:")
-    print(f"  - Optional: set public_key = file(\"{public_path}\") in infra/terraform/bootstrap-infra/terraform.tfvars.")
-    if key_path == (Path.home() / ".ssh" / "catalogix-key").resolve():
-        print("  - The bootstrap uses ~/.ssh/catalogix-key.pub by default.")
-    else:
-        print(f'  - For a custom path, set public_key = file("{public_path}") in infra/terraform/bootstrap-infra/terraform.tfvars.')
-    print("  - Do not replace this key after provisioning unless you also plan to update server access.")
-    print("  - For multiple operators, use individual keys or AWS Systems Manager Session Manager.")
+    print_next_steps(key_path, public_path)
     return 0
 
 

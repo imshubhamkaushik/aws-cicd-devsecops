@@ -166,31 +166,28 @@ def run_standard_action(
     )
 
 
-def main() -> int:
+def main() -> None:
     """Run the Maven test/build/verify workflow."""
     args = parse_args()
 
     if args.list_services:
         list_services()
-        return 0
+        return
 
     require_command(
         "mvn",
         "Install Maven 3.9+ and JDK 21 and add them to PATH.",
     )
 
-    if not args.list_services:
-        if args.action in ("verify", "clean-verify") and not args.skip_it:
-            require_docker()
+    if args.action in ("verify", "clean-verify") and not args.skip_it:
+        require_docker()
 
-        extra = ["-DskipITs"] if args.skip_it else []
+    extra = ["-DskipITs"] if args.skip_it else []
 
-        if args.action == "clean-verify":
-            run_clean_verify(args, extra)
-        else:
-            run_standard_action(args, extra)
-
-    return 0
+    if args.action == "clean-verify":
+        run_clean_verify(args, extra)
+    else:
+        run_standard_action(args, extra)
 
 
 if __name__ == "__main__":

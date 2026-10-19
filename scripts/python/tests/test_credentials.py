@@ -186,7 +186,7 @@ class CommandLine(unittest.TestCase):
             self.assertEqual(c.cmd_migrate_legacy("dev", "ap-south-1"), 0)
         self.assertEqual({row[0] for row in writes}, self.categories)
         self.assertEqual(len(writes), 3)
-        self.assertEqual(writes[0][2], False)
+        self.assertFalse(writes[0][2])  # first write is a create, not an update
 
 
 class DeleteCommand(unittest.TestCase):

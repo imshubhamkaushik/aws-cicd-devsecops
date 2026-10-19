@@ -16,6 +16,8 @@ import argparse
 
 from helpers import main_guard, run_python
 
+COMPOSE_SCRIPT = "compose.py"
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run the complete local Catalogix DevSecOps gate.")
@@ -55,14 +57,14 @@ def main() -> int:
         # Image building is a smoke-test prerequisite, not a side effect of Trivy.
         # Skipping vulnerability scanning must not skip the image build the next step needs.
         print("\n##### BUILD APPLICATION IMAGES (Trivy skipped) #####")
-        run_python("compose.py", "build")
+        run_python(COMPOSE_SCRIPT, "build")
 
     if not args.skip_smoke:
         print("\n##### 6/6 COMPOSE + SMOKE TEST #####")
-        run_python("compose.py", "start", "--no-build")
+        run_python(COMPOSE_SCRIPT, "start", "--no-build")
         run_python("smoke_test.py")
         if args.shutdown:
-            run_python("compose.py", "stop")
+            run_python(COMPOSE_SCRIPT, "stop")
 
     print("\nCatalogix DevSecOps gate PASSED.")
     return 0
