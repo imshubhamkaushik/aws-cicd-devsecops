@@ -404,7 +404,7 @@ class CheckoutSvcTest {
 
     @Test
 
-    void createOrderReleasesAReservationThatFailedAmbiguously_namingTheReservationItUndoes() {
+    void createOrderReleasesTheReservationWhenFailureIsAmbiguous() {
 
         // A timeout: checkout cannot know whether inventory-svc applied the
         // reservation.

@@ -83,7 +83,7 @@ class AuthFlowIntegrationTest {
     TestRestTemplate rest;
 
     @Test
-    void aBrandNewUserCanRegisterAndThenLogIn_withNoAuthorizationHeaderOnEitherCall() {
+    void aBrandNewUserCanRegisterAndThenLogInWithNoAuthorizationHeaderOnEitherCall() {
         // TestRestTemplate sends no Authorization header unless told to, exactly like a browser
         // for a user who has never logged in.
 
@@ -101,9 +101,6 @@ class AuthFlowIntegrationTest {
                 new HttpEntity<>(registerBody),
                 new ParameterizedTypeReference<Map<String, Object>>() {}
         );
-
-        System.out.println("REGISTER STATUS = " + registerResponse.getStatusCode().value());
-        System.out.println("REGISTER BODY   = " + registerResponse.getBody());
 
         assertThat(registerResponse.getStatusCode().value())
                 .as("registration must succeed with no Authorization header — "
@@ -129,7 +126,7 @@ class AuthFlowIntegrationTest {
     }
 
     @Test
-    void theFixDoesNotFailOpen_protectedEndpointsStillRejectRequestsWithNoToken() {
+    void theFixDoesNotFailOpenProtectedEndpointsStillRejectRequestsWithNoToken() {
         // The other half of this regression test: shouldNotFilter's new
         // publicPaths check must exempt only the exact configured paths,
         // not accidentally the whole service. /users/me is deliberately
@@ -146,7 +143,7 @@ class AuthFlowIntegrationTest {
     }
 
     @Test
-    void loginWithWrongPasswordStillFails_thePublicPathDoesNotBypassCredentialChecking() {
+    void loginWithWrongPasswordStillFailsThePublicPathDoesNotBypassCredentialChecking() {
         // Exempting /users/login from JwtAuthFilter must not be confused
         // with exempting it from actually checking the password —
         // shouldNotFilter only controls whether a Bearer token is

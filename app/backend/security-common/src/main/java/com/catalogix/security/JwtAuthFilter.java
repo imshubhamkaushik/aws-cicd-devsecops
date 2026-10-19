@@ -66,8 +66,13 @@ public class JwtAuthFilter extends OncePerRequestFilter {
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
         String path = request.getRequestURI();
+        // Only what Kubernetes probes and Prometheus need is anonymous. Every other actuator
+        // endpoint (metrics, info, circuitbreakers) shares the application port, so it must
+        // present a valid token like any other path.
         return path.equals("/health")
-                || path.startsWith("/actuator")
+                || path.equals("/actuator/health")
+                || path.startsWith("/actuator/health/")
+                || path.equals("/actuator/prometheus")
                 || publicPaths.contains(path)
                 || isCorsPreflight(request);
     }

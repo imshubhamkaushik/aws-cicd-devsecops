@@ -167,7 +167,7 @@ class CheckoutPaymentIntegrationTest {
     }
 
     @Test
-    void twoConcurrentPaymentsForOneOrderChargeExactlyOnce_evenWithDifferentIdempotencyKeys() throws Exception {
+    void twoConcurrentPaymentsForOneOrderChargeExactlyOnceEvenWithDifferentIdempotencyKeys() throws Exception {
         long userId = newUserId();
         Long orderId = placeOrder(userId);
 

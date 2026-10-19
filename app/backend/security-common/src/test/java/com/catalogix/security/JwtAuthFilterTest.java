@@ -30,7 +30,7 @@ class JwtAuthFilterTest {
     // ── shouldNotFilter ─────────────────────────────────────────────────
 
     @Test
-    void exemptsHealthAndActuatorByDefault_evenWithNoPublicPathsConfigured() {
+    void exemptsHealthAndActuatorByDefaultEvenWithNoPublicPathsConfigured() {
         JwtAuthFilter filter = new JwtAuthFilter(jwtService, "");
 
         assertThat(filter.shouldNotFilter(requestTo("/health"))).isTrue();
@@ -39,7 +39,18 @@ class JwtAuthFilterTest {
     }
 
     @Test
-    void requiresAuthOnEverythingElseByDefault_whenNoPublicPathsConfigured() {
+    void requiresAuthOnOtherActuatorEndpoints() {
+        // They share the application port, so only health + prometheus may be anonymous.
+        JwtAuthFilter filter = new JwtAuthFilter(jwtService, "");
+
+        assertThat(filter.shouldNotFilter(requestTo("/actuator/health/liveness"))).isTrue();
+        assertThat(filter.shouldNotFilter(requestTo("/actuator/metrics"))).isFalse();
+        assertThat(filter.shouldNotFilter(requestTo("/actuator/info"))).isFalse();
+        assertThat(filter.shouldNotFilter(requestTo("/actuator/circuitbreakers"))).isFalse();
+    }
+
+    @Test
+    void requiresAuthOnEverythingElseByDefaultWhenNoPublicPathsConfigured() {
         // This is the exact configuration every service except user-svc
         // runs with (no security.public-paths set) — everything requires a
         // Bearer token, by design. Only user-svc has pre-auth endpoints.
@@ -50,7 +61,7 @@ class JwtAuthFilterTest {
     }
 
     @Test
-    void exemptsConfiguredPublicPaths_butOnlyThoseExactPaths() {
+    void exemptsConfiguredPublicPathsButOnlyThoseExactPaths() {
         // Mirrors backend/user-svc/src/main/resources/application.properties'
         // real security.public-paths value, including its whitespace style,
         // to make sure trimming works the same way it will in production.
@@ -78,7 +89,7 @@ class JwtAuthFilterTest {
     // ── doFilterInternal ────────────────────────────────────────────────
 
     @Test
-    void rejectsRequestWithNoAuthorizationHeader_onANonExemptPath() throws Exception {
+    void rejectsRequestWithNoAuthorizationHeaderOnANonExemptPath() throws Exception {
         JwtAuthFilter filter = new JwtAuthFilter(jwtService, "");
         MockHttpServletRequest request = requestTo("/products");
         MockHttpServletResponse response = new MockHttpServletResponse();
@@ -105,7 +116,7 @@ class JwtAuthFilterTest {
         FilterChain chain = mock(FilterChain.class);
 
         assertThat(filter.shouldNotFilter(request)).isTrue();
-        chain.doFilter(request, response);
+        filter.doFilter(request, response, chain);
 
         verify(chain, times(1)).doFilter(request, response);
     }

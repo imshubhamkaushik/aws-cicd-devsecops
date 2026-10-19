@@ -131,7 +131,7 @@ class UserSvcTest {
     }
 
     @Test
-    void registerNeverGrantsAHigherRole_evenForAnAdminLookingEmail() {
+    void registerNeverGrantsAHigherRoleEvenForAnAdminLookingEmail() {
         // There is no email allow-list any more: nobody can become an admin by
         // registering. Only an existing admin can assign roles (see assignRole tests).
         for (String email : new String[] {"Admin@Example.com", "admin@catalogix.local", "root@admin.com"}) {
@@ -570,7 +570,7 @@ class UserSvcTest {
     // ---- becomeSeller (a REQUEST — an admin decides) ----
 
     @Test
-    void becomeSellerOnlyRecordsAPendingRequest_itNeverGrantsTheRole() {
+    void becomeSellerOnlyRecordsAPendingRequestItNeverGrantsTheRole() {
         User u = sampleUser(1L, TEST_EMAIL, HASHED_SECRET);
         u.setRole("USER");
         when(repo.findById(1L)).thenReturn(Optional.of(u));

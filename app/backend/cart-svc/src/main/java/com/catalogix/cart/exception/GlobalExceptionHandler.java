@@ -1,5 +1,8 @@
 package com.catalogix.cart.exception;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -15,6 +18,8 @@ import java.util.Map;
 // services; the frontend reads `message`.
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
     private static final String MESSAGE = "message";
     private static final String TIMESTAMP = "timestamp";
@@ -63,6 +68,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Map<String, Object>> handleAll(Exception ex) {
+        log.error("Unhandled exception while processing request", ex);
         Map<String, Object> body = new HashMap<>();
         body.put(MESSAGE, "Internal server error");
         body.put(TIMESTAMP, Instant.now().toString());

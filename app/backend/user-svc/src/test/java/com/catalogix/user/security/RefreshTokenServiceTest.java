@@ -73,7 +73,7 @@ class RefreshTokenServiceTest {
     }
 
     @Test
-    void rotateRejectsASessionOlderThanTheAbsoluteLimit_eventIfTheTokenItselfIsFresh() {
+    void rotateRejectsASessionOlderThanTheAbsoluteLimitEvenIfTheTokenItselfIsFresh() {
         Instant startedTooLongAgo = Instant.now().minus(Duration.ofDays(31));
         when(repo.findByTokenHash("hash(old-raw-token)")).thenReturn(Optional.of(activeToken(11L, startedTooLongAgo)));
         when(repo.revokeIfActive(11L)).thenReturn(1);

@@ -31,20 +31,22 @@ public class UserEventPublisher {
     @Async
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onEmailVerificationRequested(EmailVerificationRequestedEvent event) {
-        publish("user.email-verification-requested", event, event.userEmail());
+        publish("user.email-verification-requested", event);
     }
 
     @Async
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onPasswordResetRequested(PasswordResetRequestedEvent event) {
-        publish("user.password-reset-requested", event, event.userEmail());
+        publish("user.password-reset-requested", event);
     }
 
-    private void publish(String routingKey, Object event, String userEmail) {
+    private void publish(String routingKey, Object event) {
         try {
             rabbitTemplate.convertAndSend(RabbitMQConfig.EVENTS_EXCHANGE, routingKey, event);
         } catch (RuntimeException e) {
-            log.warn("Failed to publish {} for {}: {}", routingKey, userEmail, e.getMessage());
+            // Do not put email addresses into application logs. Keep the exception server-side
+            // so operators can diagnose broker connectivity without logging the recipient.
+            log.warn("Failed to publish {} event", routingKey, e);
         }
     }
 }

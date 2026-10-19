@@ -150,7 +150,7 @@ class PaymentIdempotencyIntegrationTest {
      * charge. If payment-svc later gains a one-success-per-order guard, this test should be inverted.
      */
     @Test
-    void differentKeysForTheSameOrderAreBothCharged_soCheckoutMustSerialisePerOrder() {
+    void differentKeysForTheSameOrderAreBothChargedSoCheckoutMustSerializePerOrder() {
         long user = SEQ.incrementAndGet(), order = SEQ.incrementAndGet();
 
         svc.process(card(order, "4242", "100.00"), user, "order-key-a");
