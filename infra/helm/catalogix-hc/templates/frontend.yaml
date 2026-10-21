@@ -23,6 +23,7 @@ spec:
         app: frontend
     spec:
       terminationGracePeriodSeconds: {{ .Values.global.terminationGracePeriodSeconds | default 45 }}
+      {{- include "catalogix.topologySpread" "frontend" | nindent 6 }}
       securityContext:
         runAsNonRoot: true
         fsGroup: 1000

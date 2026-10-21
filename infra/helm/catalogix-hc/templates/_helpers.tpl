@@ -279,3 +279,27 @@ Used by secrets-local.yaml so `helm upgrade` does not rotate credentials.
 {{- define "catalogix.keep" -}}
 {{- if hasKey .data .key }}{{ index .data .key | b64dec }}{{ else }}{{ randAlphaNum .len }}{{ end -}}
 {{- end }}
+
+{{/*
+catalogix.topologySpread
+Spread a workload's replicas across availability zones and nodes so one node or zone failure
+cannot take every replica down. Both rules are soft (ScheduleAnyway): the scheduler prefers an
+even spread but never leaves a pod Pending, so a small or single-node cluster still works.
+Argument: the value of the pod's `app` label.
+Usage: {{ include "catalogix.topologySpread" $name | nindent 6 }}
+*/}}
+{{- define "catalogix.topologySpread" -}}
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: topology.kubernetes.io/zone
+    whenUnsatisfiable: ScheduleAnyway
+    labelSelector:
+      matchLabels:
+        app: {{ . }}
+  - maxSkew: 1
+    topologyKey: kubernetes.io/hostname
+    whenUnsatisfiable: ScheduleAnyway
+    labelSelector:
+      matchLabels:
+        app: {{ . }}
+{{- end -}}

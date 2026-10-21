@@ -124,7 +124,7 @@ pipeline {
                 sh '''
                 set -e
                 cd scripts/python
-                ruff check --select E,F,W,S .
+                ruff check .
                 '''
             }
         }
@@ -205,9 +205,11 @@ pipeline {
                 set -e
                 docker run --rm \\
                   -v \$(pwd)/${HELM_CHART_DIR}:/chart \\
+                  -v \$(pwd)/.trivyignore:/.trivyignore \\
                   ${TRIVY_IMAGE} config \\
                   --severity HIGH,CRITICAL \\
                   --exit-code 1 \\
+                  --ignorefile /.trivyignore \\
                   /chart
                 """
             }

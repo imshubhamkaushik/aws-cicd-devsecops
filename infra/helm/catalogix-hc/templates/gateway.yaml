@@ -23,6 +23,7 @@ spec:
         app: gateway
     spec:
       terminationGracePeriodSeconds: {{ .Values.global.terminationGracePeriodSeconds | default 45 }}
+      {{- include "catalogix.topologySpread" "gateway" | nindent 6 }}
       securityContext:
         runAsNonRoot: true
         fsGroup: 1000

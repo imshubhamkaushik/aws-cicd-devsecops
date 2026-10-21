@@ -49,6 +49,7 @@ Email: the chart does not deploy a mail server. Dev points `MAIL_HOST` at `mailp
 | Startup probe (up to 300 s: 60 failures x 5 s), readiness and liveness probes against Actuator | `catalogix.probes` |
 | `wait-for-postgres` and, for services that use it, `wait-for-rabbitmq` init containers (TCP check only) | `catalogix.waitForDeps` |
 | Rolling update with `maxUnavailable: 0`, `preStop` sleep (10 s) and a 45 s grace period | Deployments, `catalogix.lifecycle` (needs Kubernetes 1.30 or later) |
+| Soft topology spread across zones and nodes, so a node or zone failure cannot take every replica down; never leaves a pod Pending | `catalogix.topologySpread` (backends, frontend, gateway) |
 | Per-service database role, so one service cannot read another's database | `catalogix.commonEnv` (`db_user_<svc>`, `db_password_<svc>`) |
 | Only user-svc receives the user-token private key | `catalogix.commonEnv` |
 | Resource requests and limits on every container | values files |

@@ -10,6 +10,10 @@ Job definitions live in [`../ansible/roles/jenkins/templates/jcasc.yaml`](../ans
 | `app-cicd` | `Jenkinsfile.app-cicd` | Successful `main` gate, or explicit manual override | Changed-service tests, Sonar quality gate, image build and Trivy scan, ECR push, Helm deploy, runtime verification |
 | `platform-infra` | `Jenkinsfile.platform-infra` | Manual only | Terraform plan/approval/apply or explicitly approved destroy; deploy/verify monitoring |
 
+To run all three in order for the first time, follow [../../docs/RUNBOOK.md](../../docs/RUNBOOK.md).
+
+**First run of a parameterised job.** Jenkins reads the parameters of `platform-infra` and `app-cicd` from their Jenkinsfiles, so until each job has run once the UI offers **Build Now** instead of **Build with Parameters**. Run it once, let the first stage start, abort it, and the parameter form appears. A green gate on `main` starts `app-cicd` automatically; before the platform exists that run fails early at *Ensure Kubernetes Access*, which is expected.
+
 ## Quality/security gate
 
 This job runs checks that do not need a live cluster or newly built application images: Gitleaks, Hadolint, Terraform formatting and Trivy IaC scan, Ansible lint, Ruff security/style checks, Python unit tests, Helm dependency build/lint/rendering, kubeconform, Helm image-tag contract validation, Trivy chart scan, and ShellCheck. Keep each check in one pipeline only.
@@ -42,6 +46,18 @@ Important stages: checkout the exact gated commit; authenticate to AWS; detect c
 `FORCE_ALL_TESTS` broadens test selection only. A change to `security-common` still triggers all backend tests and image rebuilds because every backend depends on that module. A first deploy or `FORCE_ALL_BUILDS` also builds all images.
 
 ## `Jenkinsfile.platform-infra`
+
+Parameters:
+
+| Parameter | Default | Meaning |
+|---|---|---|
+| `ACTION` | `Apply` | `Apply` provisions and deploys monitoring; `Destroy` tears the platform down |
+| `ENV` | `dev` | Environment and cluster. Staging is illustrative |
+| `ALERT_EMAIL_TO`, `SMTP_HOST`, `SMTP_USERNAME` | empty | Critical-alert email settings (`host:port` for the smarthost). Leave all empty to keep alert email disabled. The SMTP password is not a parameter; it comes from Secrets Manager |
+| `DEPLOY_APP_AFTER_INFRA` | false | After a successful apply, wait for External Secrets and start `app-cicd` for the same commit |
+| `CONFIRM_DESTROY` | false | Required when `ACTION=Destroy`; the run aborts before touching AWS without it |
+
+Stages for `Apply`: clean workspace, checkout, check the bootstrap state and the operator credentials, `terraform init`, `validate`, `plan -detailed-exitcode`, approval (skipped when the plan has no changes), apply, write the kubeconfig, wait for the node group, nodes and CoreDNS, install metrics-server, install and verify the monitoring chart. Stages for `Destroy`: safety gate, destroy plan, a second approval, Helm releases and monitoring volumes removed, wait for the load balancers to disappear, `terraform destroy`, and (dev only) deletion of the three operator-credential secrets.
 
 This is manually triggered. `ACTION=Apply` runs Terraform format/init/validate/plan, asks for approval when the plan has changes, then verifies EKS and deploys monitoring. `ACTION=Destroy` requires `CONFIRM_DESTROY=true`, displays and approves a destroy plan, removes Kubernetes releases, then destroys the Terraform-managed platform. ECR repositories are now part of this dev platform's destroy lifecycle and `force_delete=true` allows tagged images to be removed; rebuild images before redeploying. Keep the separate bootstrap/state infrastructure intact.
 

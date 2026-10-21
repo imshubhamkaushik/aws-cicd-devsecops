@@ -30,6 +30,7 @@ spec:
     spec:
       # preStop sleep + graceful drain (server.shutdown=graceful) must fit in here.
       terminationGracePeriodSeconds: {{ $.Values.global.terminationGracePeriodSeconds | default 45 }}
+      {{- include "catalogix.topologySpread" $name | nindent 6 }}
       {{- include "catalogix.waitForDeps" (dict "svc" $svc "root" $) | nindent 6 }}
       securityContext:
         runAsNonRoot: true

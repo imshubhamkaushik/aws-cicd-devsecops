@@ -70,7 +70,7 @@ Plugins are listed in `roles/jenkins/files/plugins.yaml`: Docker Pipeline, Confi
 | `group_vars/jenkins/vars.yaml` | `jenkins_admin_user`, `git_repo_url` | **Set `git_repo_url` to your own repository.** It is marked `UPDATE THIS` and is where Jenkins clones from and loads the shared library from |
 | `group_vars/all/vault.yaml` (encrypted) | `vault_jenkins_admin_password`, `vault_github_token`, `vault_sonar_admin_password`, `vault_sonar_token` | Created interactively by `bootstrap.py ansible`. `vault_sonar_token` starts empty and is filled in by the `sonarqube` role |
 
-The vault password is stored in `~/.vault_pass` (mode 600). `vault.yaml` is git-ignored through the repository's ignore rules for secrets; never commit it unencrypted. The GitHub token needs permission to read the repository.
+The vault password is stored in `~/.vault_pass` (mode 600). `vault.yaml` is encrypted, but it still must not be committed: add `infra/ansible/group_vars/all/vault.yaml` to the root `.gitignore` before the first commit (the runbook does this in phase B). The GitHub token needs permission to read the repository.
 
 ## Checks
 

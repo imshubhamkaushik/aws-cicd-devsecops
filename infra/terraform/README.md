@@ -53,7 +53,7 @@ Creates the VPC (two public and two private subnets across `ap-south-1a` and `ap
 ```bash
 cd infra/terraform/bootstrap-infra
 cp terraform.tfvars.example terraform.tfvars      # optional; by hand pass the SSH key with TF_VAR_public_key
-(cd ../../../scripts/python && python3 allowlist.py sync)   # adds your current IP to the allowlist and writes allowed_cidrs.auto.tfvars.json
+python3 ../../../scripts/python/aws/allowlist.py sync        # adds your current IP to the allowlist and writes allowed_cidrs.auto.tfvars.json
 terraform init
 terraform plan -out=tfplan
 terraform apply tfplan
@@ -126,7 +126,15 @@ Then destroy the bootstrap layer with `python3 scripts/python/aws/destroy_infra.
 
 ## State bucket name
 
-The bucket name `catalogix-tfstate` is written literally because Terraform backend blocks cannot use variables. To use another name, replace it in all of these:
+S3 bucket names are global, so `catalogix-tfstate` is probably taken: choose your own before the first apply. The name is written literally because Terraform backend blocks cannot use variables. From the repository root, one command replaces it everywhere it matters:
+
+```bash
+OLD=catalogix-tfstate; NEW=catalogix-tfstate-<your-name>-<digits>
+grep -rlI "$OLD" infra scripts --include='*.tf' --include='*.py' --include='*.example' \
+     --include='Jenkinsfile*' --include='*.md' | xargs sed -i "s/$OLD/$NEW/g"
+```
+
+The files it changes are:
 
 - `infra/terraform/backend-bootstrap/main.tf`
 - `infra/terraform/bootstrap-infra/providers.tf`
@@ -135,7 +143,7 @@ The bucket name `catalogix-tfstate` is written literally because Terraform backe
 - `infra/terraform/platform-infra/env/staging/providers.tf` and `env/staging/main.tf`
 - `infra/jenkins/Jenkinsfile.platform-infra` (the bootstrap state check)
 - `scripts/python/aws/allowlist.py` (or set `TFSTATE_BUCKET` in the environment)
-- `scripts/python/aws/backend_bootstrap.py`
+- `infra/terraform/backend-bootstrap/terraform.tfvars.example` (a comment)
 
 The region `ap-south-1` is set in the same files plus the variable defaults.
 

@@ -466,6 +466,7 @@ pipeline {
                         -e SONAR_AUTH_TOKEN \\
                         ${SONAR_SCANNER_IMAGE} \\
                         -Dsonar.projectKey=catalogix \\
+                        -Dsonar.projectVersion=${IMAGE_TAG} \\
                         -Dsonar.host.url=\$SONAR_HOST_URL \\
                         -Dsonar.token=\$SONAR_AUTH_TOKEN
                     """
@@ -630,6 +631,18 @@ pipeline {
 
         stage('Deploy to EKS using Helm') {
             steps {
+                script {
+                    // Rollback bookkeeping (see post { failure } below):
+                    //  * PREVIOUS_REVISION = the revision that is healthy and live RIGHT NOW.
+                    //    Empty on a first install, or when the live release is itself 'failed'.
+                    //  * DEPLOY_STARTED   = proves we got far enough to change the cluster.
+                    env.PREVIOUS_REVISION = sh(
+                        script: "helm list --namespace ${K8S_NAMESPACE} --filter '^catalogix\$' -o json | jq -r '[.[] | select(.status==\"deployed\")][0].revision // empty'",
+                        returnStdout: true
+                    ).trim()
+                    env.DEPLOY_STARTED = 'true'
+                    echo "Live revision before this deploy: ${env.PREVIOUS_REVISION ?: '(none)'}"
+                }
                 // All --set arguments come from 'Prepare Helm Arguments'.
                 sh """
                 set -e
@@ -655,50 +668,35 @@ pipeline {
             }
         }
 
-        // Post-deployment verification: check that the application is running and responding correctly after deployment.
+        // Post-deployment verification: print the cluster state, then run the same smoke
+        // script anyone can run by hand (scripts/python/local/smoke_test.py). A failure here fails the
+        // build, which triggers the rollback in post { failure }.
         stage('Post-Deployment Verification') {
             steps {
                 sh """
                 set -e
-
-                echo "===== Application Deployment ====="
-                echo ""
-                echo "<---- Deployment status ---->"
-                kubectl get deployment -n ${K8S_NAMESPACE}
-                echo ""
-                echo "<-- Pod status -->"
-                kubectl get pods -n ${K8S_NAMESPACE}
-                echo ""
-                echo "<-- Services -->"
-                kubectl get svc -n ${K8S_NAMESPACE}
-                echo ""
-                echo "<-- Ingress -->"
-                kubectl get ingress -n ${K8S_NAMESPACE}
-
-                echo ""
-                echo "===== Smoke Test ====="
-
-                ALB_HOST=\$(kubectl get ingress catalogix-gateway-ingress -n ${K8S_NAMESPACE} \\
-                    -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)
-
-                if [ -z "\$ALB_HOST" ]; then
-                    echo "WARNING: ALB hostname not yet assigned — skipping smoke test."
-                else
-                    echo "ALB hostname: \$ALB_HOST"
-                    PASSED=0
-                    for i in \$(seq 1 30); do
-                        HTTP_CODE=\$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "http://\$ALB_HOST/" || echo "000")
-                        if echo "\$HTTP_CODE" | grep -qE '^(200|301|302)\$'; then
-                            echo "Smoke test passed — HTTP \$HTTP_CODE"; PASSED=1; break
-                        fi
-                        echo "Attempt \$i/30 — HTTP \$HTTP_CODE, waiting 10s..."; sleep 10
-                    done
-                    [ "\$PASSED" -eq 0 ] && { echo "ERROR: Smoke test failed after 300s."; exit 1; }
-                fi
+                kubectl get deployment,pods,svc,ingress -n ${K8S_NAMESPACE}
+                """
+                sh """
+                set -e
+                ALB_HOST=''
+                # The ALB hostname can take a few minutes to appear after the first deploy.
+                for i in \$(seq 1 30); do
+                    ALB_HOST=\$(kubectl get ingress catalogix-gateway-ingress -n ${K8S_NAMESPACE} \\
+                        -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)
+                    [ -n "\$ALB_HOST" ] && break
+                    echo "Waiting for ALB hostname (\$i/30)..."; sleep 10
+                done
+                [ -n "\$ALB_HOST" ] || { echo "ERROR: ALB hostname never appeared."; exit 1; }
+                BASE_URL="http://\$ALB_HOST"
+                [ -n "${params.TLS_CERT_ARN}" ] && BASE_URL="https://\$ALB_HOST"
+                # Anonymous checks only: the seed admin password is never given to Jenkins.
+                # --host-header matches the ALB host rule when INGRESS_HOST is set.
+                python3 scripts/python/local/smoke_test.py --base-url "\$BASE_URL" --host-header "${params.INGRESS_HOST}" --anonymous-only --wait 300
                 """
             }
         }
-        
+
         // Optional passive security check; core CI/CD remains build/test/scan/deploy.
         stage('DAST Scan — OWASP ZAP Baseline') {
             when { expression { params.RUN_DAST } }
@@ -734,69 +732,25 @@ pipeline {
         }
 
         failure {
-            echo "Deployment failed - rolling back to last known-good revision..."
-
-            sh """
-            set -e
-
-            echo "=== Pod status ==="
-            kubectl get pods -n ${K8S_NAMESPACE} || true
-
-            echo "=== Events ==="
-            kubectl get events -n ${K8S_NAMESPACE} --sort-by='.lastTimestamp' | tail -30 || true
-
-            echo "=== ExternalSecret status ==="
-            kubectl get externalsecret -n ${K8S_NAMESPACE} || true
-
-            echo "=== Release history ==="
-            helm history catalogix --namespace ${K8S_NAMESPACE} || true
-
-            SUPERSEDED_COUNT=\$(helm history catalogix \\
-                --namespace ${K8S_NAMESPACE} \\
-                --output json 2>/dev/null \\
-                | jq -r '[.[] | select(.status=="superseded")] | length')
-
-            if [ -z "\$SUPERSEDED_COUNT" ] || [ "\$SUPERSEDED_COUNT" = "0" ]; then
-                echo "No previously deployed revision found — skipping rollback."
-            else
-                # `helm rollback catalogix` with no revision number targets
-                # current_revision - 1 — NOT "the last release that actually
-                # worked". The retry loop above calls `helm upgrade --install`
-                # up to 3 times, and Helm records a new revision on every
-                # call whether it succeeds or fails. After a 2nd or 3rd
-                # failed retry, current - 1 is another FAILED attempt from
-                # this same run, not the last known-good deployment — a bare
-                # `helm rollback` here could "roll back" straight into an
-                # equally broken revision. Explicitly resolve the highest
-                # revision number still marked "superseded" (the actual
-                # last-good release, which is what SUPERSEDED_COUNT above
-                # was already checking for) and target it by number instead
-                # of relying on rollback's implicit "previous" default.
-                LAST_GOOD_REVISION=\$(helm history catalogix \\
-                    --namespace ${K8S_NAMESPACE} \\
-                    --output json 2>/dev/null \\
-                    | jq -r '[.[] | select(.status=="superseded")] | max_by(.revision) | .revision')
-
-                if [ -z "\$LAST_GOOD_REVISION" ] || [ "\$LAST_GOOD_REVISION" = "null" ]; then
-                    echo "Could not resolve a specific last-good revision number despite \$SUPERSEDED_COUNT superseded entries — refusing to guess. Manual rollback required: 'helm rollback catalogix <revision> -n ${K8S_NAMESPACE}'."
-                    exit 1
-                fi
-
-                echo "Found \$SUPERSEDED_COUNT superseded revision(s) — rolling back to revision \$LAST_GOOD_REVISION ..."
-                if ! helm rollback catalogix \$LAST_GOOD_REVISION --namespace ${K8S_NAMESPACE}; then
-                    echo "========================================================="
-                    echo "  ROLLBACK FAILED — manual intervention required"
-                    echo "  Cluster may be in a partially broken state."
-                    echo "========================================================="
-                    echo "=== Current Helm release state ==="
-                    helm status catalogix --namespace ${K8S_NAMESPACE} || true
-                    echo "=== Pod state ==="
-                    kubectl get pods -n ${K8S_NAMESPACE} -o wide || true
-                    exit 1
-                fi
-                echo "Rollback to revision \$LAST_GOOD_REVISION successful."
-            fi
-            """
+            script {
+                // Simple rule: roll back ONLY if this run changed the cluster AND a healthy
+                // revision existed before it started. A failure in tests, Sonar or the image scan
+                // happens before any deploy, so the live release is untouched and is left alone.
+                if (env.DEPLOY_STARTED != 'true') {
+                    echo 'Build failed before the deploy stage - live release was not touched, no rollback needed.'
+                } else if (!env.PREVIOUS_REVISION) {
+                    echo 'Deploy failed but there was no healthy earlier revision (first install?) - nothing to roll back to.'
+                } else {
+                    echo "Deploy or verification failed - rolling back to revision ${env.PREVIOUS_REVISION}."
+                    sh """
+                    kubectl get pods -n ${K8S_NAMESPACE} || true
+                    kubectl get events -n ${K8S_NAMESPACE} --sort-by='.lastTimestamp' | tail -20 || true
+                    helm rollback catalogix ${env.PREVIOUS_REVISION} --namespace ${K8S_NAMESPACE} --wait --timeout 300s \\
+                        || { echo 'ROLLBACK FAILED - fix by hand: helm history catalogix -n ${K8S_NAMESPACE}'; exit 1; }
+                    echo 'Rollback finished.'
+                    """
+                }
+            }
         }
 
         always {

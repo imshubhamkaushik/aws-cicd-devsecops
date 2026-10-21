@@ -12,7 +12,7 @@ infra/
     monitoring/     Prometheus, Grafana, alerts                -> helm/monitoring/README.md
 ```
 
-The scripts that drive these tools from a laptop or VM are in [`../scripts`](../scripts/README.md).
+The scripts that drive these tools from a laptop or VM are in [`../scripts`](../scripts/README.md). To run everything from an empty AWS account, follow [`../docs/RUNBOOK.md`](../docs/RUNBOOK.md); this page explains how the pieces relate.
 
 ## How the pieces connect
 
@@ -63,10 +63,11 @@ flowchart LR
 
 ## Order of operations
 
+0. **Repository.** Push the repository to GitHub, set `git_repo_url` in `ansible/group_vars/jenkins/vars.yaml` and replace the state bucket name (see [terraform/README.md](terraform/README.md#state-bucket-name)).
 1. **Tools and credentials on your machine.** `bash scripts/bash/install-all.sh`, `aws configure`, `python3 scripts/python/setup/create_ssh_key.py`.
 2. **Bootstrap.** `python3 scripts/python/aws/bootstrap.py` runs, in order: state bucket, network and servers (plus waiting for the EC2 status checks), Ansible, and the operator credentials prompt. Each step can also be run alone: `backend`, `infra`, `ansible`, `credentials`.
 3. **Quality/security gate.** Push a branch or open a pull request. GitHub triggers the `quality-security-gate` multibranch job; configure its observed PR status check as required for `main`. A successful push to `main` starts `app-cicd` at the exact commit that passed.
-4. **Platform.** Run `platform-infra` manually from protected `main` after the gate passes, with `ACTION=Apply` and the chosen `ENV`. Infrastructure apply/destroy is never triggered automatically by every push. The pipeline checks that all three dev credential categories exist before applying.
+4. **Platform.** Run `platform-infra` manually from protected `main` after the gate passes, with `ACTION=Apply` and the chosen `ENV`. Tick `DEPLOY_APP_AFTER_INFRA` to have it start `app-cicd` for the same commit once External Secrets is ready. Infrastructure apply/destroy is never triggered automatically by every push. The pipeline checks that all three dev credential categories exist before applying.
 5. **Application.** The quality gate starts `app-cicd` after a successful `main` push. For deliberate manual runs, provide the exact gated `SOURCE_REVISION`; the emergency override is not for routine use. See [../docs/github-webhook.md](../docs/github-webhook.md).
 
 Tear-down is the reverse: `platform-infra` with `ACTION=Destroy` and `CONFIRM_DESTROY=true`, then `python3 scripts/python/aws/destroy_infra.py`. The platform must go first because the network layer cannot be deleted while the cluster's load balancers and network interfaces still exist.
