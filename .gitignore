@@ -1,77 +1,109 @@
-# ====== Java / Spring Boot ======
+# ============================================================================
+# Secrets and local configuration. Never commit these.
+# ============================================================================
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+catalogix-key
+catalogix-key.pub
+.vault_pass
+**/*password.txt
+
+# Ansible Vault file created by scripts/python/aws/bootstrap.py (encrypted, but never commit it)
+infra/ansible/group_vars/all/vault.yaml
+
+# kubeconfig files written by the pipelines or by `aws eks update-kubeconfig`
+kubeconfig
+*.kubeconfig
+
+# ============================================================================
+# Terraform
+# ============================================================================
+# Keep .terraform.lock.hcl tracked: it pins provider versions.
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+tfplan*
+crash.log
+crash.*.log
+# Variable files can hold IPs, keys and account details. Only the .example files are tracked.
+*.tfvars
+*.tfvars.json
+!*.tfvars.example
+!terraform.tfvars.example
+
+# ============================================================================
+# Helm
+# ============================================================================
+# `helm template` output contains rendered Secrets.
+*rendered*.yaml
+# Downloaded chart dependencies; `helm dependency update` recreates them from Chart.lock.
+infra/helm/**/charts/*.tgz
+
+# ============================================================================
+# Java / Maven
+# ============================================================================
 **/target/
 *.jar
 *.war
 *.class
-*.log
+hs_err_pid*
 
-# ====== Node / React ======
+# ============================================================================
+# Node / frontend
+# ============================================================================
 **/node_modules/
 **/build/
 **/dist/
 **/coverage/
-# Local environment file with real secrets; copy from .env.example.
-.env
-**/.env
-**/.env.*
-.env.*
-!.env.example
+*.tsbuildinfo
+.eslintcache
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# ====== Python virtualenv created by scripts/python/install_tools.py ======
+# ============================================================================
+# Python
+# ============================================================================
 .venv/
+__pycache__/
+*.pyc
+.ruff_cache/
+.pytest_cache/
+.mypy_cache/
 
-# ====== Misc ======
-**.zip
+# ============================================================================
+# Scanners and local reports
+# ============================================================================
+.scannerwork/
+.sonar/
+.trivycache/
 
-# ====== IDE / Editors ======
+# ============================================================================
+# Editors, OS, logs, scratch
+# ============================================================================
 .idea/
 .vscode/
 *.iml
 *.project
 *.classpath
 *.settings/
-
-# TypeScript / build caches
-*.tsbuildinfo
-.eslintcache
+.DS_Store
+Thumbs.db
+*.swp
+*.log
+*.tmp
 .cache/
 .tmp/
+*.zip
 
-# Terraform
-**/.terraform/
-
-# Generated / local-only artifacts that must never be committed
-__pycache__/
-*.pyc
-
-# `helm template` output contains rendered Secrets (random JWT/DB/RabbitMQ values)
-catalogix-rendered.yaml
-*rendered*.yaml
-
-# Python tooling caches
-.ruff_cache/
-.pytest_cache/
-.mypy_cache/
-
-**/*password.txt
-
-# Helm chart package files
-infra/helm/**/charts/*.tgz
-# ====== Terraform ======
-# Never commit variable files (may hold IPs, keys, account details) or state.
-*.tfvars
-*.tfvars.json
-!*.tfvars.example
-!terraform.tfvars.example
-*.tfstate
-*.tfstate.*
-*.tfplan
-tfplan*
-.terraform/
-crash.log
-
-# ====== Generated / local scratch ======
-*rendered*.yaml
+# Tooling leftovers that are not part of this project
+.github/modernize/

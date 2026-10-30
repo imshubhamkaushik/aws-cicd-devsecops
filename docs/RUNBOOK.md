@@ -7,10 +7,10 @@ A  Local rehearsal (optional)      Docker Compose on your machine
 B  Prepare the repository          bucket name, GitHub repository, token
 C  Prepare your workstation        tools, AWS login, SSH key
 D  Bootstrap                       state bucket, network, Jenkins + SonarQube, credentials
-E  First look at Jenkins           jobs, SonarQube, the first gate run
+E  First look at Jenkins           jobs, SonarQube, the CI workflow
 F  Platform and application        platform-infra (Apply), which also deploys the app
 G  Verify                          app, kubectl, Grafana, SonarQube, NetworkPolicy
-H  Day-2 flow                      change, pull request, gate, deploy
+H  Day-2 flow                      change, pull request, ci-gate, deploy
 I  Tear down                       return the account to clean
 ```
 
@@ -99,7 +99,7 @@ git remote add origin https://github.com/<your-user>/<your-repo>.git
 git push -u origin main
 ```
 
-The branch must be called `main`; the pipelines check out `main`. The gate runs Gitleaks over the full history, so a secret committed once and removed later still fails it.
+The branch must be called `main`; the pipelines check out `main`. The CI workflow runs Gitleaks over the full history, so a secret committed once and removed later still fails it.
 
 ---
 
@@ -169,11 +169,11 @@ Write down the Jenkins IP. The Jenkins UI and SSH only accept connections from a
 ## Phase E: First look at Jenkins (about 10 minutes)
 
 1. Open `http://<jenkins-ip>:8080` and sign in as `admin` with the Jenkins admin password from the vault prompts.
-2. Confirm three jobs exist: `quality-security-gate` (multibranch), `platform-infra`, `app-cicd`. Jenkins is configured entirely by JCasC, so anything you change in the UI is overwritten the next time Ansible runs.
+2. Confirm two jobs exist: `platform-infra` and `app-cicd`. Jenkins is configured entirely by JCasC, so anything you change in the UI is overwritten the next time Ansible runs.
 3. **Manage Jenkins → System** shows the SonarQube server `sonarqube` and the library `catalogix-shared-library`.
-4. Open `quality-security-gate`. If no branch has been indexed yet, click **Scan Repository Now**. The `main` build runs the gate (Gitleaks, Hadolint, Terraform fmt and Trivy IaC, Ansible lint, Ruff, Python tests, Helm lint and render, kubeconform, chart scan, ShellCheck). Expected: green.
+4. On GitHub, open the **Actions** tab. The `CI` workflow runs on every push; the first push in phase B already started it. Expected: all jobs green, including the final `ci-gate` job. Then protect `main` as described in [ci-gate.md](ci-gate.md#branch-protection) so a failing gate blocks merges.
 
-> **Expected noise.** A green gate on `main` automatically starts `app-cicd`. The platform does not exist yet, so that run fails early (at the Kubernetes access stage). Ignore it; phase F runs it properly.
+> **Expected noise.** `app-cicd` polls `main` every few minutes. Its first run starts soon after Jenkins comes up, waits for `ci-gate`, and then fails early at the Kubernetes access stage because the platform does not exist yet. Ignore it; phase F runs it properly.
 
 > **Parameters appear after a job has run once.** For `platform-infra` and `app-cicd`, Jenkins only learns the parameters from the Jenkinsfile when the job first runs, so the first click may show **Build Now** instead of **Build with Parameters**. Click it, wait until the first stage starts, then abort the build. From then on **Build with Parameters** is shown. Do this for `platform-infra` before phase F.
 
@@ -204,7 +204,7 @@ What happens, in order:
 
 Expected: both builds green. The last stage of `app-cicd` prints the ALB hostname; it can take a few minutes to appear.
 
-If you did not tick `DEPLOY_APP_AFTER_INFRA`, run `app-cicd` yourself: **Build with Parameters**, tick `OVERRIDE_QUALITY_GATE`, and start it. Otherwise it refuses, because a manual run cannot prove the gate passed.
+If you did not tick `DEPLOY_APP_AFTER_INFRA`, run `app-cicd` yourself with **Build with Parameters**. It first verifies that `ci-gate` passed for the commit it deploys (stage *Verify CI Gate*); tick `OVERRIDE_QUALITY_GATE` only to skip that check deliberately.
 
 ---
 
@@ -272,9 +272,7 @@ git switch -c my-change
 git push -u origin my-change
 ```
 
-Open a pull request on GitHub. Jenkins runs the gate for the pull request (run **Scan Repository Now** on `quality-security-gate` if you have not set up a webhook). Merge when it is green. The `main` build runs the gate again and then starts `app-cicd` for that commit, which tests and rebuilds only what changed.
-
-To make GitHub notify Jenkins instead of scanning by hand, follow [github-webhook.md](github-webhook.md). Jenkins is not reachable from the internet by default, so this needs an HTTPS endpoint you control.
+Open a pull request on GitHub. The `CI` workflow runs on it and must end with a green `ci-gate`. Merge when it is green. The merge to `main` runs the workflow again; `app-cicd` polls `main` every few minutes, waits for that commit's `ci-gate`, and then tests and rebuilds only what changed. To deploy immediately, click **Build Now** on `app-cicd`.
 
 ### H2. Change a password
 
@@ -343,10 +341,10 @@ To start again later, repeat from phase D. Phase D re-creates the credentials; t
 | Ansible cannot decrypt the vault | Wrong or missing `~/.vault_pass`. The tool lets you retry three times and never overwrites the vault |
 | Jenkins fails to start after Ansible | JCasC rejects unknown keys on purpose. Check `sudo journalctl -u jenkins` on the Jenkins host, fix `jcasc.yaml`, re-run `bootstrap.py ansible` |
 | No jobs in Jenkins, or "Couldn't find any revision" | `git_repo_url` is wrong, the repository is empty, or the token cannot read it. Fix it, re-run `bootstrap.py ansible` |
-| Gate fails on Gitleaks | A secret is in the history. Rotate it, then rewrite the history; deleting the file is not enough |
+| `ci-gate` fails on Gitleaks | A secret is in the history. Rotate it, then rewrite the history; deleting the file is not enough |
 | `platform-infra` fails at *Precheck Bootstrap State* | The bucket name in `Jenkinsfile.platform-infra` does not match the real bucket, or bootstrap never finished |
 | `platform-infra` fails at *Verify Operator Credentials* | A category is missing or invalid. `python3 scripts/python/aws/credentials.py --env dev --check`, then `bootstrap.py credentials` |
-| `app-cicd`: "This job is normally started by quality-security-gate" | Start it from a green gate, from `platform-infra`, or tick `OVERRIDE_QUALITY_GATE` for a deliberate manual run |
+| `app-cicd` fails at *Verify CI Gate* | Read the message. `HTTP 401/403/404` means the GitHub token cannot read the repository's checks (use a classic token with the `repo` scope). `timed out` or no `ci-gate` check means the workflow did not run or finish: look at the Actions tab. A red `ci-gate` means fix the commit. Tick `OVERRIDE_QUALITY_GATE` only for a deliberate exception |
 | Pods stuck `Pending` or `CreateContainerConfigError` | The Secret does not exist yet. `kubectl get externalsecret -n catalogix` and the External Secrets pods' logs in `external-secrets` |
 | ALB hostname never appears | Check the AWS Load Balancer Controller pods in `kube-system` and the ingress events (`kubectl describe ingress -n catalogix`) |
 | Trivy blocks an image | Fix the dependency or base image. Only unfixed CVEs are ignored; a documented, expiring `.trivyignore` entry is the last resort |

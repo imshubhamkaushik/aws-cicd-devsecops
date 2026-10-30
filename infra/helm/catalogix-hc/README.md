@@ -35,7 +35,7 @@ Values the pipeline sets at deploy time (you do not edit them): `database.host` 
 
 Staging notes:
 
-- `values-staging.yaml` is **not** tested by CI beyond `helm lint` and rendering in `Jenkinsfile.lint`; the image-tag contract test checks dev only. Treat it as unproven until you deploy it.
+- `values-staging.yaml` is **not** tested by CI beyond `helm lint` and rendering in the GitHub Actions `infra` job; the image-tag contract test checks dev only. Treat it as unproven until you deploy it.
 - No `applicationCredentialsSecretName` is set and nothing creates a staging application credentials secret, so `SEED_ADMIN_PASSWORD` is absent and user-svc logs an error and creates **no admin account**. Create `catalogix-cluster-staging/credentials/application` (keys `rabbitmq_user`, `rabbitmq_password`, `seed_admin_password`) and set `secretsManager.applicationCredentialsSecretName` to use an admin in staging.
 
 Email: the chart does not deploy a mail server. Dev points `MAIL_HOST` at `mailpit`, which exists only in Docker Compose, so verification and password-reset emails are not delivered in a dev cluster unless you set `MAIL_HOST` and `MAIL_PORT` (and credentials) on `notification-svc` to a real SMTP server.
@@ -126,7 +126,7 @@ helm template catalogix infra/helm/catalogix-hc -f infra/helm/catalogix-hc/value
 python3 scripts/python/ci/check_helm_image_tags.py      # the pipeline's image keys must change the rendered image
 ```
 
-`Jenkinsfile.lint` also validates the rendered manifests with kubeconform (`-ignore-missing-schemas`, because the External Secrets resources have no schema in its default catalogue).
+The GitHub Actions `infra` job also validates the rendered manifests with kubeconform (`-ignore-missing-schemas`, because the External Secrets resources have no schema in its default catalogue).
 
 ## Running on local Kubernetes
 

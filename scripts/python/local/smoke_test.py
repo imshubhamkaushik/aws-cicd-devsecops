@@ -4,6 +4,10 @@
 Both local targets expose the same gateway on http://localhost:11000 and seed the same admin
 (admin@catalogix.local / AdminAdminAdmin), so the same checks run against either.
 Override with --base-url / --email / --password (or CATALOGIX_BASE_URL, SMOKE_EMAIL, SMOKE_PASSWORD).
+
+Against an AWS deployment, Jenkinsfile.app-cicd runs it with --anonymous-only (the seed admin
+password is never given to Jenkins). When the ALB has a host rule (INGRESS_HOST), pass the public
+host name with --host-header so the request matches that rule.
 """
 
 from __future__ import annotations
@@ -20,6 +24,9 @@ from helpers import main_guard
 DEFAULT_EMAIL = "admin@catalogix.local"
 DEFAULT_PASSWORD = "AdminAdminAdmin"  # noqa: S105 - documented local seed admin, see docker-compose.yaml
 
+# Optional Host header sent with every request; set once by main() from --host-header.
+HOST_HEADER: str | None = None
+
 
 def request(base_url: str, path: str, *, method: str = "GET", body: object | None = None,
             token: str | None = None, timeout: int = 15) -> tuple[int, str]:
@@ -30,6 +37,8 @@ def request(base_url: str, path: str, *, method: str = "GET", body: object | Non
         headers["Content-Type"] = "application/json"
     if token:
         headers["Authorization"] = f"Bearer {token}"
+    if HOST_HEADER:
+        headers["Host"] = HOST_HEADER
     req = urllib.request.Request(base_url.rstrip("/") + path, data=payload, headers=headers, method=method)
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310 - http(s) only
@@ -69,13 +78,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--wait", type=int, default=240, help="Seconds to wait for the stack (JVMs start slowly).")
     parser.add_argument("--email", default=os.getenv("SMOKE_EMAIL", DEFAULT_EMAIL))
     parser.add_argument("--password", default=os.getenv("SMOKE_PASSWORD", DEFAULT_PASSWORD))
+    parser.add_argument("--host-header", default=os.getenv("CATALOGIX_HOST_HEADER", ""),
+                        help="Send this Host header (needed when the ALB has a host rule and --base-url is the raw ALB name).")
     parser.add_argument("--anonymous-only", action="store_true", help="Skip the login flow.")
     return parser.parse_args()
 
 
 def main() -> int:
+    global HOST_HEADER
     args = parse_args()
     base = args.base_url
+    HOST_HEADER = args.host_header.strip() or None
     print(f"Smoke testing {base}")
 
     wait_for(base, "/gateway/health", {200}, args.wait, "Gateway")

@@ -1,27 +1,25 @@
-# Catalogix
+# Catalogix: a DevSecOps delivery platform on AWS
 
-[![CI](https://github.com/imshubhamkaushik/aws-cicd-devsecops/actions/workflows/ci.yml/badge.svg)](https://github.com/imshubhamkaushik/aws-cicd-devsecops/actions/workflows/ci.yml)
+[![CI](https://github.com/imshubhamkaushik/aws-cicd-devsecops/actions/workflows/ci.yaml/badge.svg)](https://github.com/imshubhamkaushik/aws-cicd-devsecops/actions/workflows/ci.yaml)
 
-An e-commerce application made of seven Spring Boot services, a React front end and an Nginx gateway, plus the delivery platform around it: Terraform, Ansible, Jenkins, Helm on Amazon EKS, security scanning and monitoring.
+This repository is a complete delivery pipeline: infrastructure as code, self-configuring CI servers, a security-gated build, GitOps-style secrets handling, a hardened Kubernetes deployment and monitoring with alerts. The thing being delivered is **Catalogix**, a small e-commerce system (seven Spring Boot services, a React front end, an Nginx gateway). It exists so the platform has a realistic workload: several services, a database per service, a message broker and service-to-service authentication.
 
-The application is deliberately modest in business logic. It is big enough to need real delivery engineering (several services, a database, a message broker, service-to-service authentication) and small enough that the platform stays the focus.
+**Terraform · Ansible · Jenkins · Docker · Amazon EKS · Helm · SonarQube · Trivy · Gitleaks · Hadolint · External Secrets Operator · Prometheus · Grafana**
 
-**Terraform · Ansible · Jenkins · Docker · Amazon EKS · Helm · SonarQube · Trivy · Gitleaks · External Secrets Operator · Prometheus · Grafana**
-
-> **Status.** The developer-reported `mvn clean verify` passed on 2026-10-18. Before the latest frontend API/component extraction, the Vite production build and 66 frontend tests passed; after that extraction, the current JS/JSX files and relative imports were statically checked, but Vite/Vitest still need to be rerun on Node 24+. The refactored Python suite has 85 passing tests. The frontend baseline build reported a bundle-size warning. None of these checks establishes that AWS infrastructure, Helm rendering, or the full Jenkins deployment lifecycle works end to end. See [Verification](#verification) for the evidence and remaining checks.
+> **Want to run it?** Start with [docs/RUNBOOK.md](docs/RUNBOOK.md). It takes you from an empty AWS account to a deployed, monitored application and back to a clean account.
 
 ---
 
 ## Contents
 
 - [What this project demonstrates](#what-this-project-demonstrates)
-- [Tech stack](#tech-stack)
-- [Quick start (local, Docker Compose)](#quick-start-local-docker-compose)
 - [Architecture](#architecture)
+- [Tech stack](#tech-stack)
 - [Repository layout](#repository-layout)
-- [Running on AWS](#running-on-aws)
+- [Quick start](#quick-start)
 - [Security controls](#security-controls)
-- [Verification](#verification)
+- [Cost and clean-up](#cost-and-clean-up)
+- [Verification status](#verification-status)
 - [Design decisions and trade-offs](#design-decisions-and-trade-offs)
 - [Known limitations](#known-limitations)
 
@@ -29,73 +27,18 @@ The application is deliberately modest in business logic. It is big enough to ne
 
 ## What this project demonstrates
 
-- **A two-step CI/CD gate.** GitHub push/PR webhooks trigger `quality-security-gate` for repository linting, IaC/chart/source security scans and validation. A successful push to `main` triggers `app-cicd` for changed-service tests, SonarQube, new-image Trivy scans, ECR publication, Helm deployment and runtime verification. `platform-infra` remains a manual, approval-controlled operation.
-- **Infrastructure as code in layers.** Remote state, network plus CI servers, and the platform (EKS, RDS, ECR, ALB controller, External Secrets) are three separate Terraform roots with separate lifecycles. The platform can be destroyed and rebuilt without touching the network.
-- **Secrets are separated by access boundary.** `credentials.py` stores operator-selected values in three Secrets Manager resources under `<cluster>/credentials/`: `database` (RDS master password and optional read-only login), `application` (RabbitMQ username/password and seed admin password), and `observability` (Grafana username/password). Terraform reads only the database category into state; External Secrets Operator reads application and Grafana categories directly. Terraform also generates per-service DB credentials and JWT key material in separate secrets; those Terraform-managed secret values/private keys remain represented in Terraform state, which must be tightly protected.
-- **Database per service, the same everywhere.** One database and one login role per service, created by a PostgreSQL `.sql` init file in Docker Compose, by a Helm template on local Kubernetes and by a Terraform module on RDS.
-- **Hardened Kubernetes workloads.** Non-root, read-only containers with all capabilities dropped, startup/readiness/liveness probes, autoscaling, PodDisruptionBudgets, graceful shutdown, resource limits, a default-deny NetworkPolicy with allow rules that follow the real call graph, and an ALB ingress.
-- **Repeatable servers.** Jenkins and SonarQube are never configured by hand. Ansible provisions them from a dynamic EC2 inventory, and Jenkins Configuration as Code defines the `quality-security-gate` multibranch job plus the `platform-infra` and `app-cicd` pipelines.
-- **A bootstrap CLI.** A stdlib-only installer puts the tools on a bare Linux machine, and `scripts/python/aws/bootstrap.py` drives Terraform and Ansible with dependency checks, AWS credential checks, "skip apply when nothing changed" and Ansible Vault handling.
-- **Observability with alerts.** Prometheus, Grafana and Alertmanager with service, JVM, RabbitMQ and checkout-outbox metrics and eight alert rules.
-
----
-
-## Tech stack
-
-| Area | Tools |
+| Area | What is in the repository |
 |---|---|
-| Cloud | AWS: EKS, EC2, RDS, ECR, ALB, Secrets Manager, SSM Parameter Store, IAM, S3, KMS |
-| Infrastructure as code | Terraform 1.12 or newer, S3 remote state |
-| Server configuration | Ansible (dynamic EC2 inventory, roles, Ansible Vault) |
-| CI/CD | Jenkins on EC2, JCasC, a shared library (`vars/`) |
-| Containers and orchestration | Docker (multi-stage builds, distroless Java images), Kubernetes 1.36 on EKS, Helm |
-| Quality and security | SonarQube, Gitleaks, Hadolint, Trivy (images, Helm chart, Terraform), optional OWASP ZAP |
-| Secrets | AWS Secrets Manager, External Secrets Operator |
-| Monitoring | kube-prometheus-stack 82.6.0 (Prometheus, Grafana, Alertmanager) plus the `infra/helm/monitoring` chart |
-| Backend | Java 21, Spring Boot 4.1, Flyway, resilience4j, Maven multi-module |
-| Messaging | RabbitMQ |
-| Database | PostgreSQL 18 (Amazon RDS on AWS, a container locally) |
-| Frontend | React 19, Vite 8, Tailwind CSS 4, Radix UI, served by Nginx |
-| Tooling | Python 3 (stdlib installer and operator CLIs), two small Bash bootstrap wrappers for Python/tool setup |
-
----
-
-## Quick start (local, Docker Compose)
-
-You need Docker (with Compose), `openssl` and `python3`. The full stack needs roughly 6 GB of RAM and 4 CPUs.
-
-```bash
-cp .env.example .env                  # review the local passwords in it
-python3 scripts/python/local/generate_jwt_keys.py   # creates the user key pair and the internal key pair in .env
-docker compose up --build
-```
-
-| URL | What |
-|---|---|
-| http://localhost:11000 | The application (only the gateway is published) |
-| http://localhost:8025 | Mailpit: verification and password-reset emails arrive here |
-| http://localhost:25672 | RabbitMQ management UI |
-| localhost:5432 | PostgreSQL |
-
-Local admin login: `admin@catalogix.local` / `AdminAdminAdmin`.
-
-Notes:
-- `scripts/python/local/generate_jwt_keys.py` creates the two key pairs. Run it once per environment; deliberate key rotation invalidates existing tokens and requires confirmation (or `--force`).
-- `POSTGRES_PASSWORD` and `SERVICE_DB_PASSWORD` are read only when the Postgres volume is first created. After changing them, or after pulling a schema change, run `docker compose down -v`.
-- Java containers are distroless and have no healthcheck, so Compose only orders their start. Calls made before a dependency is ready fail fast through the circuit breakers.
-- To work on one service: `docker compose up postgres rabbitmq payment-svc`.
-
-Build and test from the repository root, with no `cd`:
-
-```bash
-mvn verify          # all backend modules (integration tests need Docker for Testcontainers)
-npm ci              # frontend dependencies (the root package.json forwards to app/frontend)
-npm test            # frontend tests (vitest)
-npm run build       # production bundle in app/frontend/build
-npm start           # Vite dev server
-```
-
-Local Kubernetes (Docker Desktop, kind, minikube) is covered in [infra/helm/catalogix-hc/README.md](infra/helm/catalogix-hc/README.md).
+| **Layered infrastructure as code** | Three Terraform roots with separate state and lifecycles: remote-state bucket, network plus CI servers, and the platform (EKS, RDS, ECR, ALB controller, External Secrets). The platform can be destroyed and rebuilt without touching the network. |
+| **Repeatable CI servers** | Jenkins and SonarQube are never configured by hand. Ansible provisions them from a dynamic EC2 inventory (vault-encrypted secrets), and Jenkins Configuration as Code defines the credentials, tools, shared library and both jobs. |
+| **A CI gate in GitHub Actions, a deploy pipeline in Jenkins** | `.github/workflows/ci.yaml` runs the repository checks (tests, lint, IaC, chart and secret scans) on every push and pull request and ends in one aggregate check, `ci-gate`. Jenkins `app-cicd` polls `main`, verifies through the GitHub API that `ci-gate` passed for the exact commit, then tests changed services, runs SonarQube, scans new images, publishes to ECR and deploys with Helm. `platform-infra` is manual and approval-controlled. |
+| **Change-aware pipelines** | `app-cicd` tests and rebuilds only the services that changed, keeps unchanged image tags so their pods are not restarted, then scans, pushes and deploys. |
+| **Shift-left and runtime security** | Gitleaks, Hadolint, Trivy (IaC, chart, images), SonarQube quality gate, distroless non-root images, read-only root filesystems, default-deny NetworkPolicy, optional OWASP ZAP baseline. |
+| **Secrets without Jenkins in the loop** | Operator-chosen passwords go to AWS Secrets Manager through a validating CLI. Terraform generates per-service database credentials and JWT keys. External Secrets Operator syncs them into the cluster. No application secret is a pipeline parameter. |
+| **Production-style Kubernetes** | Helm chart with probes, autoscaling, PodDisruptionBudgets, graceful shutdown, resource limits, per-service database roles and an ALB ingress. |
+| **Observability with alerts** | kube-prometheus-stack plus a Catalogix chart: ServiceMonitors, eight alert rules, a Grafana dashboard and email routing for critical alerts. |
+| **Operator tooling** | A stdlib-only Python toolchain installs the prerequisites, bootstraps AWS, manages credentials and the IP allowlist, and runs the same scans locally that Jenkins runs. It has its own unit tests. |
+| **Multi-environment pattern** | `dev` is the maintained environment. A `staging` root and values file show how a second environment is added; it is illustrative and has never been deployed. |
 
 ---
 
@@ -106,52 +49,85 @@ Local Kubernetes (Docker Desktop, kind, minikube) is covered in [infra/helm/cata
 ```mermaid
 flowchart TD
     Dev[Developer] --> GitHub[GitHub push / pull request]
-    GitHub --> Gate[quality-security-gate]
+    GitHub --> CI[GitHub Actions: ci.yaml]
 
     subgraph PRE["Repository quality and security checks"]
-        Gate --> G1[Gitleaks and Hadolint]
-        G1 --> G2[Terraform fmt and Trivy IaC]
-        G2 --> G3[Ansible lint and Python Ruff/tests]
-        G3 --> G4[Helm lint/render/schema and chart scan]
+        CI --> G1[Maven and frontend tests]
+        CI --> G2[Gitleaks, Hadolint, Ruff, ShellCheck]
+        CI --> G3[Terraform fmt, Trivy IaC, Ansible lint]
+        CI --> G4[Helm lint, render, kubeconform, chart scan]
+        G1 & G2 & G3 & G4 --> GATE[ci-gate]
     end
 
-    G4 -->|PR: required status check| PR[Merge allowed only when green]
-    G4 -->|successful main push: exact SHA| APP[app-cicd]
-    APP --> A1[Changed Maven/frontend tests and SonarQube]
-    A1 --> A2[Build only required images and Trivy scan]
+    GATE -->|pull request| PR[Required status check]
+    GATE -. polled by Jenkins, verified via GitHub API .-> APP[app-cicd]
+    APP --> A1[Changed-service tests and SonarQube gate]
+    A1 --> A2[Build only changed images and Trivy scan]
     A2 --> ECR[Amazon ECR]
     ECR --> A3[Helm deploy and runtime verification]
     A3 --> EKS[Amazon EKS]
 
-    OPS[Operator: manual, after green gate] --> INFRA[platform-infra]
+    OPS[Operator, manual] --> INFRA[platform-infra]
     INFRA --> I1[Terraform plan and human approval]
-    I1 --> I2[Apply or explicitly confirmed destroy]
+    I1 --> I2[Apply, monitoring install, or confirmed destroy]
     I2 --> EKS
 ```
 
-The repository quality/security gate is the only GitHub webhook-triggered job. A passing pull request is a required merge check; a successful push to `main` can launch the application pipeline at the exact checked commit. Infrastructure changes remain a manual, approval-controlled workflow so ordinary source pushes cannot automatically apply or destroy AWS resources.
+The checks that need nothing from AWS run in GitHub Actions, which also means they run without any inbound connection to Jenkins. Jenkins is reachable only from operator IPs, so it pulls rather than being pushed to: it polls `main` and asks GitHub whether `ci-gate` passed for the commit it is about to deploy. Everything that needs AWS or the private network (SonarQube, image build and scan, ECR, Helm, `terraform plan` on live state) stays in Jenkins. Infrastructure changes are never applied by an ordinary push, so a code change cannot create or destroy cloud resources. Details: [docs/ci-gate.md](docs/ci-gate.md).
 
-### Runtime architecture
+### Infrastructure layers
+
+```mermaid
+flowchart LR
+    subgraph L0["Layer 0: backend-bootstrap"]
+        S3[(S3 state bucket)]
+    end
+    subgraph L1["Layer 1: bootstrap-infra"]
+        NET[VPC, subnets, NAT]
+        EC2[Jenkins and SonarQube EC2]
+    end
+    subgraph AN["Ansible"]
+        CFG[Docker, tools, Jenkins, JCasC, SonarQube]
+    end
+    subgraph L2["Layer 2: platform-infra, run by Jenkins"]
+        EKS[EKS]
+        RDS[(RDS)]
+        ECR[ECR]
+        SEC[Secrets Manager]
+        ESO[External Secrets Operator]
+    end
+    S3 -. state .-> L1
+    S3 -. state .-> L2
+    L1 --> AN
+    L1 -. remote state: VPC, subnets .-> L2
+    SEC --> ESO
+```
+
+| Layer | Created by | Lifetime |
+|---|---|---|
+| State bucket | `infra/terraform/backend-bootstrap` | Once per account and region. Never destroyed by the scripts |
+| Network and CI servers | `infra/terraform/bootstrap-infra` | Applied once and left running |
+| Server configuration | `infra/ansible` | Re-run when the Jenkins or SonarQube setup changes |
+| Platform | `infra/terraform/platform-infra/env/<env>`, applied by the `platform-infra` job | Created and destroyed freely |
+| Monitoring | `infra/helm/monitoring`, installed by `platform-infra` | With the cluster |
+| Application | `infra/helm/catalogix-hc`, installed by `app-cicd` | Every deploy |
+
+### Runtime on EKS
 
 ```mermaid
 flowchart TD
     User[Browser] --> ALB[AWS ALB Ingress]
-    ALB --> GW[gateway: Nginx :11000]
+    ALB --> GW[gateway: Nginx]
 
     subgraph NS["namespace: catalogix"]
-        GW --> FE[frontend :11001]
-        GW --> USR[user-svc :11005]
-        GW --> CAT[catalog-svc :11002]
-        GW --> CART[cart-svc :11004]
-        GW --> CHK[checkout-svc :11007]
-        GW --> NOT[notification-svc :11008]
-        CHK --> CAT
-        CHK --> CART
-        CHK --> USR
-        CHK --> INV[inventory-svc :11003]
-        CHK --> PAY[payment-svc :11006]
-        CART --> CAT
-        CART --> INV
+        GW --> FE[frontend]
+        GW --> USR[user-svc]
+        GW --> CAT[catalog-svc]
+        GW --> CART[cart-svc]
+        GW --> CHK[checkout-svc]
+        GW --> NOT[notification-svc]
+        CHK --> CAT & CART & USR & INV[inventory-svc] & PAY[payment-svc]
+        CART --> CAT & INV
         CAT --> INV
         NOT --> USR
         MQ[(RabbitMQ)]
@@ -160,100 +136,108 @@ flowchart TD
         MQ --> NOT
     end
 
-    USR & CAT & INV & CART & PAY & CHK & NOT --> RDS[(Amazon RDS PostgreSQL: one database + role per service)]
-    NOT --> SMTP[SMTP]
-
+    NS --> RDS[(RDS PostgreSQL: one database and role per service)]
     ESO[External Secrets Operator] --> SM[AWS Secrets Manager]
-    ESO -->|catalogix-secrets, catalogix-jwt-keys| NS
+    ESO --> NS
     NS -->|/actuator/prometheus| Prom[Prometheus]
     Prom --> Graf[Grafana]
     Prom --> AM[Alertmanager]
 ```
 
-The arrows between services are exactly the allow rules in the Helm `NetworkPolicy`. `inventory-svc` and `payment-svc` are internal only: the gateway has no route to them.
-
-### Services
-
-| Service | Port | Responsibility |
-|---|---|---|
-| `gateway` | 11000 | Nginx routing, rate limiting, the single entry point |
-| `frontend` | 11001 | React single-page application served by Nginx |
-| `catalog-svc` | 11002 | Products, search, ownership, moderation, live stock composition |
-| `inventory-svc` | 11003 | Stock quantities, idempotent reserve and release |
-| `cart-svc` | 11004 | Persistent per-user cart and the cart-to-checkout handoff |
-| `user-svc` | 11005 | Registration, login, JWT and refresh sessions, password reset, email verification, profiles, addresses, seller requests, admin user management |
-| `payment-svc` | 11006 | Mock CARD / UPI / COD payments, idempotency, refunds |
-| `checkout-svc` | 11007 | Orders, order state machine, payment orchestration, stock-compensation outbox, order-event outbox |
-| `notification-svc` | 11008 | RabbitMQ consumer, email delivery, notification log |
-| `security-common` | none | Shared library, not a service: JWT validation, rate limiting, CORS |
-
-How the application works (order flow, outbox, tokens, failure behaviour) is in [docs/app-guide.md](docs/app-guide.md).
+The arrows between services are exactly the allow rules in the Helm `NetworkPolicy`. `inventory-svc` and `payment-svc` are internal only: the gateway has no route to them. What the services do is described in [app/README.md](app/README.md).
 
 ### Kubernetes namespaces
 
 | Namespace | Workloads | Managed by |
 |---|---|---|
-| `catalogix` | gateway, frontend, the seven backend services, RabbitMQ | Jenkins `app-cicd`, Helm release `catalogix` |
+| `catalogix` | gateway, frontend, seven backend services, RabbitMQ | Jenkins `app-cicd`, Helm release `catalogix` |
 | `monitoring` | Prometheus, Grafana, Alertmanager, ServiceMonitors, alert rules, dashboard | Jenkins `platform-infra`, Helm release `monitoring` |
 | `external-secrets` | External Secrets Operator | Terraform (`eso` module) |
+
+---
+
+## Tech stack
+
+| Area | Tools |
+|---|---|
+| Cloud | AWS: EKS, EC2, RDS, ECR, ALB, Secrets Manager, SSM Parameter Store, IAM, S3, KMS |
+| Infrastructure as code | Terraform 1.12 or newer (AWS provider 6.x), S3 remote state with native locking |
+| Server configuration | Ansible (dynamic EC2 inventory, roles, Ansible Vault) |
+| CI/CD | GitHub Actions (quality and security gate), Jenkins on EC2 (deploy), Configuration as Code, a shared library (`vars/`) |
+| Containers and orchestration | Docker multi-stage builds, distroless Java images, Kubernetes 1.36 on EKS, Helm |
+| Quality and security | SonarQube, Gitleaks, Hadolint, Trivy (images, chart, Terraform), kubeconform, optional OWASP ZAP |
+| Secrets | AWS Secrets Manager, External Secrets Operator |
+| Monitoring | kube-prometheus-stack 82.6.0 plus the `infra/helm/monitoring` chart |
+| Workload | Java 21, Spring Boot 4.1, Flyway, resilience4j, React 19, Vite 8, Tailwind CSS 4, RabbitMQ, PostgreSQL 18 |
+| Tooling | Python 3 (stdlib installer and operator CLIs), two small Bash wrappers |
 
 ---
 
 ## Repository layout
 
 ```text
-app/                    what runs
-  backend/              security-common and the seven services (Maven modules)
+infra/                  where it runs and how it gets there (the focus of this project)
+  terraform/            backend-bootstrap, bootstrap-infra, platform-infra (env/dev, env/staging)
+  ansible/              playbook and roles that configure Jenkins and SonarQube
+  jenkins/              Jenkinsfile.app-cicd, Jenkinsfile.platform-infra
+  helm/catalogix-hc/    the application chart
+  helm/monitoring/      Prometheus, Grafana, alert rules, dashboard
+vars/                   Jenkins shared library (loaded from the repository root)
+scripts/                installer, AWS bootstrap CLI, credentials and allowlist tools, local scans
+app/                    what gets delivered
+  backend/              security-common and the seven Spring Boot services (Maven modules)
   frontend/             React app and its Nginx image
   gateway/              Nginx gateway
   postgres-init/        per-service databases and roles for Docker Compose
-infra/                  where it runs and how it gets there
-  terraform/            backend-bootstrap, bootstrap-infra, platform-infra
-  ansible/              playbook and roles that configure Jenkins and SonarQube
-  helm/catalogix-hc/    the application chart
-  helm/monitoring/      Prometheus/Grafana configuration, alert rules, dashboard
-  jenkins/              Jenkinsfile.app-cicd, Jenkinsfile.platform-infra, Jenkinsfile.lint
-scripts/                installers, bootstrap CLI, local scan helpers, key generation
-docs/                   app-guide.md, github-webhook.md
-vars/                   Jenkins shared library
-docker-compose.yaml     the whole application locally
-pom.xml, package.json   root entry points so mvn and npm commands run from here
+docs/                   RUNBOOK.md, ci-gate.md, app-guide.md, auth-explained.md
+docker-compose.yaml     the whole workload locally, no AWS needed
+  .github/workflows/    GitHub Actions: the CI gate (tests, lint, IaC, chart and secret scans)
+pom.xml, package.json   root entry points so mvn and npm commands run from the root
 sonar-project.properties, .trivyignore, .gitleaks.toml, .dockerignore   scanner and build settings
 ```
 
-Each area has its own README:
+Some files stay at the root because the tool that reads them looks there: `vars/` (Jenkins loads a shared library from the repository root), `.dockerignore` (read from the build-context root), `.gitleaks.toml`, `.trivyignore`, `sonar-project.properties`, `pom.xml`, `package.json` and `docker-compose.yaml`.
 
-| README | Covers |
+| Read this | For |
 |---|---|
-| [app/README.md](app/README.md) | Services, ports, data, authentication, building and testing |
-| [infra/README.md](infra/README.md) | How the infrastructure pieces fit together and the order to run them |
+| [docs/RUNBOOK.md](docs/RUNBOOK.md) | Run everything from zero to end, and tear it down |
+| [infra/README.md](infra/README.md) | How the infrastructure pieces fit together, secrets, IP allowlist |
 | [infra/terraform/README.md](infra/terraform/README.md) | The three layers, modules, secrets, state |
-| [infra/ansible/README.md](infra/ansible/README.md) | Server provisioning and JCasC |
-| [infra/jenkins/README.md](infra/jenkins/README.md) | The three pipelines, parameters and stages |
-| [infra/helm/catalogix-hc/README.md](infra/helm/catalogix-hc/README.md) | Chart, values files, hardening, NetworkPolicy, local Kubernetes |
+| [infra/ansible/README.md](infra/ansible/README.md) | Server provisioning, JCasC, the vault |
+| [infra/jenkins/README.md](infra/jenkins/README.md) | The three pipelines, parameters, stages |
+| [infra/helm/catalogix-hc/README.md](infra/helm/catalogix-hc/README.md) | Chart, hardening, NetworkPolicy, local Kubernetes |
 | [infra/helm/monitoring/README.md](infra/helm/monitoring/README.md) | Metrics, alerts, dashboard, access |
-| [scripts/README.md](scripts/README.md) | Installer, bootstrap CLI, IP allowlist, local scans |
-| [docs/app-guide.md](docs/app-guide.md) | A guided tour of the application |
-| [docs/github-webhook.md](docs/github-webhook.md) | Triggering Jenkins from GitHub |
-
-Some files stay at the repository root because the tool that reads them looks there: `vars/` (Jenkins loads a shared library from the repository root), `.dockerignore` (read from the build-context root), `.gitleaks.toml`, `.trivyignore`, `sonar-project.properties`, `pom.xml`, `package.json` and `docker-compose.yaml`. `docker-compose.yaml` stays because `docker compose up` from the root is the front door of the project and its build contexts and `.env` are relative to the root. Jenkins finds the pipelines through the `scriptPath` entries in `infra/ansible/roles/jenkins/templates/jcasc.yaml`.
+| [scripts/README.md](scripts/README.md) | Installer, bootstrap CLI, credentials, allowlist, local scans |
+| [docs/ci-gate.md](docs/ci-gate.md) | The GitHub Actions gate, branch protection, how Jenkins verifies it |
+| [app/README.md](app/README.md), [docs/app-guide.md](docs/app-guide.md), [docs/auth-explained.md](docs/auth-explained.md) | The workload that is being delivered |
 
 ---
 
-## Running on AWS
+## Quick start
 
-**Before anything else:** S3 bucket names are global, so pick your own state bucket name once: `bash scripts/bash/rename-state-bucket.sh catalogix-tfstate-<your-name>-<digits>`.
+There are two ways to run the project. Neither needs the other.
 
-Prerequisites: an AWS account (the default region is `ap-south-1`), an AWS CLI profile allowed to create the bootstrap resources (a scoped IAM user is better than AdministratorAccess, and its key should be deleted after bootstrap), and a Linux machine or WSL.
+**Locally with Docker Compose** (about 6 GB RAM and 4 CPUs, no AWS):
 
-1. **Tools.** `bash scripts/bash/install-all.sh` installs Python if it is missing, then the AWS CLI, Terraform, Ansible, `jq` and `ssh-keygen`. Then `aws configure`.
-2. **SSH key.** `python3 scripts/python/setup/create_ssh_key.py`.
-3. **Bootstrap.** `python3 scripts/python/aws/bootstrap.py` creates the state bucket, the VPC and the two EC2 servers, configures them with Ansible, and asks for the operator-chosen passwords.
-4. **Platform.** Run the Jenkins job `platform-infra` with `ACTION=Apply` (EKS, RDS, ECR, ALB controller, External Secrets, monitoring).
-5. **Application.** A successful quality/security gate on a push to `main` triggers `app-cicd` at that exact commit. Direct manual runs require the explicit `OVERRIDE_QUALITY_GATE` checkbox; a supplied SHA alone is not accepted as proof that the gate passed.
-6. **Destroy.** Run `platform-infra` with `ACTION=Destroy` and `CONFIRM_DESTROY=true`, then `python3 scripts/python/aws/destroy_infra.py` for the bootstrap layer. The S3 state bucket is kept on purpose.
+```bash
+cp .env.example .env
+python3 scripts/python/local/generate_jwt_keys.py
+docker compose up --build
+python3 scripts/python/local/smoke_test.py
+```
 
-Details and the reasons for the order are in [infra/README.md](infra/README.md).
+The application is on http://localhost:11000, sent mail in Mailpit on http://localhost:8025, and RabbitMQ management on http://localhost:25672. Local admin login: `admin@catalogix.local` / `AdminAdminAdmin`.
+
+**On AWS** (the actual point of the project): follow [docs/RUNBOOK.md](docs/RUNBOOK.md). In outline:
+
+```bash
+bash scripts/bash/install-all.sh                       # tools
+aws configure
+python3 scripts/python/setup/create_ssh_key.py
+python3 scripts/python/aws/bootstrap.py                # state bucket, network, CI servers, Ansible, credentials
+# then, in Jenkins: run platform-infra (ACTION=Apply), which also deploys the app
+# afterwards every green push to main is deployed by app-cicd
+```
 
 ---
 
@@ -261,47 +245,64 @@ Details and the reasons for the order are in [infra/README.md](infra/README.md).
 
 | Control | Where | If it fails |
 |---|---|---|
-| Gitleaks secret scan | `quality-security-gate`, before delivery | No downstream application pipeline starts |
-| Hadolint | `quality-security-gate`, before delivery | The required check fails |
-| SonarQube quality gate | After tests | Nothing is built or pushed |
-| Trivy image scan (fixable HIGH and CRITICAL) | After each image build | The image is not pushed to ECR |
-| Trivy IaC and Helm chart scans | `quality-security-gate`, before delivery | The required check fails |
+| Gitleaks secret scan | GitHub Actions `ci-gate` | `app-cicd` refuses to deploy the commit |
+| Hadolint | GitHub Actions `ci-gate` | `app-cicd` refuses to deploy the commit |
+| Terraform format, Trivy IaC and chart scans, Ansible lint, Helm validation | GitHub Actions `ci-gate` | `app-cicd` refuses to deploy the commit |
+| SonarQube quality gate | `app-cicd`, after tests | Nothing is built or pushed |
+| Trivy image scan (fixable HIGH and CRITICAL) | `app-cicd`, after each image build | The image is not pushed to ECR |
+| Immutable ECR tags, scan on push | `ecr` Terraform module | A tag cannot be overwritten |
 | Non-root, read-only filesystem, capabilities dropped | Pod spec | The container cannot start or write |
-| Default-deny NetworkPolicy plus per-service allow rules | Helm chart | A pod can only be reached by its real callers. Enforced on EKS through the VPC CNI add-on |
+| Default-deny NetworkPolicy plus per-service allow rules | Helm chart | A pod is reachable only by its real callers. Enforced on EKS through the VPC CNI add-on |
 | Per-service database credentials | Terraform, Secrets Manager, External Secrets | One service cannot open another's database |
-| Application secret distribution | External Secrets and IAM roles | Jenkins uses GitHub/Sonar tokens for integration and an AWS role for AWS API access; application passwords and JWT keys are not passed as Jenkins parameters |
-| User tokens signed only by `user-svc` | RS256, private key mounted only in `user-svc` | Other services can verify tokens but cannot mint them |
-| Service-to-service tokens | One shared internal RS256 key, `iss`/`aud` checks, caller allowlists on internal endpoints | See the limitation below |
-| EKS API endpoint restricted | `public_access_cidrs` | Reachable only from Jenkins and the allowlisted operator IPs |
-| SSH and Jenkins UI restricted | Security groups driven by an IP allowlist | Reachable only from allowlisted IPs |
+| Secrets stay out of Jenkins | External Secrets and IAM roles | Jenkins holds only GitHub and Sonar tokens and an AWS role |
+| User tokens signed only by `user-svc` | RS256, private key mounted only in `user-svc` | Other services verify tokens but cannot mint them |
+| Service-to-service tokens | One shared internal RS256 key, `iss` and `aud` checks, caller allowlists | See the limitation below |
+| EKS API endpoint restricted | `public_access_cidrs` | Reachable only from Jenkins and allowlisted operator IPs |
+| SSH and Jenkins UI restricted | Security groups driven by an additive IP allowlist | Reachable only from allowlisted IPs |
+| Destructive actions gated | `platform-infra` | Destroy needs `CONFIRM_DESTROY` and a separate approval; apply needs approval when the plan has changes |
 
 ---
 
-## Verification
+## Cost and clean-up
 
-What is covered by automated tests in this repository:
+This is real AWS infrastructure and it bills while it exists: an EKS control plane and a managed node group (dev default: 4 nodes), RDS, a NAT gateway, two EC2 servers, an ALB, EBS volumes and ECR storage. Run it for the time you need and tear it down.
 
-| Area | Command | Notes |
+| To stop paying for | Run |
+|---|---|
+| EKS, RDS, ALB, ECR, secrets, monitoring | `platform-infra` with `ACTION=Destroy` and `CONFIRM_DESTROY=true` |
+| NAT gateway and the two EC2 servers | `python3 scripts/python/aws/destroy_infra.py` (after the platform is gone) |
+| The state bucket | Left in place on purpose. Delete it by hand if you are finished with the project |
+
+The platform must be destroyed first: the network cannot be deleted while the cluster's load balancers and network interfaces still exist. Full steps are in the [runbook](docs/RUNBOOK.md#phase-i-tear-down).
+
+---
+
+## Verification status
+
+What the repository can check about itself:
+
+| Area | Command | Status |
 |---|---|---|
-| Backend | `mvn clean verify` | Developer-reported success on 2026-10-18; Maven reactor reported success for the parent, `security-common`, and all seven services. Integration-test coverage depends on the configured Maven profiles and bindings. Needs Docker for Testcontainers tests. |
-| Frontend production build | `npm run build` | Developer-reported baseline passed with Vite 8.3.2 before the latest API/component extraction; 2,078 modules transformed. Main JS bundle was 537.35 kB minified (167.29 kB gzip), triggering Vite's 500 kB chunk-size warning. Rerun this command on Node 24+ for the current revision. |
-| Frontend tests and coverage | `npm run test:coverage` | Developer-reported baseline before the latest API/component extraction: 12 files, 66 tests passed; lines 66.13%, statements 64.62%, branches 59.46%, functions 56.10% (2026-10-18). Rerun after the refactor on Node 24+. |
-| Python tooling and regression tests | `python3 -m unittest discover -s scripts/python/tests -v` | 85 tests passed in the current refactor validation. |
-| Python syntax | `python3 -m compileall -q scripts/python` | Passed in the current refactor validation. |
-| Helm image-tag contract | `python3 scripts/python/ci/check_helm_image_tags.py infra/helm/catalogix-hc/values-dev.yaml` | Needs `helm`; checks that every service's image tag comes from the values the pipeline sets. Not run end-to-end in this environment. |
-| Whole local gate | `python3 scripts/python/local/devsecops_check.py --start-sonarqube` | Intended to run Gitleaks, tests, SonarQube, Trivy and Compose smoke tests. A complete gate run is not recorded. |
+| Python tooling tests | `python3 -m unittest discover -s scripts/python/tests -v` | 85 tests pass (2026-10-21) |
+| Python lint | `cd scripts/python && ruff check .` | Run in GitHub Actions |
+| Backend build and tests | `mvn verify` (Docker needed for Testcontainers) | Run before the first deploy and record the result |
+| Frontend tests and build | `cd app/frontend && npm ci && npm run test:coverage && npm run build` (Node 24 or newer) | Run before the first deploy and record the result |
+| Helm render | `helm template catalogix infra/helm/catalogix-hc -f infra/helm/catalogix-hc/values-dev.yaml --set database.host=db.example.internal --set global.cloudProvider=aws` | Run in the GitHub Actions `infra` job |
+| Local gate | `python3 scripts/python/local/devsecops_check.py --start-sonarqube` | Runs Gitleaks, tests, SonarQube, Trivy and the Compose smoke test |
 
-What has not been run end to end, and therefore is not claimed as working:
+What only a live deployment can prove. Fill this in after the run in the runbook:
 
-| Check | Command | Result |
+| Check | Evidence to keep | Result |
 |---|---|---|
-| Helm chart render | `helm template catalogix infra/helm/catalogix-hc -f infra/helm/catalogix-hc/values-dev.yaml` | not recorded |
-| Terraform plan | `terraform plan` in `infra/terraform/platform-infra/env/dev` | not recorded |
-| Container builds and Compose smoke test | `docker compose build` and the local smoke-test workflow | not recorded in this verification record |
-| NetworkPolicy enforced on EKS | see [the chart README](infra/helm/catalogix-hc/README.md#testing-the-networkpolicy) | not recorded |
-| Pipelines | one run each of `platform-infra` and `app-cicd` | not recorded |
-
-Record the exact command, date, and result when these are run. Successful build and unit-test results are valuable, but they are not substitutes for an end-to-end cloud deployment.
+| Docker Compose stack and smoke test | Output of `smoke_test.py` | _record_ |
+| Bootstrap (backend, infra, Ansible, credentials) | Terminal log, Jenkins home page screenshot | _record_ |
+| `ci-gate` green on a pull request | Workflow run link or screenshot | _record_ |
+| `platform-infra` Apply | Console log of the apply and monitoring stages | _record_ |
+| `app-cicd` end to end (test, Sonar, scan, push, deploy) | Stage view screenshot | _record_ |
+| Application reachable through the ALB | `curl` output, browser screenshot | _record_ |
+| NetworkPolicy enforced | Commands in [the chart README](infra/helm/catalogix-hc/README.md#testing-the-networkpolicy) | _record_ |
+| Grafana dashboard and an alert firing | Screenshot | _record_ |
+| `platform-infra` Destroy and `destroy_infra.py` leave a clean account | Console log, empty AWS console | _record_ |
 
 ---
 
@@ -314,13 +315,14 @@ Record the exact command, date, and result when these are run. Successful build 
 5. **Monitoring from the platform pipeline.** An application commit never restarts Prometheus. *Trade-off:* the monitoring stack has its own trigger.
 6. **Per-service image tags.** Only changed services are rebuilt, and unchanged ones keep their live tag so their pods are not restarted. *Trade-off:* the previous tag is read back from the Helm release, so `FORCE_ALL_BUILDS` exists to reset it.
 7. **Trivy ignores unfixed CVEs.** Blocking on findings with no patch gives no benefit. *Trade-off:* they are hidden from pipeline output. The documented, expiring `.trivyignore` is the compensating control.
-8. **RabbitMQ for email.** Password-reset and order emails do not depend on SMTP being up at request time. *Trade-off:* a stateful broker to run.
-9. **Database per service on one instance.** Role-level isolation without paying for seven RDS instances. *Trade-off:* it is not failure isolation.
-10. **One shared internal signing key for service-to-service calls.** Seven private keys per environment are more to generate, store and explain than the threat justifies at this size. *Trade-off:* a compromised service could sign a token naming another service. The NetworkPolicy and the caller allowlists narrow what that can reach; per-service keys or mTLS would close it.
-11. **Python for tooling, shell only to install Python.** A bare VM has a shell but not always Python. One short script installs Python, and everything else is Python that behaves the same on apt, dnf, yum and zypper systems. *Trade-off:* the scripts need Python 3.9 or newer.
-12. **Access token in `localStorage`, refresh token in an HttpOnly cookie.** The access token lives 15 minutes and the gateway sets a strict CSP (`script-src 'self'`), which is the main defence against the XSS that could read it. The long-lived refresh token, which is the valuable one, is never readable by JavaScript. *Trade-off:* keeping the access token only in memory (and restoring it with the refresh cookie on page load) removes the remaining exposure at the cost of a refresh round-trip on every reload; that is the first change to make if this ever handles real users.
-13. **Actuator on the application port.** Only `/actuator/health/**` and `/actuator/prometheus` are anonymous (probes and Prometheus); every other actuator endpoint needs a valid token, and the NetworkPolicy plus the gateway (which never routes `/actuator`) keep the port internal. *Trade-off:* a separate management port would isolate it fully but touches every probe, ServiceMonitor and NetworkPolicy rule.
-14. **No further splitting.** No service discovery, config server or BFF. Kubernetes DNS and the gateway are enough at this scale.
+8. **The gate lives in GitHub Actions; Jenkins verifies it.** Repository-wide scans run once, in `.github/workflows/ci.yaml`, with no inbound access to Jenkins needed, and `app-cicd` refuses to deploy a commit whose `ci-gate` check did not pass (`OVERRIDE_QUALITY_GATE` is the audited escape hatch). *Trade-off:* a deploy starts up to about five minutes after a merge (Jenkins polls), and Jenkins needs a GitHub token that can read check runs.
+9. **RabbitMQ for email.** Password-reset and order emails do not depend on SMTP being up at request time. *Trade-off:* a stateful broker to run.
+10. **Database per service on one instance.** Role-level isolation without paying for seven RDS instances. *Trade-off:* it is not failure isolation.
+11. **One shared internal signing key for service-to-service calls.** Seven private keys per environment are more to generate, store and explain than the threat justifies at this size. *Trade-off:* a compromised service could sign a token naming another service. The NetworkPolicy and the caller allowlists narrow what that can reach; per-service keys or mTLS would close it.
+12. **Python for tooling, shell only to install Python.** A bare VM has a shell but not always Python. *Trade-off:* the scripts need Python 3.9 or newer.
+13. **Access token in `localStorage`, refresh token in an HttpOnly cookie.** The access token lives 15 minutes and the gateway sets a strict CSP, which is the main defence against XSS. *Trade-off:* keeping the access token only in memory removes the remaining exposure at the cost of a refresh on every reload; that is the first change to make for real users.
+14. **Actuator on the application port.** Only `/actuator/health/**` and `/actuator/prometheus` are anonymous; every other actuator endpoint needs a token, and the NetworkPolicy plus the gateway keep the port internal. *Trade-off:* a separate management port would isolate it fully but touches every probe, ServiceMonitor and NetworkPolicy rule.
+15. **No further splitting.** No service discovery, config server or BFF. Kubernetes DNS and the gateway are enough at this scale.
 
 ---
 
@@ -328,16 +330,18 @@ Record the exact command, date, and result when these are run. Successful build 
 
 | Limitation | Note |
 |---|---|
-| Internal calls share one signing key | Every service holds the same internal private key, so a compromised service could sign as another. The NetworkPolicy narrows who can connect; per-service keys or mTLS would close the gap |
+| Internal calls share one signing key | A compromised service could sign as another. The NetworkPolicy narrows who can connect; per-service keys or mTLS would close the gap |
 | NetworkPolicy covers inbound traffic only | Outbound traffic is open. Policies are silently ignored on a cluster whose network plugin does not enforce them (Docker Desktop, for example) |
-| JWT keys cannot be rotated without logging everyone out | Replacing the keys invalidates every live token. Graceful rotation would need a second accepted public key |
-| Private keys are in Terraform state | `tls_private_key` stores them there. Keep the state bucket encrypted, private and tightly permissioned (it is encrypted and blocks public access) |
+| JWT keys cannot be rotated without logging everyone out | Graceful rotation would need a second accepted public key |
+| Private keys are in Terraform state | `tls_private_key` stores them there. The state bucket is encrypted and blocks public access; keep its IAM access tight |
 | Single NAT gateway | `nat_gateway_count` defaults to 1. Use one per availability zone for production |
 | HTTP unless `INGRESS_HOST` and `TLS_CERT_ARN` are supplied | Enable HTTPS for anything real |
 | Dev conveniences | `skip_final_snapshot`, ECR `force_delete` and a zero Secrets Manager recovery window are not environment-aware |
 | RabbitMQ runs one replica | Quorum queues need at least three nodes for real high availability |
-| Only `dev` is maintained and exercised. `staging` (Terraform `env/staging`, `values-staging.yaml`) is illustrative | It shows the multi-environment pattern and has never been deployed. Expect gaps (for example no seeded admin account); `prod` does not exist |
-| Order emails are delivered at least once | If RabbitMQ confirms a message but the outbox row cannot be marked `PUBLISHED`, the relay sends it again and a customer may get a duplicate email. De-duplicating on message id in `notification-svc` would fix it |
-| No tracing or log aggregation | Logs are container stdout and stderr (`kubectl logs`, `docker logs`) |
+| Only `dev` is maintained and exercised | `staging` (Terraform `env/staging`, `values-staging.yaml`) is illustrative and has never been deployed; `prod` does not exist |
+| The dev cluster sends no email by default | The chart deploys no mail server. Set `MAIL_HOST` and credentials on `notification-svc` to a real SMTP server to receive verification and reset mails |
+| Order emails are delivered at least once | A crash between a RabbitMQ confirm and the outbox update can send one email twice. De-duplicating on message id in `notification-svc` would fix it |
+| No tracing or log aggregation | Logs are container stdout and stderr (`kubectl logs`) |
 | Alerts go to email only, and only `critical` ones | One channel is enough to prove the chain |
-| GitHub webhook reachability and branch protection must be configured | `quality-security-gate` is defined through JCasC, but the operator must configure the HTTPS webhook endpoint and require its observed PR status check in GitHub |
+| `ci-gate` must be a required check | GitHub only blocks merges on a failing gate once you require `ci-gate` in the branch protection rule for `main`. See [docs/ci-gate.md](docs/ci-gate.md) |
+| The state bucket name is global | `catalogix-tfstate` must be replaced with a name of your own before the first apply. See the [runbook](docs/RUNBOOK.md#b2-pick-your-own-state-bucket-name) |

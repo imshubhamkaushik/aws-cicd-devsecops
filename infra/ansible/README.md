@@ -1,6 +1,6 @@
 # Ansible
 
-Configures the two EC2 servers created by `infra/terraform/bootstrap-infra`: a Jenkins server and a SonarQube server. Nothing on them is set up by hand. Jenkins is configured with Jenkins Configuration as Code (JCasC) and defines the `quality-security-gate`, `platform-infra`, and `app-cicd` jobs.
+Configures the two EC2 servers created by `infra/terraform/bootstrap-infra`: a Jenkins server and a SonarQube server. Nothing on them is set up by hand. Jenkins is configured with Jenkins Configuration as Code (JCasC) and defines the `platform-infra` and `app-cicd` jobs.
 
 ```text
 infra/ansible/
@@ -55,9 +55,9 @@ Installs Java 21 and Jenkins from the official apt repository (the playbook remo
 | SonarQube | Server `sonarqube` at `http://<private ip>:9000` with the `sonarqube-token` credential |
 | Tools | `git`, Maven 3.9.9, Node.js 24.11.0 (keep it in step with the frontend Dockerfile, `.nvmrc` and `engines`) |
 | Credentials | `github-token` and `sonarqube-token`, from environment variables |
-| Jobs | `quality-security-gate` multibranch job (`Jenkinsfile.lint`) for GitHub push/PR checks; `platform-infra` (manual); `app-cicd` triggered after a successful main-branch gate |
+| Jobs | `platform-infra` (manual) and `app-cicd` (polls `main` every 5 minutes, verifies the GitHub `ci-gate` check, then deploys). The repository checks themselves run in GitHub Actions |
 
-`unknown: reject` and `restricted: reject` make JCasC fail loudly on a typo instead of ignoring it. To change the job definitions or the trigger, edit this file and re-run `python3 scripts/python/aws/bootstrap.py ansible` (see [../../docs/github-webhook.md](../../docs/github-webhook.md)). Editing a job in the Jenkins UI is overwritten the next time JCasC is applied.
+`unknown: reject` and `restricted: reject` make JCasC fail loudly on a typo instead of ignoring it. To change the job definitions or the trigger, edit this file and re-run `python3 scripts/python/aws/bootstrap.py ansible` (see [../jenkins/README.md](../jenkins/README.md)). Editing a job in the Jenkins UI is overwritten the next time JCasC is applied.
 
 Plugins are listed in `roles/jenkins/files/plugins.yaml`: Docker Pipeline, Configuration as Code, Matrix Authorization, Credentials and Credentials Binding, Pipeline (workflow-aggregator), Pipeline Graph View, Git, GitHub and GitHub Branch Source, Multibranch, Job DSL, NodeJS, Maven, SonarQube Scanner, AWS Credentials, Timestamper, Workspace Cleanup and the dark theme.
 
@@ -77,5 +77,5 @@ The vault password is stored in `~/.vault_pass` (mode 600). `vault.yaml` is encr
 ```bash
 cd infra/ansible
 ansible-inventory --graph           # both groups should list one host each (needs AWS credentials)
-ansible-lint playbook.yaml          # also run by Jenkinsfile.lint; there is no ansible-lint config, so default rules apply
+ansible-lint playbook.yaml          # also run by the GitHub Actions `infra` job; there is no ansible-lint config, so default rules apply
 ```

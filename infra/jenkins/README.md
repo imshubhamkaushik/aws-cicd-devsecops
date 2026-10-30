@@ -1,30 +1,23 @@
 # Jenkins pipelines
 
-Jenkins runs one repository-wide **quality/security gate** before application delivery. GitHub push and pull-request webhooks trigger only the multibranch `quality-security-gate` job. Pull requests get a required check; after a successful push to `main`, the gate starts `app-cicd` at the exact commit that passed. `platform-infra` remains a manual operation because applying or destroying cloud infrastructure must not happen automatically for every push. Run it from protected `main` after the quality gate is green.
+Jenkins is the **deployment** side of the project. The repository quality and security checks (tests, lint, IaC, chart and secret scans) run in GitHub Actions, in `.github/workflows/ci.yaml`, because they need nothing from AWS and GitHub cannot reach the IP-restricted Jenkins UI. Jenkins keeps everything that needs AWS or the private network: SonarQube, image build and scan, ECR, Helm, and `terraform plan` against live state. How the two sides connect is in [../../docs/ci-gate.md](../../docs/ci-gate.md).
 
 Job definitions live in [`../ansible/roles/jenkins/templates/jcasc.yaml`](../ansible/roles/jenkins/templates/jcasc.yaml), and Ansible installs them. Shared implementation lives in [`../../vars/`](../../vars).
 
 | Jenkins job | Jenkinsfile | Trigger | Responsibility |
 |---|---|---|---|
-| `quality-security-gate` (multibranch) | `Jenkinsfile.lint` | GitHub push/PR webhook; daily scan is a fallback | Repository lint, configuration validation and source/IaC/chart security checks |
-| `app-cicd` | `Jenkinsfile.app-cicd` | Successful `main` gate, or explicit manual override | Changed-service tests, Sonar quality gate, image build and Trivy scan, ECR push, Helm deploy, runtime verification |
+| `app-cicd` | `Jenkinsfile.app-cicd` | Polls `main` every ~5 minutes; started by `platform-infra` when `DEPLOY_APP_AFTER_INFRA` is ticked; or by hand | Verify the GitHub `ci-gate` for the commit, changed-service tests, Sonar quality gate, image build and Trivy scan, ECR push, Helm deploy, runtime verification |
 | `platform-infra` | `Jenkinsfile.platform-infra` | Manual only | Terraform plan/approval/apply or explicitly approved destroy; deploy/verify monitoring |
 
-To run all three in order for the first time, follow [../../docs/RUNBOOK.md](../../docs/RUNBOOK.md).
+`platform-infra` stays manual because applying or destroying cloud infrastructure must not happen automatically for every push. Run it from protected `main` after `ci-gate` is green.
 
-**First run of a parameterised job.** Jenkins reads the parameters of `platform-infra` and `app-cicd` from their Jenkinsfiles, so until each job has run once the UI offers **Build Now** instead of **Build with Parameters**. Run it once, let the first stage start, abort it, and the parameter form appears. A green gate on `main` starts `app-cicd` automatically; before the platform exists that run fails early at *Ensure Kubernetes Access*, which is expected.
+To run both in order for the first time, follow [../../docs/RUNBOOK.md](../../docs/RUNBOOK.md).
 
-## Quality/security gate
+**First run of a parameterised job.** Jenkins reads the parameters of `platform-infra` and `app-cicd` from their Jenkinsfiles, so until each job has run once the UI offers **Build Now** instead of **Build with Parameters**. Run it once, let the first stage start, abort it, and the parameter form appears. The first polled `app-cicd` run, before the platform exists, fails early at *Ensure Kubernetes Access*, which is expected.
 
-This job runs checks that do not need a live cluster or newly built application images: Gitleaks, Hadolint, Terraform formatting and Trivy IaC scan, Ansible lint, Ruff security/style checks, Python unit tests, Helm dependency build/lint/rendering, kubeconform, Helm image-tag contract validation, Trivy chart scan, and ShellCheck. Keep each check in one pipeline only.
+## What the GitHub Actions gate covers
 
-The gate does **not** replace deployment-specific checks: `app-cicd` still runs backend Maven verification and frontend tests when relevant, SonarQube analysis/quality gate, and Trivy scans on new container images. `platform-infra` still runs Terraform init/validate/plan against the selected environment before requesting human approval. Staging values remain a configuration example; this audit does not claim the staging Terraform root is deployable.
-
-### GitHub webhook and branch protection
-
-Configure a repository webhook at `https://<reachable-jenkins-host>/github-webhook/` with **Pushes** and **Pull requests** events, content type `application/json`, and a strong webhook secret if the Jenkins GitHub integration is configured to validate it. Jenkins must be reachable by GitHub over HTTPS (do not expose an unauthenticated Jenkins UI to the internet just to receive a webhook; use a secured reachable endpoint or polling in restricted networks).
-
-In GitHub repository settings, protect `main` and require the status check produced by the `quality-security-gate` pull-request job before merging. The exact status-context label is shown after the first PR run; select that observed check, not a guessed label.
+Tests (Maven, frontend), Gitleaks, Hadolint, Ruff and the Python tests, ShellCheck, Terraform formatting, Trivy IaC and Helm chart scans, Ansible lint, Helm lint and rendering, kubeconform and the Helm image-tag contract. `app-cicd` does not repeat them. It still runs the checks that need AWS or the build host: backend and frontend tests for changed services, SonarQube analysis and quality gate, and Trivy scans on newly built images. `platform-infra` still runs Terraform init/validate/plan against the selected environment before requesting human approval. Staging values remain a configuration example; this does not claim the staging Terraform root is deployable.
 
 ## `Jenkinsfile.app-cicd`
 
@@ -35,13 +28,13 @@ Parameters:
 | `ENV` | `dev` | Environment/cluster to deploy. Staging is illustrative, not represented as fully supported. |
 | `FORCE_ALL_TESTS` | false | Test all backend services; does not force image rebuilds. |
 | `FORCE_ALL_BUILDS` | false | Build, scan, push and retag every image. |
-| `SOURCE_REVISION` | empty | Exact commit passed from the quality gate. Normal runs require it. |
-| `OVERRIDE_QUALITY_GATE` | false | Explicit manual/emergency override; avoid for routine deployment. |
+| `SOURCE_REVISION` | empty | Full commit SHA to deploy. Empty means the latest `main`. Either way the commit needs a passing `ci-gate` unless `OVERRIDE_QUALITY_GATE` is ticked. |
+| `OVERRIDE_QUALITY_GATE` | false | Emergency override: skip the `ci-gate` verification. Avoid for routine deployment. |
 | `CLEAR_MAVEN_CACHE` | false | Delete Maven cache before compiling. |
 | `RUN_DAST` | false | Optional OWASP ZAP baseline scan after deployment. |
 | `INGRESS_HOST`, `TLS_CERT_ARN` | empty | Optional public DNS name and ACM certificate; public/shared deployments should supply both. |
 
-Important stages: checkout the exact gated commit; authenticate to AWS; detect changed test targets and image targets independently; verify dev credential categories; run relevant Maven/frontend tests; compile untouched modules for Sonar; enforce the SonarQube quality gate; build/scan/push only images that need rebuilding; resolve existing tags for unchanged images; deploy with Helm; verify rollout and application access; optionally run DAST. Source lint/secrets/config scans are deliberately not repeated here.
+Important stages: checkout the commit (the latest `main`, or `SOURCE_REVISION`); **Verify CI Gate** (waits up to 25 minutes for the GitHub `ci-gate` check of that exact SHA and fails unless it succeeded; uses the `github-token` credential through `scripts/python/ci/verify_github_gate.py`); authenticate to AWS; detect changed test targets and image targets independently; verify dev credential categories; run relevant Maven/frontend tests; compile untouched modules for Sonar; enforce the SonarQube quality gate; build/scan/push only images that need rebuilding; resolve existing tags for unchanged images; deploy with Helm; verify rollout and application access; optionally run DAST. Source lint/secrets/config scans are deliberately not repeated here.
 
 `FORCE_ALL_TESTS` broadens test selection only. A change to `security-common` still triggers all backend tests and image rebuilds because every backend depends on that module. A first deploy or `FORCE_ALL_BUILDS` also builds all images.
 

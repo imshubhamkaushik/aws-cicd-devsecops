@@ -144,3 +144,5 @@ PaymentForm.propTypes = {
   onPaid: PropTypes.func.isRequired,
   onError: PropTypes.func.isRequired,
 };
+
+export default PaymentForm;

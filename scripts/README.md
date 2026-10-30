@@ -17,6 +17,8 @@ scripts/
     └── tests/                 # offline unit tests for operator tooling
 ```
 
+The order in which to run these for a full deployment is in [../docs/RUNBOOK.md](../docs/RUNBOOK.md). `python/README.md` is a short index of the same folders.
+
 Run commands from the repository root unless stated otherwise. All Python entry points remain independent: use the specific command needed rather than the full local gate.
 
 ## 1. Machine setup and tool inventory
@@ -110,8 +112,9 @@ Rotating JWT keys invalidates tokens issued with the previous keys. The key-gene
 python3 -m unittest discover -s scripts/python/tests -v
 cd scripts/python && ruff check .
 python3 scripts/python/ci/check_helm_image_tags.py infra/helm/catalogix-hc/values-dev.yaml
+GH_TOKEN=<token> python3 scripts/python/ci/verify_github_gate.py --repo-url <clone-url> --sha <full-sha>   # what app-cicd runs
 ```
 
-The Helm image-tag contract check is intentionally retained as Python. It catches a distinct failure mode: Helm accepts unknown `--set` keys, so the pipeline could otherwise appear successful while a service falls back to the global image tag. It needs Helm and Python’s standard library only, so it also works on a clean Jenkins agent.
+`verify_github_gate.py` is how `app-cicd` proves a commit passed the GitHub Actions `ci-gate` check before deploying it; it waits while the check is still running and exits non-zero on anything but success (see [../docs/ci-gate.md](../docs/ci-gate.md)). The Helm image-tag contract check is intentionally retained as Python. It catches a distinct failure mode: Helm accepts unknown `--set` keys, so the pipeline could otherwise appear successful while a service falls back to the global image tag. It needs Helm and Python’s standard library only, so it also works on a clean Jenkins agent.
 
 The unit suite covers allowlist and credential behaviour, plus regression tests for command retry policy, Vault recovery, and local CLI behaviour. Changes to script paths should update this README and references in Terraform/Ansible documentation and Jenkinsfiles in the same change.

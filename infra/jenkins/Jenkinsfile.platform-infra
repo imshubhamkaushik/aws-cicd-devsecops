@@ -155,8 +155,8 @@ pipeline {
 
         // Terraform formatting for this directory is already gated in
         // Application CI/CD owns application test and scan execution.
-        // Terraform format/security static checks are owned by the upstream quality-security-gate
-        // pipeline. This pipeline still performs Terraform init/validate/plan against the selected
+        // Terraform format/security static checks are owned by the GitHub Actions workflow
+        // (.github/workflows/ci.yaml). This pipeline still performs Terraform init/validate/plan against the selected
         // live environment before asking for approval.
 
         stage("Terraform Init") { 

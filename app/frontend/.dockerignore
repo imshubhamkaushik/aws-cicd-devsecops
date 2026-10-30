@@ -1,25 +1,23 @@
-# Node modules
-node_modules/
+# Build context for the frontend image: app/frontend.
+# Dependencies are installed inside the image with `npm ci`; build output is produced there too.
+node_modules
+build
+dist
+coverage
 
-# Build artifacts
-build/
-dist/
-coverage/
+# Local configuration and secrets
+.env
+.env.*
 
-# Git / IDE
-.git
-.gitignore
-.idea/
-.vscode/
-
-# Logs / Temp
-npm-debug.log
-yarn-error.log
+# Editors, OS and logs
+.idea
+.vscode
+.DS_Store
 *.log
 *.tmp
+npm-debug.log*
 
-# Local configs
-.env
-
-# Ignore git and editor files
-.DS_Store
+# Not needed to build the bundle
+Dockerfile
+.dockerignore
+*.md

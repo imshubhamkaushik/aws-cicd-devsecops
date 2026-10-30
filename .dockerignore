@@ -1,42 +1,27 @@
-# Applies to every Java service build (docker-compose.yaml uses `context: .`
-# for all of them) — without this at the repo root, each `docker compose
-# build` sends the ENTIRE monorepo (all services' source, any local Maven
-# output, node_modules, .git history, etc.) to the Docker daemon as build
-# context for every single service image, even though each Dockerfile only
-# ever COPYs its own pom.xml/src. Per-service .dockerignore files elsewhere
-# in this repo (e.g. user-svc/.dockerignore) are NOT read for these builds —
-# Docker only looks for .dockerignore in the build context root, which for
-# `context: .` is here.
+# Build context for the seven Java service images: the repository root.
+# (docker-compose.yaml and Jenkinsfile.app-cicd both use `context: .`.)
+#
+# Docker reads only the .dockerignore at the root of the build context, so the
+# per-service .dockerignore files that used to live in app/backend/*-svc/ were never
+# applied and have been removed. The frontend and gateway use their own contexts
+# (app/frontend, app/gateway); see app/frontend/.dockerignore.
+#
+# Allow-list: exclude everything, then re-include only what the Java Dockerfiles COPY
+#   COPY pom.xml
+#   COPY app/backend/<module>/pom.xml
+#   COPY app/backend/<module>/src
+# A new top-level file or directory therefore never leaks into an image build and never
+# invalidates the Maven layer cache. The Dockerfile itself is always sent to the daemon.
+*
 
-# Maven build output (every *-svc/target/)
-**/target/
-*.jar
-*.war
-*.class
+!pom.xml
+!app/backend/*/pom.xml
+!app/backend/*/src
 
-# Node / frontend (the frontend uses its own context + its own .dockerignore;
-# excluding here too in case context is ever changed back to root)
-**/node_modules/
-**/dist/
-**/build/
-**/coverage/
-
-# Python virtualenv
-.venv/
-
-# VCS / IDE / editors
-.git/
-.github/
-.idea/
-.vscode/
-*.iml
-
-# Local env/secrets — never want these baked into an image layer
-.env
-.env.local
-
-# Misc
-*.log
-*.tmp
-*.zip
-README.md
+# Keep build output and local files out even if they appear under an allowed path.
+**/target
+**/.env
+**/.env.*
+**/*.log
+**/*.tmp
+**/.DS_Store
